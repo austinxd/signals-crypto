@@ -86,6 +86,51 @@ class BinanceClient:
             print(f"Error fetching price for {symbol}: {e}")
             return None
 
+    def get_funding_rate(self, symbol: str) -> Optional[dict]:
+        """
+        Get the current funding rate for a futures symbol.
+
+        Args:
+            symbol: Trading pair (e.g., 'BTC/USDT')
+
+        Returns:
+            Dict with funding rate info
+        """
+        try:
+            # Fetch funding rate from Binance Futures
+            funding = self.exchange.fetch_funding_rate(symbol)
+
+            rate = funding.get("fundingRate", 0)
+
+            # Determine market sentiment based on funding rate
+            # Thresholds: |rate| > 0.0005 (0.05%) is considered high
+            if rate > 0.0005:
+                sentiment = "too_many_longs"
+                recommendation = "SHORT favorable"
+            elif rate < -0.0005:
+                sentiment = "too_many_shorts"
+                recommendation = "LONG favorable"
+            elif rate > 0.0001:
+                sentiment = "slightly_long"
+                recommendation = "Neutral - leve sesgo alcista"
+            elif rate < -0.0001:
+                sentiment = "slightly_short"
+                recommendation = "Neutral - leve sesgo bajista"
+            else:
+                sentiment = "balanced"
+                recommendation = "Mercado equilibrado"
+
+            return {
+                "funding_rate": rate,
+                "funding_rate_percent": rate * 100,
+                "sentiment": sentiment,
+                "recommendation": recommendation,
+                "next_funding_time": funding.get("fundingTimestamp"),
+            }
+        except Exception as e:
+            print(f"Error fetching funding rate for {symbol}: {e}")
+            return None
+
 
 # Singleton instance
 _client: Optional[BinanceClient] = None

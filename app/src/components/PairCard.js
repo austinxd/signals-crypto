@@ -11,7 +11,7 @@ const PairCard = ({ pair, data, onPress }) => {
     );
   }
 
-  const { price, indicators } = data;
+  const { price, indicators, funding } = data;
 
   const formatPrice = (p) => {
     return new Intl.NumberFormat('en-US', {
@@ -29,6 +29,28 @@ const PairCard = ({ pair, data, onPress }) => {
 
   const getTrendColor = (priceAboveEma) => {
     return priceAboveEma ? '#00d4aa' : '#ff4757';
+  };
+
+  const getFundingColor = (sentiment) => {
+    if (sentiment === 'too_many_longs') return '#ff4757';
+    if (sentiment === 'too_many_shorts') return '#00d4aa';
+    if (sentiment === 'slightly_long') return '#ffd93d';
+    if (sentiment === 'slightly_short') return '#ffd93d';
+    return '#888';
+  };
+
+  const getFundingLabel = (sentiment) => {
+    if (sentiment === 'too_many_longs') return 'Muchos Longs';
+    if (sentiment === 'too_many_shorts') return 'Muchos Shorts';
+    if (sentiment === 'slightly_long') return 'Leve Long';
+    if (sentiment === 'slightly_short') return 'Leve Short';
+    return 'Equilibrado';
+  };
+
+  const getFundingEmoji = (sentiment) => {
+    if (sentiment === 'too_many_longs') return '🔴';
+    if (sentiment === 'too_many_shorts') return '🟢';
+    return '⚖️';
   };
 
   // Count met conditions for signal proximity
@@ -70,6 +92,25 @@ const PairCard = ({ pair, data, onPress }) => {
 
       {indicators && (
         <>
+          {/* Funding Rate Indicator */}
+          {funding && (
+            <View style={styles.fundingContainer}>
+              <View style={styles.fundingHeader}>
+                <Text style={styles.fundingLabel}>Funding Rate</Text>
+                <Text style={[styles.fundingRate, { color: getFundingColor(funding.sentiment) }]}>
+                  {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
+                </Text>
+              </View>
+              <View style={styles.fundingStatus}>
+                <Text style={styles.fundingEmoji}>{getFundingEmoji(funding.sentiment)}</Text>
+                <Text style={[styles.fundingSentiment, { color: getFundingColor(funding.sentiment) }]}>
+                  {getFundingLabel(funding.sentiment)}
+                </Text>
+                <Text style={styles.fundingRec}>{funding.recommendation}</Text>
+              </View>
+            </View>
+          )}
+
           <View style={styles.signalProximity}>
             <Text style={styles.proximityLabel}>Proximidad señal:</Text>
             <View style={styles.proximityBars}>
@@ -175,6 +216,44 @@ const styles = StyleSheet.create({
   loading: {
     color: '#888',
     fontSize: 14,
+  },
+  fundingContainer: {
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  fundingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  fundingLabel: {
+    color: '#888',
+    fontSize: 12,
+  },
+  fundingRate: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  fundingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fundingEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  fundingSentiment: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  fundingRec: {
+    color: '#666',
+    fontSize: 11,
+    flex: 1,
   },
   signalProximity: {
     backgroundColor: '#151525',

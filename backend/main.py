@@ -108,19 +108,25 @@ def monitor_markets():
                     if indicators is None:
                         continue
 
+                    # Fetch funding rate (only once per pair, not per timeframe)
+                    funding_data = None
+                    if timeframe == list(active_timeframes)[0]:  # Only fetch once
+                        funding_data = client.get_funding_rate(pair)
+
                     # Store market data for API
                     market_data[timeframe][pair] = {
                         "pair": pair,
                         "timeframe": timeframe,
                         "price": indicators["price"],
                         "indicators": indicators,
+                        "funding": funding_data,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
                     # Check for signals
                     signal_key = f"{pair}_{timeframe}"
                     if signal_history.can_send_signal(signal_key):
-                        signal = detect_signal(pair, indicators)
+                        signal = detect_signal(pair, indicators, funding_data)
                         if signal:
                             signal.timeframe = timeframe
                             signal_history.add_signal(signal)
@@ -215,12 +221,14 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
                     continue
                 df = add_all_indicators(df)
                 indicators = get_latest_indicators(df)
+                funding_data = client.get_funding_rate(pair)
                 if indicators:
                     market_data[timeframe][pair] = {
                         "pair": pair,
                         "timeframe": timeframe,
                         "price": indicators["price"],
                         "indicators": indicators,
+                        "funding": funding_data,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
             except Exception as e:

@@ -29,6 +29,34 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
   }
 
   const ind = data.indicators;
+  const funding = data.funding;
+
+  // Funding helpers
+  const getFundingWarning = () => {
+    if (!funding) return null;
+
+    if (funding.sentiment === 'too_many_longs') {
+      return {
+        emoji: '⚠️',
+        title: 'Precaución con LONG',
+        text: 'Funding muy positivo indica demasiados longs. Riesgo de dump/liquidaciones en cascada.',
+        color: '#ff4757',
+        bgColor: 'rgba(255, 71, 87, 0.1)',
+      };
+    }
+    if (funding.sentiment === 'too_many_shorts') {
+      return {
+        emoji: '⚠️',
+        title: 'Precaución con SHORT',
+        text: 'Funding muy negativo indica demasiados shorts. Riesgo de short squeeze.',
+        color: '#00d4aa',
+        bgColor: 'rgba(0, 212, 170, 0.1)',
+      };
+    }
+    return null;
+  };
+
+  const fundingWarning = getFundingWarning();
 
   // Calculate signal proximity for LONG
   const longConditions = {
@@ -178,6 +206,43 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Funding Rate Warning */}
+            {fundingWarning && (
+              <View style={[styles.warningBox, { backgroundColor: fundingWarning.bgColor, borderColor: fundingWarning.color }]}>
+                <Text style={styles.warningEmoji}>{fundingWarning.emoji}</Text>
+                <View style={styles.warningContent}>
+                  <Text style={[styles.warningTitle, { color: fundingWarning.color }]}>{fundingWarning.title}</Text>
+                  <Text style={styles.warningText}>{fundingWarning.text}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Funding Rate Section */}
+            {funding && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>📊 Funding Rate</Text>
+                <View style={styles.fundingBox}>
+                  <View style={styles.fundingRow}>
+                    <Text style={styles.fundingLabel}>Tasa actual:</Text>
+                    <Text style={[
+                      styles.fundingValue,
+                      { color: funding.funding_rate_percent > 0 ? '#ff4757' : funding.funding_rate_percent < 0 ? '#00d4aa' : '#888' }
+                    ]}>
+                      {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
+                    </Text>
+                  </View>
+                  <View style={styles.fundingRow}>
+                    <Text style={styles.fundingLabel}>Sentimiento:</Text>
+                    <Text style={styles.fundingValue}>{funding.sentiment?.replace(/_/g, ' ')}</Text>
+                  </View>
+                  <View style={styles.fundingRecommendation}>
+                    <Text style={styles.fundingRecLabel}>Recomendación:</Text>
+                    <Text style={styles.fundingRecText}>{funding.recommendation}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* LONG Signal Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🟢 LONG</Text>
@@ -389,6 +454,67 @@ const styles = StyleSheet.create({
   },
   negative: {
     color: '#ff4757',
+  },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  warningEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  warningContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  warningText: {
+    color: '#aaa',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  fundingBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  fundingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  fundingLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  fundingValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  fundingRecommendation: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
+  },
+  fundingRecLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  fundingRecText: {
+    color: '#00d4aa',
+    fontSize: 14,
+    fontWeight: '600',
   },
   closeButton: {
     marginHorizontal: 16,

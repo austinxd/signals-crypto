@@ -30,10 +30,11 @@ class Signal:
     timestamp: str
     indicators: Dict[str, Any]
     timeframe: str = "4h"
+    funding_info: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert signal to dictionary."""
-        return {
+        result = {
             "pair": self.pair,
             "side": self.signal_type.value,
             "entry": round(self.entry_price, 2),
@@ -49,6 +50,13 @@ class Signal:
                 "volume_ratio": round(self.indicators.get("volume_ratio", 0), 2),
             },
         }
+        if self.funding_info:
+            result["funding"] = {
+                "rate_percent": round(self.funding_info.get("funding_rate_percent", 0), 4),
+                "sentiment": self.funding_info.get("sentiment", "unknown"),
+                "recommendation": self.funding_info.get("recommendation", ""),
+            }
+        return result
 
 
 def calculate_tp_sl(
@@ -137,13 +145,18 @@ def check_short_signal(indicators: Dict[str, Any]) -> bool:
     return all(conditions)
 
 
-def detect_signal(pair: str, indicators: Dict[str, Any]) -> Optional[Signal]:
+def detect_signal(
+    pair: str,
+    indicators: Dict[str, Any],
+    funding_data: Optional[Dict[str, Any]] = None
+) -> Optional[Signal]:
     """
-    Detect trading signal based on indicators.
+    Detect trading signal based on indicators and funding rate.
 
     Args:
         pair: Trading pair (e.g., 'BTC/USDT')
         indicators: Dictionary of indicator values
+        funding_data: Optional funding rate data
 
     Returns:
         Signal object if conditions are met, None otherwise
@@ -155,7 +168,17 @@ def detect_signal(pair: str, indicators: Dict[str, Any]) -> Optional[Signal]:
     atr = indicators.get("atr")
     timestamp = indicators.get("timestamp", datetime.utcnow().isoformat())
 
+    # Get funding sentiment
+    funding_sentiment = funding_data.get("sentiment") if funding_data else None
+
+    # Check LONG signal
     if check_long_signal(indicators):
+        # Block LONG if too many longs (high positive funding)
+        # When everyone is long, expect a dump
+        if funding_sentiment == "too_many_longs":
+            print(f"LONG signal blocked for {pair}: funding too positive (too many longs)")
+            return None
+
         tp, sl = calculate_tp_sl(entry_price, SignalType.LONG, atr=atr)
         return Signal(
             pair=pair,
@@ -165,9 +188,17 @@ def detect_signal(pair: str, indicators: Dict[str, Any]) -> Optional[Signal]:
             stop_loss=sl,
             timestamp=timestamp,
             indicators=indicators,
+            funding_info=funding_data,
         )
 
+    # Check SHORT signal
     if check_short_signal(indicators):
+        # Block SHORT if too many shorts (high negative funding)
+        # When everyone is short, expect a squeeze
+        if funding_sentiment == "too_many_shorts":
+            print(f"SHORT signal blocked for {pair}: funding too negative (too many shorts)")
+            return None
+
         tp, sl = calculate_tp_sl(entry_price, SignalType.SHORT, atr=atr)
         return Signal(
             pair=pair,
@@ -177,6 +208,7 @@ def detect_signal(pair: str, indicators: Dict[str, Any]) -> Optional[Signal]:
             stop_loss=sl,
             timestamp=timestamp,
             indicators=indicators,
+            funding_info=funding_data,
         )
 
     return None
