@@ -283,6 +283,85 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                     </Text>
                   </View>
 
+                  {/* Trade Setup Based on Fibonacci */}
+                  {ind.fibonacci.levels && (() => {
+                    const levels = Object.entries(ind.fibonacci.levels)
+                      .map(([name, price]) => ({ name, price }))
+                      .sort((a, b) => a.price - b.price);
+
+                    const currentPrice = ind.price;
+                    const isLong = ind.fibonacci.is_uptrend;
+
+                    // Find levels above and below current price
+                    const levelsBelow = levels.filter(l => l.price < currentPrice);
+                    const levelsAbove = levels.filter(l => l.price > currentPrice);
+
+                    let entry, stopLoss, takeProfit;
+
+                    if (isLong) {
+                      // LONG: Entry at support, SL below, TP above
+                      entry = levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null;
+                      stopLoss = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : null;
+                      takeProfit = levelsAbove.length > 1 ? levelsAbove[1] : (levelsAbove.length > 0 ? levelsAbove[0] : null);
+                    } else {
+                      // SHORT: Entry at resistance, SL above, TP below
+                      entry = levelsAbove.length > 0 ? levelsAbove[0] : null;
+                      stopLoss = levelsAbove.length > 1 ? levelsAbove[1] : null;
+                      takeProfit = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : (levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null);
+                    }
+
+                    // Calculate percentages
+                    const slPercent = stopLoss && entry ? Math.abs((stopLoss.price - entry.price) / entry.price * 100) : null;
+                    const tpPercent = takeProfit && entry ? Math.abs((takeProfit.price - entry.price) / entry.price * 100) : null;
+                    const riskReward = slPercent && tpPercent ? (tpPercent / slPercent).toFixed(1) : null;
+
+                    return (
+                      <View style={styles.tradeSetupBox}>
+                        <Text style={styles.tradeSetupTitle}>
+                          {isLong ? '🟢 Setup LONG' : '🔴 Setup SHORT'}
+                        </Text>
+
+                        <View style={styles.tradeSetupRow}>
+                          <Text style={styles.tradeSetupLabel}>📍 Entrada (Fibo {entry?.name}%):</Text>
+                          <Text style={styles.tradeSetupValue}>
+                            ${entry?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.tradeSetupRow}>
+                          <Text style={styles.tradeSetupLabel}>🎯 Take Profit (Fibo {takeProfit?.name}%):</Text>
+                          <Text style={[styles.tradeSetupValue, { color: '#00d4aa' }]}>
+                            ${takeProfit?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
+                            {tpPercent && <Text style={styles.tradeSetupPercent}> (+{tpPercent.toFixed(1)}%)</Text>}
+                          </Text>
+                        </View>
+
+                        <View style={styles.tradeSetupRow}>
+                          <Text style={styles.tradeSetupLabel}>🛑 Stop Loss (Fibo {stopLoss?.name}%):</Text>
+                          <Text style={[styles.tradeSetupValue, { color: '#ff4757' }]}>
+                            ${stopLoss?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
+                            {slPercent && <Text style={styles.tradeSetupPercent}> (-{slPercent.toFixed(1)}%)</Text>}
+                          </Text>
+                        </View>
+
+                        {riskReward && (
+                          <View style={styles.tradeSetupRatio}>
+                            <Text style={styles.tradeSetupRatioLabel}>Riesgo/Beneficio:</Text>
+                            <Text style={[styles.tradeSetupRatioValue, {
+                              color: parseFloat(riskReward) >= 2 ? '#00d4aa' : parseFloat(riskReward) >= 1.5 ? '#ffd93d' : '#ff9f43'
+                            }]}>
+                              1:{riskReward}
+                            </Text>
+                          </View>
+                        )}
+
+                        <Text style={styles.tradeSetupNote}>
+                          Precio actual: ${currentPrice?.toLocaleString(undefined, {maximumFractionDigits: 2})}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+
                   <View style={styles.fiboInfoRow}>
                     <Text style={styles.fiboInfoLabel}>Tendencia (50 velas):</Text>
                     <Text style={[styles.fiboInfoValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
@@ -607,6 +686,69 @@ const styles = StyleSheet.create({
   fiboRecQuality: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  tradeSetupBox: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a4a',
+  },
+  tradeSetupTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  tradeSetupRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a4a',
+  },
+  tradeSetupLabel: {
+    color: '#888',
+    fontSize: 13,
+    flex: 1,
+  },
+  tradeSetupValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'right',
+  },
+  tradeSetupPercent: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tradeSetupRatio: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
+  },
+  tradeSetupRatioLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginRight: 8,
+  },
+  tradeSetupRatioValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  tradeSetupNote: {
+    color: '#666',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 10,
   },
   fiboInfoRow: {
     flexDirection: 'row',
