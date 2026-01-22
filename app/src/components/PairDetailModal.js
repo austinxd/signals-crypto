@@ -261,6 +261,64 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
               )}
             </View>
 
+            {/* Fibonacci Levels */}
+            {ind.fibonacci && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>📐 Niveles Fibonacci</Text>
+                <View style={styles.fiboBox}>
+                  <View style={styles.fiboInfoRow}>
+                    <Text style={styles.fiboInfoLabel}>Tendencia:</Text>
+                    <Text style={[styles.fiboInfoValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                      {ind.fibonacci.is_uptrend ? '📈 Alcista' : '📉 Bajista'}
+                    </Text>
+                  </View>
+                  <View style={styles.fiboInfoRow}>
+                    <Text style={styles.fiboInfoLabel}>Calidad entrada:</Text>
+                    <Text style={[styles.fiboInfoValue, {
+                      color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
+                             ind.fibonacci.entry_quality === 'good' ? '#ffd93d' : '#ff9f43'
+                    }]}>
+                      {ind.fibonacci.entry_quality === 'optimal' ? '🎯 Óptima' :
+                       ind.fibonacci.entry_quality === 'good' ? '👍 Buena' : '⚠️ Agresiva'}
+                    </Text>
+                  </View>
+                  <Text style={styles.fiboRec}>{ind.fibonacci.recommendation}</Text>
+
+                  <View style={styles.fiboLevelsContainer}>
+                    <Text style={styles.fiboLevelsTitle}>Niveles:</Text>
+                    {ind.fibonacci.levels && Object.entries(ind.fibonacci.levels)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([name, level]) => {
+                        const isClosest = name === ind.fibonacci.closest_level_name;
+                        const isCurrent = Math.abs(ind.price - level) / ind.price < 0.005;
+                        return (
+                          <View key={name} style={[styles.fiboLevelRow, isClosest && styles.fiboLevelRowActive]}>
+                            <Text style={[styles.fiboLevelName, isClosest && styles.fiboLevelNameActive]}>
+                              {name}%
+                            </Text>
+                            <View style={styles.fiboLevelBar}>
+                              {isCurrent && <View style={styles.fiboCurrentMarker} />}
+                            </View>
+                            <Text style={[styles.fiboLevelPrice, isClosest && styles.fiboLevelPriceActive]}>
+                              ${level?.toLocaleString(undefined, {maximumFractionDigits: 2})}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                  </View>
+
+                  <View style={styles.fiboSwingInfo}>
+                    <Text style={styles.fiboSwingText}>
+                      Swing High: ${ind.fibonacci.swing_high?.toLocaleString()}
+                    </Text>
+                    <Text style={styles.fiboSwingText}>
+                      Swing Low: ${ind.fibonacci.swing_low?.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* Raw Indicators */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Indicadores</Text>
@@ -515,6 +573,99 @@ const styles = StyleSheet.create({
     color: '#00d4aa',
     fontSize: 14,
     fontWeight: '600',
+  },
+  fiboBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  fiboInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  fiboInfoLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  fiboInfoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fiboRec: {
+    color: '#aaa',
+    fontSize: 13,
+    marginBottom: 16,
+    padding: 10,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 8,
+  },
+  fiboLevelsContainer: {
+    marginTop: 8,
+  },
+  fiboLevelsTitle: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  fiboLevelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  fiboLevelRowActive: {
+    backgroundColor: 'rgba(0, 212, 170, 0.15)',
+  },
+  fiboLevelName: {
+    color: '#666',
+    fontSize: 13,
+    width: 50,
+  },
+  fiboLevelNameActive: {
+    color: '#00d4aa',
+    fontWeight: 'bold',
+  },
+  fiboLevelBar: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#2a2a4a',
+    marginHorizontal: 10,
+    position: 'relative',
+  },
+  fiboCurrentMarker: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    backgroundColor: '#00d4aa',
+    borderRadius: 4,
+    top: -3,
+    left: '50%',
+  },
+  fiboLevelPrice: {
+    color: '#888',
+    fontSize: 13,
+    textAlign: 'right',
+    width: 100,
+  },
+  fiboLevelPriceActive: {
+    color: '#00d4aa',
+    fontWeight: 'bold',
+  },
+  fiboSwingInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
+  },
+  fiboSwingText: {
+    color: '#666',
+    fontSize: 11,
   },
   closeButton: {
     marginHorizontal: 16,

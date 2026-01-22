@@ -56,6 +56,128 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return ta.volatility.average_true_range(df["high"], df["low"], df["close"], window=period)
 
 
+def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional[Dict[str, Any]]:
+    """
+    Calculate Fibonacci retracement levels based on recent swing high/low.
+
+    Args:
+        df: DataFrame with OHLCV data
+        lookback: Number of candles to look back for swing points
+
+    Returns:
+        Dict with Fibonacci levels and analysis
+    """
+    if df is None or len(df) < lookback:
+        return None
+
+    # Get recent data for swing detection
+    recent = df.tail(lookback)
+
+    # Find swing high and low
+    swing_high = recent["high"].max()
+    swing_low = recent["low"].min()
+    swing_high_idx = recent["high"].idxmax()
+    swing_low_idx = recent["low"].idxmin()
+
+    # Determine trend direction (is high before low = downtrend, low before high = uptrend)
+    is_uptrend = swing_low_idx < swing_high_idx
+
+    # Calculate price range
+    price_range = swing_high - swing_low
+    if price_range == 0:
+        return None
+
+    current_price = df.iloc[-1]["close"]
+
+    # Fibonacci ratios
+    fib_ratios = {
+        "0.0": 0.0,
+        "23.6": 0.236,
+        "38.2": 0.382,
+        "50.0": 0.5,
+        "61.8": 0.618,
+        "78.6": 0.786,
+        "100.0": 1.0,
+    }
+
+    # Calculate levels based on trend direction
+    # In uptrend: measure retracement from high to low (support levels)
+    # In downtrend: measure retracement from low to high (resistance levels)
+    levels = {}
+    if is_uptrend:
+        # Retracement levels (pulling back from high)
+        for name, ratio in fib_ratios.items():
+            levels[name] = swing_high - (price_range * ratio)
+    else:
+        # Retracement levels (bouncing from low)
+        for name, ratio in fib_ratios.items():
+            levels[name] = swing_low + (price_range * ratio)
+
+    # Find closest level to current price
+    closest_level = None
+    closest_distance = float("inf")
+    closest_name = None
+
+    for name, level in levels.items():
+        distance = abs(current_price - level)
+        if distance < closest_distance:
+            closest_distance = distance
+            closest_level = level
+            closest_name = name
+
+    # Calculate percentage distance to closest level
+    distance_percent = ((current_price - closest_level) / current_price) * 100
+
+    # Determine if price is at a good Fibonacci level (within 1% of a key level)
+    key_levels = ["38.2", "50.0", "61.8"]  # Main support/resistance levels
+    at_key_level = False
+    near_key_level = False
+    key_level_name = None
+
+    for key in key_levels:
+        level = levels[key]
+        dist_pct = abs((current_price - level) / current_price) * 100
+        if dist_pct < 0.5:  # Within 0.5%
+            at_key_level = True
+            key_level_name = key
+            break
+        elif dist_pct < 1.5:  # Within 1.5%
+            near_key_level = True
+            key_level_name = key
+
+    # Generate recommendation
+    if at_key_level:
+        if is_uptrend:
+            recommendation = f"ENTRADA ÓPTIMA - En soporte Fibo {key_level_name}%"
+            entry_quality = "optimal"
+        else:
+            recommendation = f"ENTRADA ÓPTIMA - En resistencia Fibo {key_level_name}%"
+            entry_quality = "optimal"
+    elif near_key_level:
+        recommendation = f"Cerca de nivel Fibo {key_level_name}% - Buena zona"
+        entry_quality = "good"
+    else:
+        recommendation = f"Lejos de niveles clave Fibo - Entrada agresiva"
+        entry_quality = "aggressive"
+
+    return {
+        "swing_high": swing_high,
+        "swing_low": swing_low,
+        "is_uptrend": is_uptrend,
+        "levels": levels,
+        "current_price": current_price,
+        "closest_level": closest_level,
+        "closest_level_name": closest_name,
+        "distance_to_closest": closest_distance,
+        "distance_percent": distance_percent,
+        "at_key_level": at_key_level,
+        "near_key_level": near_key_level,
+        "key_level_name": key_level_name,
+        "entry_quality": entry_quality,
+        "recommendation": recommendation,
+    }
+
+
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     Add all technical indicators to the DataFrame.
@@ -127,6 +249,7 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         "rsi_ma": latest["rsi_ma"],
         "rsi_above_ma": latest["rsi"] > latest["rsi_ma"],
         "rsi_rising": latest["rsi"] > previous["rsi"],
+        "rsi_falling": latest["rsi"] < previous["rsi"],
         "macd": latest["macd"],
         "macd_signal": latest["macd_signal"],
         "macd_previous": previous["macd"],
@@ -148,5 +271,28 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         "timestamp": df.index[-1].isoformat(),
     }
 
+    # Calculate Fibonacci levels
+    fib_data = calculate_fibonacci_levels(df)
+    if fib_data:
+        result["fibonacci"] = {
+            "swing_high": fib_data["swing_high"],
+            "swing_low": fib_data["swing_low"],
+            "is_uptrend": fib_data["is_uptrend"],
+            "levels": {k: to_python_type(v) for k, v in fib_data["levels"].items()},
+            "closest_level": fib_data["closest_level"],
+            "closest_level_name": fib_data["closest_level_name"],
+            "distance_percent": fib_data["distance_percent"],
+            "at_key_level": fib_data["at_key_level"],
+            "near_key_level": fib_data["near_key_level"],
+            "key_level_name": fib_data["key_level_name"],
+            "entry_quality": fib_data["entry_quality"],
+            "recommendation": fib_data["recommendation"],
+        }
+
     # Convert all numpy types to native Python types
-    return {k: to_python_type(v) for k, v in result.items()}
+    def convert_value(v):
+        if isinstance(v, dict):
+            return {k2: convert_value(v2) for k2, v2 in v.items()}
+        return to_python_type(v)
+
+    return {k: convert_value(v) for k, v in result.items()}

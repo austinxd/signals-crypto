@@ -31,6 +31,7 @@ class Signal:
     indicators: Dict[str, Any]
     timeframe: str = "4h"
     funding_info: Optional[Dict[str, Any]] = None
+    fibonacci_info: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert signal to dictionary."""
@@ -56,6 +57,16 @@ class Signal:
                 "sentiment": self.funding_info.get("sentiment", "unknown"),
                 "recommendation": self.funding_info.get("recommendation", ""),
             }
+        if self.fibonacci_info:
+            result["fibonacci"] = {
+                "entry_quality": self.fibonacci_info.get("entry_quality", "unknown"),
+                "recommendation": self.fibonacci_info.get("recommendation", ""),
+                "closest_level": self.fibonacci_info.get("closest_level_name", ""),
+                "distance_percent": round(self.fibonacci_info.get("distance_percent", 0), 2),
+                "at_key_level": self.fibonacci_info.get("at_key_level", False),
+                "swing_high": round(self.fibonacci_info.get("swing_high", 0), 2),
+                "swing_low": round(self.fibonacci_info.get("swing_low", 0), 2),
+            }
         return result
 
 
@@ -65,6 +76,7 @@ def calculate_tp_sl(
     sl_percent: float = STOP_LOSS_PERCENT,
     tp_percent: float = TAKE_PROFIT_PERCENT,
     atr: Optional[float] = None,
+    fibonacci: Optional[Dict[str, Any]] = None,
 ) -> tuple[float, float]:
     """
     Calculate Take Profit and Stop Loss levels.
@@ -75,12 +87,40 @@ def calculate_tp_sl(
         sl_percent: Stop loss percentage
         tp_percent: Take profit percentage
         atr: Optional ATR for dynamic calculation
+        fibonacci: Optional Fibonacci levels for smarter TP/SL
 
     Returns:
         Tuple of (take_profit, stop_loss)
     """
+    # Try to use Fibonacci levels first
+    if fibonacci and fibonacci.get("levels"):
+        levels = fibonacci["levels"]
+        sorted_levels = sorted(levels.values())
+
+        if signal_type == SignalType.LONG:
+            # For LONG: SL below entry, TP above entry
+            # Find next level below entry for SL
+            levels_below = [l for l in sorted_levels if l < entry]
+            # Find next level above entry for TP
+            levels_above = [l for l in sorted_levels if l > entry]
+
+            if levels_below and levels_above:
+                stop_loss = levels_below[-1] * 0.995  # Slightly below Fibo level
+                take_profit = levels_above[0] if len(levels_above) == 1 else levels_above[1]  # Target 2nd level up
+                return take_profit, stop_loss
+
+        else:  # SHORT
+            # For SHORT: SL above entry, TP below entry
+            levels_above = [l for l in sorted_levels if l > entry]
+            levels_below = [l for l in sorted_levels if l < entry]
+
+            if levels_above and levels_below:
+                stop_loss = levels_above[0] * 1.005  # Slightly above Fibo level
+                take_profit = levels_below[-1] if len(levels_below) == 1 else levels_below[-2]  # Target 2nd level down
+                return take_profit, stop_loss
+
+    # Fallback to ATR or percentage-based
     if atr is not None:
-        # Dynamic SL/TP based on ATR (1.5x ATR for SL, 3x ATR for TP)
         sl_distance = atr * 1.5
         tp_distance = atr * 3
     else:
@@ -151,7 +191,7 @@ def detect_signal(
     funding_data: Optional[Dict[str, Any]] = None
 ) -> Optional[Signal]:
     """
-    Detect trading signal based on indicators and funding rate.
+    Detect trading signal based on indicators, funding rate, and Fibonacci.
 
     Args:
         pair: Trading pair (e.g., 'BTC/USDT')
@@ -167,6 +207,7 @@ def detect_signal(
     entry_price = indicators.get("price", 0)
     atr = indicators.get("atr")
     timestamp = indicators.get("timestamp", datetime.utcnow().isoformat())
+    fibonacci = indicators.get("fibonacci")
 
     # Get funding sentiment
     funding_sentiment = funding_data.get("sentiment") if funding_data else None
@@ -174,12 +215,11 @@ def detect_signal(
     # Check LONG signal
     if check_long_signal(indicators):
         # Block LONG if too many longs (high positive funding)
-        # When everyone is long, expect a dump
         if funding_sentiment == "too_many_longs":
             print(f"LONG signal blocked for {pair}: funding too positive (too many longs)")
             return None
 
-        tp, sl = calculate_tp_sl(entry_price, SignalType.LONG, atr=atr)
+        tp, sl = calculate_tp_sl(entry_price, SignalType.LONG, atr=atr, fibonacci=fibonacci)
         return Signal(
             pair=pair,
             signal_type=SignalType.LONG,
@@ -189,17 +229,17 @@ def detect_signal(
             timestamp=timestamp,
             indicators=indicators,
             funding_info=funding_data,
+            fibonacci_info=fibonacci,
         )
 
     # Check SHORT signal
     if check_short_signal(indicators):
         # Block SHORT if too many shorts (high negative funding)
-        # When everyone is short, expect a squeeze
         if funding_sentiment == "too_many_shorts":
             print(f"SHORT signal blocked for {pair}: funding too negative (too many shorts)")
             return None
 
-        tp, sl = calculate_tp_sl(entry_price, SignalType.SHORT, atr=atr)
+        tp, sl = calculate_tp_sl(entry_price, SignalType.SHORT, atr=atr, fibonacci=fibonacci)
         return Signal(
             pair=pair,
             signal_type=SignalType.SHORT,
@@ -209,6 +249,7 @@ def detect_signal(
             timestamp=timestamp,
             indicators=indicators,
             funding_info=funding_data,
+            fibonacci_info=fibonacci,
         )
 
     return None

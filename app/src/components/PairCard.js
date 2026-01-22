@@ -53,6 +53,18 @@ const PairCard = ({ pair, data, onPress }) => {
     return '⚖️';
   };
 
+  const getFiboColor = (quality) => {
+    if (quality === 'optimal') return '#00d4aa';
+    if (quality === 'good') return '#ffd93d';
+    return '#ff9f43';
+  };
+
+  const getFiboEmoji = (quality) => {
+    if (quality === 'optimal') return '🎯';
+    if (quality === 'good') return '👍';
+    return '⚠️';
+  };
+
   // Count met conditions for signal proximity
   const countLongConditions = () => {
     if (!indicators) return 0;
@@ -107,6 +119,26 @@ const PairCard = ({ pair, data, onPress }) => {
                   {getFundingLabel(funding.sentiment)}
                 </Text>
                 <Text style={styles.fundingRec}>{funding.recommendation}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Fibonacci Indicator */}
+          {indicators.fibonacci && (
+            <View style={styles.fiboContainer}>
+              <View style={styles.fiboHeader}>
+                <Text style={styles.fiboLabel}>Fibonacci</Text>
+                <Text style={[styles.fiboQuality, { color: getFiboColor(indicators.fibonacci.entry_quality) }]}>
+                  {getFiboEmoji(indicators.fibonacci.entry_quality)} {indicators.fibonacci.entry_quality === 'optimal' ? 'Óptimo' : indicators.fibonacci.entry_quality === 'good' ? 'Bueno' : 'Agresivo'}
+                </Text>
+              </View>
+              <View style={styles.fiboStatus}>
+                <Text style={styles.fiboLevel}>
+                  Nivel {indicators.fibonacci.closest_level_name}%: ${indicators.fibonacci.closest_level?.toLocaleString()}
+                </Text>
+                <Text style={[styles.fiboDistance, { color: indicators.fibonacci.distance_percent > 0 ? '#ff4757' : '#00d4aa' }]}>
+                  {indicators.fibonacci.distance_percent > 0 ? '+' : ''}{indicators.fibonacci.distance_percent?.toFixed(2)}%
+                </Text>
               </View>
             </View>
           )}
@@ -254,6 +286,39 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 11,
     flex: 1,
+  },
+  fiboContainer: {
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  fiboHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  fiboLabel: {
+    color: '#888',
+    fontSize: 12,
+  },
+  fiboQuality: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  fiboStatus: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  fiboLevel: {
+    color: '#aaa',
+    fontSize: 12,
+  },
+  fiboDistance: {
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   signalProximity: {
     backgroundColor: '#151525',
