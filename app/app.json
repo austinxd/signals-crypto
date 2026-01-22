@@ -11,12 +11,20 @@
       "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cryptosignals.app",
+      "bundleIdentifier": "com.austinxd.signalscrypto",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -24,7 +32,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.cryptosignals.app",
+      "package": "com.austinxd.signalscrypto",
       "useNextNotificationsApi": true
     },
     "plugins": [
@@ -37,8 +45,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "07235eeb-4402-411d-81fc-7e2e2d6bc03f"
       }
-    }
+    },
+    "owner": "austinxd"
   }
 }
