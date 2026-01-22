@@ -128,8 +128,13 @@ const PairCard = ({ pair, data, onPress }) => {
             <View style={styles.fiboContainer}>
               <View style={styles.fiboHeader}>
                 <Text style={styles.fiboLabel}>Fibonacci</Text>
-                <Text style={[styles.fiboQuality, { color: getFiboColor(indicators.fibonacci.entry_quality) }]}>
-                  {getFiboEmoji(indicators.fibonacci.entry_quality)} {indicators.fibonacci.entry_quality === 'optimal' ? 'Óptimo' : indicators.fibonacci.entry_quality === 'good' ? 'Bueno' : 'Agresivo'}
+                <Text style={[styles.fiboQuality, { color: indicators.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                  {indicators.fibonacci.is_uptrend ? '📈' : '📉'} {indicators.fibonacci.is_uptrend ? 'LONG' : 'SHORT'}
+                </Text>
+              </View>
+              <View style={styles.fiboStatus}>
+                <Text style={[styles.fiboEntryRec, { color: getFiboColor(indicators.fibonacci.entry_quality) }]}>
+                  {getFiboEmoji(indicators.fibonacci.entry_quality)} Entrada {indicators.fibonacci.entry_quality === 'optimal' ? 'Óptima' : indicators.fibonacci.entry_quality === 'good' ? 'Buena' : 'Agresiva'}
                 </Text>
               </View>
               <View style={styles.fiboStatus}>
@@ -311,6 +316,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  fiboEntryRec: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
   },
   fiboLevel: {
     color: '#aaa',

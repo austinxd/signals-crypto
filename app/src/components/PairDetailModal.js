@@ -264,22 +264,35 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
             {/* Fibonacci Levels */}
             {ind.fibonacci && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>📐 Niveles Fibonacci</Text>
+                <Text style={styles.sectionTitle}>📐 Análisis Fibonacci</Text>
                 <View style={styles.fiboBox}>
-                  <View style={styles.fiboInfoRow}>
-                    <Text style={styles.fiboInfoLabel}>Tendencia:</Text>
-                    <Text style={[styles.fiboInfoValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
-                      {ind.fibonacci.is_uptrend ? '📈 Alcista' : '📉 Bajista'}
+                  {/* Recommendation Banner */}
+                  <View style={[styles.fiboRecommendationBanner, {
+                    backgroundColor: ind.fibonacci.is_uptrend ? 'rgba(0, 212, 170, 0.15)' : 'rgba(255, 71, 87, 0.15)',
+                    borderColor: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757'
+                  }]}>
+                    <Text style={[styles.fiboRecPosition, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                      {ind.fibonacci.is_uptrend ? '📈 Favorable LONG' : '📉 Favorable SHORT'}
                     </Text>
-                  </View>
-                  <View style={styles.fiboInfoRow}>
-                    <Text style={styles.fiboInfoLabel}>Calidad entrada:</Text>
-                    <Text style={[styles.fiboInfoValue, {
+                    <Text style={[styles.fiboRecQuality, {
                       color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
                              ind.fibonacci.entry_quality === 'good' ? '#ffd93d' : '#ff9f43'
                     }]}>
-                      {ind.fibonacci.entry_quality === 'optimal' ? '🎯 Óptima' :
-                       ind.fibonacci.entry_quality === 'good' ? '👍 Buena' : '⚠️ Agresiva'}
+                      {ind.fibonacci.entry_quality === 'optimal' ? '🎯 Entrada Óptima' :
+                       ind.fibonacci.entry_quality === 'good' ? '👍 Entrada Buena' : '⚠️ Entrada Agresiva'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.fiboInfoRow}>
+                    <Text style={styles.fiboInfoLabel}>Tendencia (50 velas):</Text>
+                    <Text style={[styles.fiboInfoValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                      {ind.fibonacci.is_uptrend ? 'Alcista' : 'Bajista'}
+                    </Text>
+                  </View>
+                  <View style={styles.fiboInfoRow}>
+                    <Text style={styles.fiboInfoLabel}>Niveles Fibo actúan como:</Text>
+                    <Text style={styles.fiboInfoValue}>
+                      {ind.fibonacci.is_uptrend ? 'Soporte' : 'Resistencia'}
                     </Text>
                   </View>
                   <Text style={styles.fiboRec}>{ind.fibonacci.recommendation}</Text>
@@ -578,6 +591,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f0f1a',
     borderRadius: 12,
     padding: 16,
+  },
+  fiboRecommendationBanner: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  fiboRecPosition: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  fiboRecQuality: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   fiboInfoRow: {
     flexDirection: 'row',
