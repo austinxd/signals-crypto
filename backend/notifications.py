@@ -120,10 +120,34 @@ def send_test_notification(push_token: str) -> Dict[str, Any]:
 
 
 class NotificationManager:
-    """Manages push tokens and sending notifications."""
+    """Manages push tokens and sending notifications with file persistence."""
+
+    TOKENS_FILE = "tokens.json"
 
     def __init__(self):
         self.tokens: Dict[str, Dict[str, Any]] = {}  # token -> user settings
+        self._load_tokens()
+
+    def _load_tokens(self):
+        """Load tokens from file on startup."""
+        try:
+            with open(self.TOKENS_FILE, "r") as f:
+                self.tokens = json.load(f)
+                print(f"Loaded {len(self.tokens)} tokens from {self.TOKENS_FILE}")
+        except FileNotFoundError:
+            self.tokens = {}
+            print("No tokens file found, starting fresh")
+        except json.JSONDecodeError:
+            self.tokens = {}
+            print("Invalid tokens file, starting fresh")
+
+    def _save_tokens(self):
+        """Save tokens to file."""
+        try:
+            with open(self.TOKENS_FILE, "w") as f:
+                json.dump(self.tokens, f, indent=2)
+        except Exception as e:
+            print(f"Error saving tokens: {e}")
 
     def register_token(
         self,
@@ -140,12 +164,14 @@ class NotificationManager:
             "timeframe": timeframe or "4h",
             "enabled": True,
         }
+        self._save_tokens()
         return True
 
     def unregister_token(self, token: str) -> bool:
         """Remove a push token."""
         if token in self.tokens:
             del self.tokens[token]
+            self._save_tokens()
             return True
         return False
 
@@ -163,6 +189,7 @@ class NotificationManager:
             self.tokens[token]["pairs"] = pairs
         if timeframe is not None:
             self.tokens[token]["timeframe"] = timeframe
+        self._save_tokens()
         return True
 
     def get_tokens_for_pair(self, pair: str) -> List[str]:
