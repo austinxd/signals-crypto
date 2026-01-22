@@ -228,12 +228,12 @@ const SettingsScreen = () => {
         )}
         <View style={styles.buttonRow}>
           <TouchableOpacity
-            style={[styles.button, isRegistered && styles.buttonDisabled]}
+            style={styles.button}
             onPress={handleRegisterPush}
-            disabled={loading || isRegistered}
+            disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {isRegistered ? 'Registrado' : 'Registrar'}
+              {isRegistered ? 'Actualizar Registro' : 'Registrar'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
