@@ -11,6 +11,7 @@ import { getMarketData, getSignals, getUserPairs } from '../services/api';
 import { getNotificationHistory } from '../services/notifications';
 import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
+import PairDetailModal from '../components/PairDetailModal';
 
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
@@ -20,6 +21,8 @@ const HomeScreen = () => {
   const [userPairs, setUserPairs] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedPair, setSelectedPair] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
@@ -72,7 +75,15 @@ const HomeScreen = () => {
     if (activeTab === 'market') {
       console.log('Rendering market - userPairs:', userPairs, 'marketData keys:', Object.keys(marketData));
       return userPairs.map((pair) => (
-        <PairCard key={pair} pair={pair} data={marketData[pair]} />
+        <PairCard
+          key={pair}
+          pair={pair}
+          data={marketData[pair]}
+          onPress={() => {
+            setSelectedPair(pair);
+            setModalVisible(true);
+          }}
+        />
       ));
     }
 
@@ -137,6 +148,13 @@ const HomeScreen = () => {
       >
         {renderContent()}
       </ScrollView>
+
+      <PairDetailModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        pair={selectedPair}
+        data={selectedPair ? marketData[selectedPair] : null}
+      />
     </View>
   );
 };
