@@ -194,10 +194,34 @@ async def get_config():
 
 
 @app.get("/api/market")
-async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME):
+async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = False):
     """Get current market data for all pairs in a timeframe."""
     if timeframe not in AVAILABLE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
+
+    # If refresh requested, fetch fresh data for all active pairs
+    if refresh:
+        client = get_binance_client()
+        if timeframe not in market_data:
+            market_data[timeframe] = {}
+
+        for pair in active_pairs:
+            try:
+                df = client.fetch_ohlcv(pair, timeframe)
+                if df is None or len(df) < 200:
+                    continue
+                df = add_all_indicators(df)
+                indicators = get_latest_indicators(df)
+                if indicators:
+                    market_data[timeframe][pair] = {
+                        "pair": pair,
+                        "timeframe": timeframe,
+                        "price": indicators["price"],
+                        "indicators": indicators,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+            except Exception as e:
+                print(f"Error refreshing {pair}: {e}")
 
     data = market_data.get(timeframe, {})
     return {

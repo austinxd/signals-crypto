@@ -21,14 +21,14 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     try {
       setError(null);
       const pairs = await getUserPairs();
       setUserPairs(pairs);
 
       if (activeTab === 'market') {
-        const data = await getMarketData();
+        const data = await getMarketData(null, forceRefresh);
         console.log('Market data received:', JSON.stringify(data).substring(0, 200));
         console.log('Pairs keys:', Object.keys(data.pairs || {}));
         setMarketData(data.pairs || {});
@@ -53,7 +53,7 @@ const HomeScreen = () => {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchData(true); // Force refresh from Binance API
     setRefreshing(false);
   }, [fetchData]);
 

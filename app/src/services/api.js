@@ -7,7 +7,7 @@ const USER_TIMEFRAME_KEY = '@user_timeframe';
 
 // Default API URL (change this to your server's URL)
 // Use your computer's local IP when testing on physical device
-const DEFAULT_API_URL = 'http://192.168.1.157:8001';
+const DEFAULT_API_URL = 'http://149.56.23.98:8050';
 
 /**
  * Get the API URL
@@ -86,9 +86,9 @@ export async function getConfig() {
 /**
  * Get market data for all pairs
  */
-export async function getMarketData(timeframe = null) {
+export async function getMarketData(timeframe = null, refresh = false) {
   const tf = timeframe || (await getUserTimeframe());
-  return apiRequest(`/api/market?timeframe=${tf}`);
+  return apiRequest(`/api/market?timeframe=${tf}&refresh=${refresh}`);
 }
 
 /**
@@ -206,16 +206,12 @@ export async function setUserPairs(pairs) {
  * Get user's selected timeframe from local storage
  */
 export async function getUserTimeframe() {
-  // Force 4h for now since backend monitors this by default
-  return '4h';
-  /*
   try {
     const timeframe = await AsyncStorage.getItem(USER_TIMEFRAME_KEY);
     return timeframe || '4h';
   } catch {
     return '4h';
   }
-  */
 }
 
 /**
