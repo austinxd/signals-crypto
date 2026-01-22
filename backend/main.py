@@ -66,7 +66,10 @@ def get_all_monitored_pairs() -> Set[str]:
 
 def get_all_monitored_timeframes() -> Set[str]:
     """Get all timeframes that any user is monitoring."""
-    timeframes = {DEFAULT_TIMEFRAME}
+    # Monitor common timeframes by default
+    default_monitored = {"1h", "4h", "1d"}
+    timeframes = set(default_monitored)
+    # Also add any timeframes registered by users
     for settings in notification_manager.tokens.values():
         tf = settings.get("timeframe")
         if tf and tf in AVAILABLE_TIMEFRAMES:
