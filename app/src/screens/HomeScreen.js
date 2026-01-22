@@ -6,12 +6,14 @@ import {
   RefreshControl,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native';
-import { getMarketData, getSignals, getUserPairs } from '../services/api';
+import { getMarketData, getSignals, getUserPairs, getUserTimeframe } from '../services/api';
 import { getNotificationHistory } from '../services/notifications';
 import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
+import PairSelectorModal from '../components/PairSelectorModal';
 
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
@@ -19,10 +21,13 @@ const HomeScreen = () => {
   const [signals, setSignals] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [userPairs, setUserPairs] = useState([]);
+  const [timeframe, setTimeframe] = useState('4h');
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedPair, setSelectedPair] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [pairSelectorVisible, setPairSelectorVisible] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
@@ -30,11 +35,13 @@ const HomeScreen = () => {
       const pairs = await getUserPairs();
       setUserPairs(pairs);
 
+      const tf = await getUserTimeframe();
+      setTimeframe(tf);
+
       if (activeTab === 'market') {
         const data = await getMarketData(null, forceRefresh);
-        console.log('Market data received:', JSON.stringify(data).substring(0, 200));
-        console.log('Pairs keys:', Object.keys(data.pairs || {}));
         setMarketData(data.pairs || {});
+        setLastUpdate(new Date());
       } else if (activeTab === 'signals') {
         const data = await getSignals(20);
         setSignals(data.signals || []);
@@ -50,20 +57,26 @@ const HomeScreen = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData(true); // Force refresh from Binance API
+    await fetchData(true);
     setRefreshing(false);
   }, [fetchData]);
+
+  const handlePairsSaved = (newPairs) => {
+    setUserPairs(newPairs);
+    fetchData(true);
+  };
 
   const renderContent = () => {
     if (error) {
       return (
         <View style={styles.emptyState}>
+          <Text style={styles.errorIcon}>⚠️</Text>
           <Text style={styles.emptyText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
             <Text style={styles.retryText}>Reintentar</Text>
@@ -73,25 +86,37 @@ const HomeScreen = () => {
     }
 
     if (activeTab === 'market') {
-      console.log('Rendering market - userPairs:', userPairs, 'marketData keys:', Object.keys(marketData));
-      return userPairs.map((pair) => (
-        <PairCard
-          key={pair}
-          pair={pair}
-          data={marketData[pair]}
-          onPress={() => {
-            setSelectedPair(pair);
-            setModalVisible(true);
-          }}
-        />
-      ));
+      return (
+        <>
+          {userPairs.map((pair) => (
+            <PairCard
+              key={pair}
+              pair={pair}
+              data={marketData[pair]}
+              onPress={() => {
+                setSelectedPair(pair);
+                setModalVisible(true);
+              }}
+            />
+          ))}
+          <TouchableOpacity
+            style={styles.addPairButton}
+            onPress={() => setPairSelectorVisible(true)}
+          >
+            <Text style={styles.addPairIcon}>+</Text>
+            <Text style={styles.addPairText}>Agregar o quitar pares</Text>
+          </TouchableOpacity>
+        </>
+      );
     }
 
     if (activeTab === 'signals') {
       if (signals.length === 0) {
         return (
           <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📊</Text>
             <Text style={styles.emptyText}>No hay señales recientes</Text>
+            <Text style={styles.emptyHint}>Las señales aparecerán cuando se detecten oportunidades</Text>
           </View>
         );
       }
@@ -100,11 +125,12 @@ const HomeScreen = () => {
       ));
     }
 
-    // Notifications tab
     if (notifications.length === 0) {
       return (
         <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>🔔</Text>
           <Text style={styles.emptyText}>No hay notificaciones</Text>
+          <Text style={styles.emptyHint}>Las notificaciones push aparecerán aquí</Text>
         </View>
       );
     }
@@ -122,38 +148,79 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Señales Crypto</Text>
-        <Text style={styles.subtitle}>by austin</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.logoContainer}>
+            <View style={styles.logoIcon}>
+              <Text style={styles.logoIconText}>📈</Text>
+            </View>
+            <View>
+              <Text style={styles.title}>Señales Crypto</Text>
+              <Text style={styles.subtitle}>by austin</Text>
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <View style={styles.timeframeBadge}>
+              <Text style={styles.timeframeText}>{timeframe}</Text>
+            </View>
+          </View>
+        </View>
+        {lastUpdate && activeTab === 'market' && (
+          <Text style={styles.lastUpdate}>
+            Actualizado: {lastUpdate.toLocaleTimeString('es-ES')}
+          </Text>
+        )}
       </View>
 
+      {/* Tabs */}
       <View style={styles.tabs}>
-        {['market', 'signals', 'history'].map((tab) => (
+        {[
+          { key: 'market', label: 'Mercado', icon: '📊' },
+          { key: 'signals', label: 'Señales', icon: '🎯' },
+          { key: 'history', label: 'Historial', icon: '📜' },
+        ].map((tab) => (
           <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.activeTab]}
-            onPress={() => setActiveTab(tab)}
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+            onPress={() => setActiveTab(tab.key)}
           >
-            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
-              {tab === 'market' ? 'Mercado' : tab === 'signals' ? 'Señales' : 'Historial'}
+            <Text style={styles.tabIcon}>{tab.icon}</Text>
+            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
+              {tab.label}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* Content */}
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4aa" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#00d4aa"
+            colors={['#00d4aa']}
+          />
+        }
       >
         {renderContent()}
       </ScrollView>
 
+      {/* Modals */}
       <PairDetailModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         pair={selectedPair}
         data={selectedPair ? marketData[selectedPair] : null}
+      />
+
+      <PairSelectorModal
+        visible={pairSelectorVisible}
+        onClose={() => setPairSelectorVisible(false)}
+        onSave={handlePairsSaved}
       />
     </View>
   );
@@ -162,38 +229,88 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0f1a',
+    backgroundColor: '#0a0a14',
   },
   header: {
     paddingTop: 60,
     paddingBottom: 16,
     paddingHorizontal: 20,
+    backgroundColor: '#0f0f1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a2e',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#1a1a2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  logoIconText: {
+    fontSize: 24,
   },
   title: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
   },
   subtitle: {
     color: '#00d4aa',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  timeframeBadge: {
+    backgroundColor: '#00d4aa',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  timeframeText: {
+    color: '#0a0a14',
     fontSize: 14,
-    marginTop: 4,
+    fontWeight: 'bold',
+  },
+  lastUpdate: {
+    color: '#666',
+    fontSize: 11,
+    marginTop: 8,
   },
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f0f1a',
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: 12,
     marginHorizontal: 4,
-    backgroundColor: '#1e1e2e',
+    borderRadius: 12,
+    backgroundColor: '#1a1a2e',
   },
   activeTab: {
     backgroundColor: '#00d4aa',
+  },
+  tabIcon: {
+    fontSize: 16,
+    marginRight: 6,
   },
   tabText: {
     color: '#888',
@@ -201,7 +318,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#0f0f1a',
+    color: '#0a0a14',
   },
   content: {
     flex: 1,
@@ -213,25 +330,62 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  errorIcon: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   emptyText: {
     color: '#888',
     fontSize: 16,
+    textAlign: 'center',
+  },
+  emptyHint: {
+    color: '#555',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
   },
   retryButton: {
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    marginTop: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
     backgroundColor: '#00d4aa',
-    borderRadius: 8,
+    borderRadius: 12,
   },
   retryText: {
-    color: '#0f0f1a',
+    color: '#0a0a14',
     fontWeight: '600',
+    fontSize: 16,
+  },
+  addPairButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+    borderWidth: 2,
+    borderColor: '#2a2a4a',
+    borderStyle: 'dashed',
+  },
+  addPairIcon: {
+    color: '#00d4aa',
+    fontSize: 24,
+    marginRight: 8,
+  },
+  addPairText: {
+    color: '#888',
+    fontSize: 14,
   },
   notificationCard: {
-    backgroundColor: '#1e1e2e',
+    backgroundColor: '#1a1a2e',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -248,7 +402,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   notificationTime: {
-    color: '#888',
+    color: '#666',
     fontSize: 12,
   },
 });
