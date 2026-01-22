@@ -123,30 +123,65 @@ const PairCard = ({ pair, data, onPress }) => {
             </View>
           )}
 
-          {/* Fibonacci Indicator */}
-          {indicators.fibonacci && (
-            <View style={styles.fiboContainer}>
-              <View style={styles.fiboHeader}>
-                <Text style={styles.fiboLabel}>Fibonacci</Text>
-                <Text style={[styles.fiboQuality, { color: indicators.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
-                  {indicators.fibonacci.is_uptrend ? '📈' : '📉'} {indicators.fibonacci.is_uptrend ? 'LONG' : 'SHORT'}
-                </Text>
+          {/* Fibonacci Indicator with Trade Setup */}
+          {indicators.fibonacci && indicators.fibonacci.levels && (() => {
+            const fib = indicators.fibonacci;
+            const levels = Object.entries(fib.levels)
+              .map(([name, p]) => ({ name, price: p }))
+              .sort((a, b) => a.price - b.price);
+
+            const currentPrice = price;
+            const isLong = fib.is_uptrend;
+
+            const levelsBelow = levels.filter(l => l.price < currentPrice);
+            const levelsAbove = levels.filter(l => l.price > currentPrice);
+
+            let entry, stopLoss, takeProfit;
+
+            if (isLong) {
+              entry = levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null;
+              stopLoss = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : null;
+              takeProfit = levelsAbove.length > 1 ? levelsAbove[1] : (levelsAbove.length > 0 ? levelsAbove[0] : null);
+            } else {
+              entry = levelsAbove.length > 0 ? levelsAbove[0] : null;
+              stopLoss = levelsAbove.length > 1 ? levelsAbove[1] : null;
+              takeProfit = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : (levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null);
+            }
+
+            return (
+              <View style={styles.fiboContainer}>
+                <View style={styles.fiboHeader}>
+                  <Text style={[styles.fiboSetupType, { color: isLong ? '#00d4aa' : '#ff4757' }]}>
+                    {isLong ? '📈 LONG' : '📉 SHORT'}
+                  </Text>
+                  <Text style={[styles.fiboEntryRec, { color: getFiboColor(fib.entry_quality) }]}>
+                    {getFiboEmoji(fib.entry_quality)} {fib.entry_quality === 'optimal' ? 'Óptima' : fib.entry_quality === 'good' ? 'Buena' : 'Agresiva'}
+                  </Text>
+                </View>
+
+                <View style={styles.tradeSetupCompact}>
+                  <View style={styles.tradeSetupItem}>
+                    <Text style={styles.tradeSetupItemLabel}>📍 Entrada</Text>
+                    <Text style={styles.tradeSetupItemValue}>
+                      ${entry?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.tradeSetupItem}>
+                    <Text style={styles.tradeSetupItemLabel}>🎯 TP</Text>
+                    <Text style={[styles.tradeSetupItemValue, { color: '#00d4aa' }]}>
+                      ${takeProfit?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
+                    </Text>
+                  </View>
+                  <View style={styles.tradeSetupItem}>
+                    <Text style={styles.tradeSetupItemLabel}>🛑 SL</Text>
+                    <Text style={[styles.tradeSetupItemValue, { color: '#ff4757' }]}>
+                      ${stopLoss?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
+                    </Text>
+                  </View>
+                </View>
               </View>
-              <View style={styles.fiboStatus}>
-                <Text style={[styles.fiboEntryRec, { color: getFiboColor(indicators.fibonacci.entry_quality) }]}>
-                  {getFiboEmoji(indicators.fibonacci.entry_quality)} Entrada {indicators.fibonacci.entry_quality === 'optimal' ? 'Óptima' : indicators.fibonacci.entry_quality === 'good' ? 'Buena' : 'Agresiva'}
-                </Text>
-              </View>
-              <View style={styles.fiboStatus}>
-                <Text style={styles.fiboLevel}>
-                  Nivel {indicators.fibonacci.closest_level_name}%: ${indicators.fibonacci.closest_level?.toLocaleString()}
-                </Text>
-                <Text style={[styles.fiboDistance, { color: indicators.fibonacci.distance_percent > 0 ? '#ff4757' : '#00d4aa' }]}>
-                  {indicators.fibonacci.distance_percent > 0 ? '+' : ''}{indicators.fibonacci.distance_percent?.toFixed(2)}%
-                </Text>
-              </View>
-            </View>
-          )}
+            );
+          })()}
 
           <View style={styles.signalProximity}>
             <Text style={styles.proximityLabel}>Proximidad señal:</Text>
@@ -317,10 +352,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  fiboSetupType: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   fiboEntryRec: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 4,
+  },
+  tradeSetupCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
+  },
+  tradeSetupItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  tradeSetupItemLabel: {
+    color: '#666',
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  tradeSetupItemValue: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   fiboLevel: {
     color: '#aaa',
