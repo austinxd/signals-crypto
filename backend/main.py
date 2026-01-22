@@ -375,6 +375,25 @@ async def get_available_timeframes():
     }
 
 
+@app.get("/api/subscribers")
+async def get_subscribers():
+    """Get list of registered subscribers (tokens masked for security)."""
+    subscribers = []
+    for token, settings in notification_manager.tokens.items():
+        # Mask token for security (show first 20 and last 5 chars)
+        masked = token[:20] + "..." + token[-5:] if len(token) > 25 else token[:10] + "..."
+        subscribers.append({
+            "token_masked": masked,
+            "pairs": settings.get("pairs", DEFAULT_PAIRS),
+            "timeframe": settings.get("timeframe", DEFAULT_TIMEFRAME),
+            "enabled": settings.get("enabled", True),
+        })
+    return {
+        "total": len(subscribers),
+        "subscribers": subscribers,
+    }
+
+
 # For running directly
 if __name__ == "__main__":
     import uvicorn
