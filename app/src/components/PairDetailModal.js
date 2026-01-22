@@ -276,10 +276,10 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                     </Text>
                     <Text style={[styles.fiboRecQuality, {
                       color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
-                             ind.fibonacci.entry_quality === 'good' ? '#ffd93d' : '#ff9f43'
+                             ind.fibonacci.entry_quality === 'good' ? '#ffd93d' : '#ff4757'
                     }]}>
-                      {ind.fibonacci.entry_quality === 'optimal' ? '🎯 Entrada Óptima' :
-                       ind.fibonacci.entry_quality === 'good' ? '👍 Entrada Buena' : '⚠️ Entrada Agresiva'}
+                      {ind.fibonacci.entry_quality === 'optimal' ? '✅ Entrada Óptima' :
+                       ind.fibonacci.entry_quality === 'good' ? '⚠️ Con Precaución' : '🚫 No Operar'}
                     </Text>
                   </View>
 
