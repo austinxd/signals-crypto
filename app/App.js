@@ -6,6 +6,8 @@ import { Text, StyleSheet } from 'react-native';
 
 import HomeScreen from './src/screens/HomeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import { getStoredPushToken } from './src/services/notifications';
+import { registerPushToken, getUserPairs, getUserTimeframe } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
 
@@ -18,12 +20,26 @@ const SettingsIcon = ({ focused }) => (
   <Text style={[styles.icon, focused && styles.iconActive]}>⚙️</Text>
 );
 
+// Auto-sync push token with server on app startup
+async function syncPushToken() {
+  try {
+    const token = await getStoredPushToken();
+    if (token) {
+      const pairs = await getUserPairs();
+      const timeframe = await getUserTimeframe();
+      await registerPushToken(token, pairs, timeframe);
+      console.log('Push token synced with server');
+    }
+  } catch (error) {
+    console.log('Could not sync push token:', error.message);
+  }
+}
+
 export default function App() {
 
   useEffect(() => {
-    // Push notifications disabled in Expo Go - requires development build
-    // The app will still work for viewing market data and signals
-    console.log('App started - Push notifications require development build');
+    // Auto-sync push token on startup
+    syncPushToken();
   }, []);
 
   return (
