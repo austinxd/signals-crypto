@@ -131,7 +131,9 @@ const PairCard = ({ pair, data, onPress }) => {
               .sort((a, b) => a.price - b.price);
 
             const currentPrice = price;
-            const isLong = fib.is_uptrend;
+
+            // Use indicator signals to determine direction, not just Fibonacci trend
+            const isLong = longMet >= shortMet;
 
             const levelsBelow = levels.filter(l => l.price < currentPrice);
             const levelsAbove = levels.filter(l => l.price > currentPrice);

@@ -262,17 +262,24 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
             </View>
 
             {/* Fibonacci Levels */}
-            {ind.fibonacci && (
+            {ind.fibonacci && (() => {
+              // Use indicator signals to determine direction, not just Fibonacci trend
+              const fiboIsLong = longMet >= shortMet;
+
+              return (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>📐 Análisis Fibonacci</Text>
                 <View style={styles.fiboBox}>
-                  {/* Recommendation Banner */}
+                  {/* Recommendation Banner - based on indicators, not Fibo trend */}
                   <View style={[styles.fiboRecommendationBanner, {
-                    backgroundColor: ind.fibonacci.is_uptrend ? 'rgba(0, 212, 170, 0.15)' : 'rgba(255, 71, 87, 0.15)',
-                    borderColor: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757'
+                    backgroundColor: fiboIsLong ? 'rgba(0, 212, 170, 0.15)' : 'rgba(255, 71, 87, 0.15)',
+                    borderColor: fiboIsLong ? '#00d4aa' : '#ff4757'
                   }]}>
-                    <Text style={[styles.fiboRecPosition, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
-                      {ind.fibonacci.is_uptrend ? '📈 Favorable LONG' : '📉 Favorable SHORT'}
+                    <Text style={[styles.fiboRecPosition, { color: fiboIsLong ? '#00d4aa' : '#ff4757' }]}>
+                      {fiboIsLong ? '📈 Setup LONG' : '📉 Setup SHORT'}
+                    </Text>
+                    <Text style={styles.fiboRecSubtitle}>
+                      Basado en indicadores ({fiboIsLong ? longMet : shortMet}/5 condiciones)
                     </Text>
                     <Text style={[styles.fiboRecQuality, {
                       color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
@@ -290,7 +297,7 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                       .sort((a, b) => a.price - b.price);
 
                     const currentPrice = ind.price;
-                    const isLong = ind.fibonacci.is_uptrend;
+                    const isLong = fiboIsLong;
 
                     // Find levels above and below current price
                     const levelsBelow = levels.filter(l => l.price < currentPrice);
@@ -409,7 +416,8 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                   </View>
                 </View>
               </View>
-            )}
+              );
+            })()}
 
             {/* Raw Indicators */}
             <View style={styles.section}>
@@ -681,7 +689,12 @@ const styles = StyleSheet.create({
   fiboRecPosition: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  fiboRecSubtitle: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 6,
   },
   fiboRecQuality: {
     fontSize: 14,
