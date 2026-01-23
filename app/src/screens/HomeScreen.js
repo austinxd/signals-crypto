@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  Linking,
 } from 'react-native';
 import { getMarketData, getSignals, getUserPairs, getUserTimeframe } from '../services/api';
 import { getNotificationHistory } from '../services/notifications';
@@ -157,7 +158,13 @@ const HomeScreen = () => {
             </View>
             <View>
               <Text style={styles.title}>Señales Crypto</Text>
-              <Text style={styles.subtitle}>by austin</Text>
+              <TouchableOpacity
+                style={styles.subtitleLink}
+                onPress={() => Linking.openURL('https://www.facebook.com/austin.app')}
+              >
+                <Text style={styles.instagramIcon}>📷</Text>
+                <Text style={styles.subtitle}>@austin.app</Text>
+              </TouchableOpacity>
             </View>
           </View>
           <View style={styles.headerRight}>
@@ -265,10 +272,18 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
   },
+  subtitleLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  instagramIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
   subtitle: {
     color: '#00d4aa',
     fontSize: 12,
-    marginTop: 2,
   },
   headerRight: {
     alignItems: 'flex-end',
