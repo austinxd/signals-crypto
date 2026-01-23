@@ -160,7 +160,7 @@ const HomeScreen = () => {
               <Text style={styles.title}>Señales Crypto</Text>
               <TouchableOpacity
                 style={styles.subtitleLink}
-                onPress={() => Linking.openURL('https://www.facebook.com/austin.app')}
+                onPress={() => Linking.openURL('https://www.instagram.com/austin.app')}
               >
                 <Text style={styles.instagramIcon}>📷</Text>
                 <Text style={styles.subtitle}>@austin.app</Text>
