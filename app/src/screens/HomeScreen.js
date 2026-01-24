@@ -83,8 +83,8 @@ const HomeScreen = () => {
         setMarketData(data.pairs || {});
         setLastUpdate(new Date());
       } else if (activeTab === 'signals') {
-        // Get signals for user's subscribed pairs/timeframes
-        const data = await getSignals(20, null);
+        // Get signals filtered by user's subscriptions
+        const data = await getSignals(20, null, pushToken);
         setSignals(data.signals || []);
       } else {
         const history = await getNotificationHistory();

@@ -349,11 +349,36 @@ async def get_signals(
     timeframe: Optional[str] = None,
     pair: Optional[str] = None,
     min_score: Optional[float] = None,
+    token: Optional[str] = None,
 ):
-    """Get recent signals with optional filters."""
+    """Get recent signals with optional filters. If token provided, filter by user subscriptions."""
     signals = signal_history.get_recent_signals(limit * 5)  # Get more to filter
 
+    # If token provided, filter by user's subscriptions
+    user_pairs = set()
+    user_timeframes = set()
+    if token and notification_manager.use_db:
+        try:
+            db = get_db()
+            user = DBHelper.get_user_by_token(db, token)
+            if user:
+                # Get subscriptions for this user
+                subs = db.query(Subscription).filter(
+                    Subscription.user_id == user.id,
+                    Subscription.enabled == True
+                ).all()
+                for sub in subs:
+                    user_pairs.add(sub.pair)
+                    user_timeframes.add(sub.timeframe)
+            db.close()
+        except Exception as e:
+            print(f"Error getting user subscriptions for signals: {e}")
+
     # Apply filters
+    if user_pairs:
+        signals = [s for s in signals if s.get("pair") in user_pairs]
+    if user_timeframes:
+        signals = [s for s in signals if s.get("timeframe") in user_timeframes]
     if timeframe:
         signals = [s for s in signals if s.get("timeframe") == timeframe]
     if pair:
@@ -371,6 +396,7 @@ async def get_signals(
             "timeframe": timeframe,
             "pair": pair,
             "min_score": min_score,
+            "user_filtered": bool(user_pairs),
         }
     }
 

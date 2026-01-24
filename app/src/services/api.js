@@ -102,11 +102,17 @@ export async function getPairData(pair, timeframe = null) {
 }
 
 /**
- * Get recent signals
+ * Get recent signals (filtered by user subscriptions if token provided)
  */
-export async function getSignals(limit = 20, timeframe = null) {
-  const tf = timeframe || (await getUserTimeframe());
-  return apiRequest(`/api/signals?limit=${limit}&timeframe=${tf}`);
+export async function getSignals(limit = 20, timeframe = null, token = null) {
+  let url = `/api/signals?limit=${limit}`;
+  if (timeframe) {
+    url += `&timeframe=${timeframe}`;
+  }
+  if (token) {
+    url += `&token=${encodeURIComponent(token)}`;
+  }
+  return apiRequest(url);
 }
 
 /**
