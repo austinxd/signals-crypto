@@ -54,15 +54,15 @@ const PairCard = ({ pair, data, onPress }) => {
   };
 
   const getFiboColor = (quality) => {
-    if (quality === 'optimal') return '#00d4aa';
-    if (quality === 'good') return '#ffd93d';
-    return '#ff4757';
+    if (quality === 'optimal') return '#00d4aa';  // Óptima - green
+    if (quality === 'good') return '#ffd93d';     // Buena - yellow
+    return '#ff9f43';                              // Temprana - orange
   };
 
   const getFiboEmoji = (quality) => {
-    if (quality === 'optimal') return '✅';
-    if (quality === 'good') return '⚠️';
-    return '🚫';
+    if (quality === 'optimal') return '🔥';  // Óptima
+    if (quality === 'good') return '🟡';     // Buena
+    return '⚡';                              // Temprana
   };
 
   // Count met conditions for signal proximity
@@ -157,7 +157,7 @@ const PairCard = ({ pair, data, onPress }) => {
                     {isLong ? '📈 LONG' : '📉 SHORT'}
                   </Text>
                   <Text style={[styles.fiboEntryRec, { color: getFiboColor(fib.entry_quality) }]}>
-                    {getFiboEmoji(fib.entry_quality)} {fib.entry_quality === 'optimal' ? 'Óptima' : fib.entry_quality === 'good' ? 'Precaución' : 'No operar'}
+                    {getFiboEmoji(fib.entry_quality)} {fib.entry_quality === 'optimal' ? 'Óptima' : fib.entry_quality === 'good' ? 'Buena' : 'Temprana'}
                   </Text>
                 </View>
 

@@ -27,7 +27,7 @@ from notifications import NotificationManager, send_test_notification
 
 
 # Global state
-signal_history = SignalHistory(cooldown_seconds=SIGNAL_COOLDOWN)
+signal_history = SignalHistory()  # Dynamic cooldown based on signal quality
 notification_manager = NotificationManager()
 market_data: Dict[str, Dict[str, Dict[str, Any]]] = {}  # {timeframe: {pair: data}}
 monitoring_active = False

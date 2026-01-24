@@ -6,12 +6,33 @@ from typing import List, Dict, Any, Optional
 import json
 
 from config import EXPO_PUSH_URL
-from signals import Signal, SignalType
+from signals import Signal, SignalType, SignalQuality
+
+
+# Quality-based emojis and labels
+QUALITY_CONFIG = {
+    SignalQuality.OPTIMA: {
+        "emoji": "🔥",
+        "label": "ÓPTIMO",
+        "subtitle": "Alta confluencia técnica",
+    },
+    SignalQuality.BUENA: {
+        "emoji": "🟡",
+        "label": "",
+        "subtitle": "Momentum detectado",
+    },
+    SignalQuality.TEMPRANA: {
+        "emoji": "⚡",
+        "label": "TEMPRANO",
+        "subtitle": "Momentum iniciando",
+    },
+}
 
 
 def format_notification(signal: Signal) -> Dict[str, Any]:
     """
     Format a signal into a push notification payload.
+    New format with quality labels.
 
     Args:
         signal: Signal object
@@ -19,9 +40,38 @@ def format_notification(signal: Signal) -> Dict[str, Any]:
     Returns:
         Dict with notification data
     """
-    emoji = "🟢" if signal.signal_type == SignalType.LONG else "🔴"
-    title = f"{emoji} {signal.signal_type.value} {signal.pair}"
-    body = f"Entrada: ${signal.entry_price:,.2f} | TP: ${signal.take_profit:,.2f} | SL: ${signal.stop_loss:,.2f}"
+    # Get quality config
+    quality_info = QUALITY_CONFIG.get(signal.quality, QUALITY_CONFIG[SignalQuality.TEMPRANA])
+
+    # Direction emoji
+    direction_emoji = "🟢" if signal.signal_type == SignalType.LONG else "🔴"
+
+    # Build title based on quality
+    pair_short = signal.pair.replace("/USDT", "")
+
+    if signal.quality == SignalQuality.OPTIMA:
+        title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} {quality_info['label']} ({signal.timeframe})"
+    else:
+        title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} ({signal.timeframe})"
+
+    # Calculate percentages
+    tp_percent = abs((signal.take_profit - signal.entry_price) / signal.entry_price * 100)
+    sl_percent = abs((signal.stop_loss - signal.entry_price) / signal.entry_price * 100)
+
+    # Build body
+    lines = [
+        quality_info['subtitle'],
+        f"Calidad: {signal.quality.value} ({signal.score:.1f} pts)",
+        f"Entrada: ${signal.entry_price:,.2f}",
+        f"TP: ${signal.take_profit:,.2f} (+{tp_percent:.1f}%)",
+        f"SL: ${signal.stop_loss:,.2f} (-{sl_percent:.1f}%)",
+    ]
+
+    # Add warnings if any
+    if signal.warnings:
+        lines.append(signal.warnings[0])
+
+    body = "\n".join(lines)
 
     return {
         "title": title,
