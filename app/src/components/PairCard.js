@@ -14,11 +14,25 @@ const PairCard = ({ pair, data, onPress }) => {
   const { price, indicators, funding } = data;
 
   const formatPrice = (p) => {
+    if (p == null) return '$0.00';
+    // Use more decimals for small prices (< $1)
+    const decimals = p < 1 ? 4 : p < 10 ? 3 : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 2,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     }).format(p);
+  };
+
+  const formatPriceShort = (p) => {
+    if (p == null) return '$0';
+    // Smart formatting based on price magnitude
+    if (p < 0.01) return `$${p.toFixed(6)}`;
+    if (p < 1) return `$${p.toFixed(4)}`;
+    if (p < 10) return `$${p.toFixed(3)}`;
+    if (p < 1000) return `$${p.toFixed(2)}`;
+    return `$${p.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
   };
 
   const getRsiColor = (rsi) => {
@@ -200,21 +214,21 @@ const PairCard = ({ pair, data, onPress }) => {
                     <View style={styles.fiboLevelRow}>
                       <Text style={styles.fiboLevelLabel}>↑ Resistencia {nearestResistance.name}%</Text>
                       <Text style={[styles.fiboLevelPrice, { color: '#ff4757' }]}>
-                        ${nearestResistance.price.toLocaleString(undefined, {maximumFractionDigits: 0})} (+{resistanceDist?.toFixed(1)}%)
+                        {formatPriceShort(nearestResistance.price)} (+{resistanceDist?.toFixed(1)}%)
                       </Text>
                     </View>
                   )}
                   <View style={styles.fiboLevelRow}>
                     <Text style={styles.fiboLevelLabel}>● Precio actual</Text>
                     <Text style={styles.fiboLevelPriceCurrent}>
-                      ${currentPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                      {formatPriceShort(currentPrice)}
                     </Text>
                   </View>
                   {nearestSupport && (
                     <View style={styles.fiboLevelRow}>
                       <Text style={styles.fiboLevelLabel}>↓ Soporte {nearestSupport.name}%</Text>
                       <Text style={[styles.fiboLevelPrice, { color: '#00d4aa' }]}>
-                        ${nearestSupport.price.toLocaleString(undefined, {maximumFractionDigits: 0})} (-{supportDist?.toFixed(1)}%)
+                        {formatPriceShort(nearestSupport.price)} (-{supportDist?.toFixed(1)}%)
                       </Text>
                     </View>
                   )}
@@ -255,19 +269,19 @@ const PairCard = ({ pair, data, onPress }) => {
                       <View style={styles.tradeSetupItem}>
                         <Text style={styles.tradeSetupItemLabel}>📍 Entrada</Text>
                         <Text style={styles.tradeSetupItemValue}>
-                          ${entry?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                          {formatPriceShort(entry)}
                         </Text>
                       </View>
                       <View style={styles.tradeSetupItem}>
                         <Text style={styles.tradeSetupItemLabel}>🎯 TP ({tpPercent > 0 ? '+' : ''}{tpPercent.toFixed(1)}%)</Text>
                         <Text style={[styles.tradeSetupItemValue, { color: '#00d4aa' }]}>
-                          ${takeProfit?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                          {formatPriceShort(takeProfit)}
                         </Text>
                       </View>
                       <View style={styles.tradeSetupItem}>
                         <Text style={styles.tradeSetupItemLabel}>🛑 SL ({slPercent > 0 ? '+' : ''}{slPercent.toFixed(1)}%)</Text>
                         <Text style={[styles.tradeSetupItemValue, { color: '#ff4757' }]}>
-                          ${stopLoss?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                          {formatPriceShort(stopLoss)}
                         </Text>
                       </View>
                     </View>

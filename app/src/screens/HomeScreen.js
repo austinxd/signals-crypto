@@ -38,6 +38,15 @@ const getModeColor = (mode) => {
   }
 };
 
+const formatPrice = (p) => {
+  if (p == null) return '$0';
+  if (p < 0.01) return `$${p.toFixed(6)}`;
+  if (p < 1) return `$${p.toFixed(4)}`;
+  if (p < 10) return `$${p.toFixed(3)}`;
+  if (p < 1000) return `$${p.toFixed(2)}`;
+  return `$${p.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+};
+
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
   const [marketData, setMarketData] = useState({});
@@ -230,7 +239,7 @@ const HomeScreen = () => {
                     <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
                     <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
                     {price && (
-                      <Text style={styles.subscriptionPrice}>${price.toLocaleString()}</Text>
+                      <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
                     )}
                     {hasSignal && (
                       <View style={styles.signalDot} />

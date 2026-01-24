@@ -407,12 +407,15 @@ def detect_signal(
 
 
 class SignalHistory:
-    """Manages signal history and dynamic cooldowns."""
+    """Manages signal history and dynamic cooldowns using database."""
 
-    def __init__(self):
-        self.signals: List[Signal] = []
+    def __init__(self, use_db: bool = True):
+        self.use_db = use_db
+        # In-memory cache for cooldown tracking (fast lookups)
         self.last_signal_time: Dict[str, datetime] = {}
         self.last_signal_quality: Dict[str, SignalQuality] = {}
+        # Fallback in-memory storage if DB is not available
+        self._memory_signals: List[Signal] = []
 
     def can_send_signal(self, pair: str, quality: SignalQuality = SignalQuality.TEMPRANA) -> bool:
         """
@@ -441,16 +444,127 @@ class SignalHistory:
         return max(0, int(remaining))
 
     def add_signal(self, signal: Signal):
-        """Add a signal to history."""
-        self.signals.append(signal)
+        """Add a signal to history (database + memory cache)."""
         key = f"{signal.pair}_{signal.timeframe}"
         self.last_signal_time[key] = datetime.utcnow()
         self.last_signal_quality[key] = signal.quality
 
-        # Keep only last 100 signals
-        if len(self.signals) > 100:
-            self.signals = self.signals[-100:]
+        if self.use_db:
+            try:
+                from database import get_db, Signal as DBSignal, SignalQualityDB
+                db = get_db()
+
+                # Map quality to DB enum
+                quality_map = {
+                    SignalQuality.TEMPRANA: SignalQualityDB.TEMPRANA,
+                    SignalQuality.BUENA: SignalQualityDB.BUENA,
+                    SignalQuality.OPTIMA: SignalQualityDB.OPTIMA,
+                }
+
+                db_signal = DBSignal(
+                    pair=signal.pair,
+                    timeframe=signal.timeframe,
+                    side=signal.signal_type.value,
+                    quality=quality_map.get(signal.quality, SignalQualityDB.TEMPRANA),
+                    score=signal.score,
+                    score_details=signal.score_details,
+                    warnings=signal.warnings,
+                    entry_price=signal.entry_price,
+                    take_profit=signal.take_profit,
+                    stop_loss=signal.stop_loss,
+                    indicators=signal.indicators,
+                    funding_info=signal.funding_info,
+                    fibonacci_info=signal.fibonacci_info,
+                )
+                db.add(db_signal)
+                db.commit()
+                db.close()
+                print(f"Signal saved to database: {signal.pair} {signal.signal_type.value}")
+            except Exception as e:
+                print(f"Error saving signal to database: {e}")
+                # Fallback to memory
+                self._memory_signals.append(signal)
+        else:
+            self._memory_signals.append(signal)
+            if len(self._memory_signals) > 100:
+                self._memory_signals = self._memory_signals[-100:]
 
     def get_recent_signals(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get recent signals as list of dicts."""
-        return [s.to_dict() for s in reversed(self.signals[-limit:])]
+        """Get recent signals from database."""
+        if self.use_db:
+            try:
+                from database import get_db, Signal as DBSignal
+                db = get_db()
+                db_signals = db.query(DBSignal).order_by(DBSignal.created_at.desc()).limit(limit).all()
+                db.close()
+
+                # Convert DB signals to dict format
+                result = []
+                for s in db_signals:
+                    signal_dict = {
+                        "pair": s.pair,
+                        "side": s.side,
+                        "quality": s.quality.value if s.quality else "TEMPRANA",
+                        "score": round(s.score, 1) if s.score else 0,
+                        "score_details": s.score_details or {},
+                        "warnings": s.warnings or [],
+                        "entry": round(s.entry_price, 2) if s.entry_price else 0,
+                        "takeProfit": round(s.take_profit, 2) if s.take_profit else 0,
+                        "stopLoss": round(s.stop_loss, 2) if s.stop_loss else 0,
+                        "timestamp": s.created_at.isoformat() if s.created_at else "",
+                        "timeframe": s.timeframe or "4h",
+                        "indicators": s.indicators or {},
+                    }
+                    if s.funding_info:
+                        signal_dict["funding"] = s.funding_info
+                    if s.fibonacci_info:
+                        signal_dict["fibonacci"] = s.fibonacci_info
+                    result.append(signal_dict)
+                return result
+            except Exception as e:
+                print(f"Error getting signals from database: {e}")
+                # Fallback to memory
+                return [s.to_dict() for s in reversed(self._memory_signals[-limit:])]
+        else:
+            return [s.to_dict() for s in reversed(self._memory_signals[-limit:])]
+
+    def load_cooldowns_from_db(self):
+        """Load last signal times from database on startup."""
+        if not self.use_db:
+            return
+        try:
+            from database import get_db, Signal as DBSignal
+            db = get_db()
+            # Get the most recent signal for each pair/timeframe combo
+            from sqlalchemy import func
+
+            # Get unique pair/timeframe combinations with their latest signal
+            subq = db.query(
+                DBSignal.pair,
+                DBSignal.timeframe,
+                func.max(DBSignal.created_at).label('max_created')
+            ).group_by(DBSignal.pair, DBSignal.timeframe).subquery()
+
+            latest_signals = db.query(DBSignal).join(
+                subq,
+                (DBSignal.pair == subq.c.pair) &
+                (DBSignal.timeframe == subq.c.timeframe) &
+                (DBSignal.created_at == subq.c.max_created)
+            ).all()
+
+            quality_map = {
+                "TEMPRANA": SignalQuality.TEMPRANA,
+                "BUENA": SignalQuality.BUENA,
+                "OPTIMA": SignalQuality.OPTIMA,
+            }
+
+            for s in latest_signals:
+                key = f"{s.pair}_{s.timeframe}"
+                self.last_signal_time[key] = s.created_at
+                quality_str = s.quality.value if s.quality else "TEMPRANA"
+                self.last_signal_quality[key] = quality_map.get(quality_str, SignalQuality.TEMPRANA)
+
+            db.close()
+            print(f"Loaded cooldowns for {len(latest_signals)} pair/timeframe combinations from database")
+        except Exception as e:
+            print(f"Error loading cooldowns from database: {e}")

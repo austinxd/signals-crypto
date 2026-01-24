@@ -31,7 +31,7 @@ TRADING_MODES = ["conservative", "balanced", "aggressive"]
 
 
 # Global state
-signal_history = SignalHistory()  # Dynamic cooldown based on signal quality
+signal_history = SignalHistory(use_db=True)  # Uses database for persistence
 notification_manager = NotificationManager()
 market_data: Dict[str, Dict[str, Dict[str, Any]]] = {}  # {timeframe: {pair: data}}
 monitoring_active = False
@@ -214,6 +214,8 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         print("Database initialized")
+        # Load cooldown state from database (so cooldowns persist across restarts)
+        signal_history.load_cooldowns_from_db()
     except Exception as e:
         print(f"Database initialization failed (using JSON fallback): {e}")
 

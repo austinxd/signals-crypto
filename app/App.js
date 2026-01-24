@@ -1,12 +1,18 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text, StyleSheet } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 import HomeScreen from './src/screens/HomeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import { getStoredPushToken } from './src/services/notifications';
+import {
+  getStoredPushToken,
+  addNotificationListener,
+  addNotificationResponseListener,
+  saveNotificationFromResponse,
+} from './src/services/notifications';
 import { registerPushToken, getUserPairs, getUserTimeframe } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
