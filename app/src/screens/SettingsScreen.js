@@ -12,16 +12,8 @@ import {
 import {
   getApiUrl,
   setApiUrl,
-  getUserPairs,
-  setUserPairs,
-  getUserTimeframe,
-  setUserTimeframe,
-  getUserTradingMode,
-  setUserTradingMode,
   registerPushToken,
-  updatePreferences,
   sendTestNotification,
-  getConfig,
 } from '../services/api';
 import {
   registerForPushNotifications,
@@ -29,35 +21,9 @@ import {
   clearNotificationHistory,
 } from '../services/notifications';
 
-const TRADING_MODES = [
-  {
-    id: 'conservative',
-    name: 'Conservador',
-    emoji: '🔥',
-    description: 'Solo Mejor momento (score ≥ 2.5)',
-  },
-  {
-    id: 'balanced',
-    name: 'Balanceado',
-    emoji: '🟡',
-    description: 'Operable + Mejor momento (score ≥ 1.5)',
-  },
-  {
-    id: 'aggressive',
-    name: 'Agresivo',
-    emoji: '⚠️',
-    description: 'Todas las señales',
-  },
-];
-
 const SettingsScreen = () => {
   const [apiUrl, setApiUrlState] = useState('');
   const [pushToken, setPushToken] = useState(null);
-  const [selectedPairs, setSelectedPairs] = useState([]);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('4h');
-  const [selectedTradingMode, setSelectedTradingMode] = useState('balanced');
-  const [availablePairs, setAvailablePairs] = useState([]);
-  const [availableTimeframes, setAvailableTimeframes] = useState([]);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -69,36 +35,12 @@ const SettingsScreen = () => {
     try {
       setLoading(true);
 
-      // Load local settings
       const url = await getApiUrl();
       setApiUrlState(url);
 
       const token = await getStoredPushToken();
       setPushToken(token);
       if (token) setIsRegistered(true);
-
-      const pairs = await getUserPairs();
-      setSelectedPairs(pairs);
-
-      const timeframe = await getUserTimeframe();
-      setSelectedTimeframe(timeframe);
-
-      const tradingMode = await getUserTradingMode();
-      setSelectedTradingMode(tradingMode);
-
-      // Fetch available options from server
-      try {
-        const config = await getConfig();
-        setAvailablePairs(config.available_pairs || []);
-        setAvailableTimeframes(config.available_timeframes || ['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d']);
-      } catch (err) {
-        // Use defaults if server not available
-        setAvailablePairs([
-          'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT',
-          'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT',
-        ]);
-        setAvailableTimeframes(['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d']);
-      }
     } catch (err) {
       console.error('Error loading settings:', err);
     } finally {
@@ -110,7 +52,6 @@ const SettingsScreen = () => {
     try {
       await setApiUrl(apiUrl);
       Alert.alert('Guardado', 'URL del servidor actualizada');
-      loadSettings(); // Reload config from new server
     } catch (err) {
       Alert.alert('Error', 'No se pudo guardar la URL');
     }
@@ -122,9 +63,9 @@ const SettingsScreen = () => {
       const token = await registerForPushNotifications();
       if (token) {
         setPushToken(token);
-        await registerPushToken(token, selectedPairs, selectedTimeframe, selectedTradingMode);
+        await registerPushToken(token);
         setIsRegistered(true);
-        Alert.alert('Registrado', 'Notificaciones push activadas');
+        Alert.alert('Registrado', 'Notificaciones push activadas. Ahora agrega pares en Mercado.');
       } else {
         Alert.alert('Error', 'No se pudo obtener el token de notificaciones');
       }
@@ -147,57 +88,6 @@ const SettingsScreen = () => {
       Alert.alert('Error', 'No se pudo enviar la notificacion');
     }
     setLoading(false);
-  };
-
-  const togglePair = async (pair) => {
-    let newPairs;
-    if (selectedPairs.includes(pair)) {
-      newPairs = selectedPairs.filter((p) => p !== pair);
-    } else {
-      newPairs = [...selectedPairs, pair];
-    }
-
-    if (newPairs.length === 0) {
-      Alert.alert('Error', 'Debes seleccionar al menos un par');
-      return;
-    }
-
-    setSelectedPairs(newPairs);
-    await setUserPairs(newPairs);
-
-    if (pushToken && isRegistered) {
-      try {
-        await updatePreferences(pushToken, newPairs, selectedTimeframe, selectedTradingMode);
-      } catch (err) {
-        console.error('Error updating preferences:', err);
-      }
-    }
-  };
-
-  const selectTimeframe = async (tf) => {
-    setSelectedTimeframe(tf);
-    await setUserTimeframe(tf);
-
-    if (pushToken && isRegistered) {
-      try {
-        await updatePreferences(pushToken, selectedPairs, tf, selectedTradingMode);
-      } catch (err) {
-        console.error('Error updating timeframe:', err);
-      }
-    }
-  };
-
-  const selectTradingMode = async (mode) => {
-    setSelectedTradingMode(mode);
-    await setUserTradingMode(mode);
-
-    if (pushToken && isRegistered) {
-      try {
-        await updatePreferences(pushToken, selectedPairs, selectedTimeframe, mode);
-      } catch (err) {
-        console.error('Error updating trading mode:', err);
-      }
-    }
   };
 
   const handleClearHistory = async () => {
@@ -284,100 +174,11 @@ const SettingsScreen = () => {
             <Text style={styles.buttonText}>Probar</Text>
           </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Timeframe Selection */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Temporalidad</Text>
-        <Text style={styles.helperText}>
-          Selecciona el timeframe para las señales
-        </Text>
-        <View style={styles.timeframeGrid}>
-          {availableTimeframes.map((tf) => (
-            <TouchableOpacity
-              key={tf}
-              style={[
-                styles.timeframeChip,
-                selectedTimeframe === tf && styles.timeframeChipActive,
-              ]}
-              onPress={() => selectTimeframe(tf)}
-            >
-              <Text
-                style={[
-                  styles.timeframeChipText,
-                  selectedTimeframe === tf && styles.timeframeChipTextActive,
-                ]}
-              >
-                {tf}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Trading Mode */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Tipo de Señales</Text>
-        <Text style={styles.helperText}>
-          Selecciona qué señales quieres recibir
-        </Text>
-        <View style={styles.tradingModeList}>
-          {TRADING_MODES.map((mode) => (
-            <TouchableOpacity
-              key={mode.id}
-              style={[
-                styles.tradingModeItem,
-                selectedTradingMode === mode.id && styles.tradingModeItemActive,
-              ]}
-              onPress={() => selectTradingMode(mode.id)}
-            >
-              <View style={styles.tradingModeHeader}>
-                <Text style={styles.tradingModeEmoji}>{mode.emoji}</Text>
-                <Text
-                  style={[
-                    styles.tradingModeName,
-                    selectedTradingMode === mode.id && styles.tradingModeNameActive,
-                  ]}
-                >
-                  {mode.name}
-                </Text>
-                {selectedTradingMode === mode.id && (
-                  <Text style={styles.tradingModeCheck}>✓</Text>
-                )}
-              </View>
-              <Text style={styles.tradingModeDescription}>{mode.description}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Trading Pairs */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Pares de Trading</Text>
-        <Text style={styles.helperText}>
-          Selecciona los pares para recibir señales ({selectedPairs.length} seleccionados)
-        </Text>
-        <View style={styles.pairsGrid}>
-          {availablePairs.map((pair) => (
-            <TouchableOpacity
-              key={pair}
-              style={[
-                styles.pairChip,
-                selectedPairs.includes(pair) && styles.pairChipActive,
-              ]}
-              onPress={() => togglePair(pair)}
-            >
-              <Text
-                style={[
-                  styles.pairChipText,
-                  selectedPairs.includes(pair) && styles.pairChipTextActive,
-                ]}
-              >
-                {pair.replace('/USDT', '')}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {isRegistered && (
+          <Text style={styles.hintText}>
+            Configura tus pares y notificaciones en la pestaña Mercado
+          </Text>
+        )}
       </View>
 
       {/* Data Management */}
@@ -393,8 +194,10 @@ const SettingsScreen = () => {
         <Text style={styles.sectionTitle}>Informacion</Text>
         <Text style={styles.infoText}>Version: 1.0.0</Text>
         <Text style={styles.infoText}>Mercado: Binance Futures USDT-M</Text>
-        <Text style={styles.infoText}>Timeframe: {selectedTimeframe}</Text>
-        <Text style={styles.infoText}>Estrategia: EMA200 + RSI + MACD + Vol</Text>
+        <Text style={styles.infoText}>Estrategia: EMA200 + RSI + MACD + Vol + Fibo</Text>
+        <Text style={styles.infoTextHint}>
+          Los pares, temporalidades y tipo de notificaciones se configuran individualmente en Mercado.
+        </Text>
       </View>
     </ScrollView>
   );
@@ -445,6 +248,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
   },
+  hintText: {
+    color: '#00d4aa',
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: 'center',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -494,108 +303,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
     marginRight: 0,
   },
-  buttonDisabled: {
-    backgroundColor: '#333',
-  },
   buttonText: {
     color: '#fff',
     fontWeight: '600',
-  },
-  timeframeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  timeframeChip: {
-    backgroundColor: '#0f0f1a',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  timeframeChipActive: {
-    backgroundColor: '#00d4aa',
-    borderColor: '#00d4aa',
-  },
-  timeframeChipText: {
-    color: '#888',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  timeframeChipTextActive: {
-    color: '#0f0f1a',
-  },
-  pairsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  pairChip: {
-    backgroundColor: '#0f0f1a',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  pairChipActive: {
-    backgroundColor: '#00d4aa',
-    borderColor: '#00d4aa',
-  },
-  pairChipText: {
-    color: '#888',
-    fontWeight: '600',
-  },
-  pairChipTextActive: {
-    color: '#0f0f1a',
-  },
-  tradingModeList: {
-    marginTop: 8,
-  },
-  tradingModeItem: {
-    backgroundColor: '#0f0f1a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: '#333',
-  },
-  tradingModeItemActive: {
-    borderColor: '#00d4aa',
-    backgroundColor: '#0f1a1a',
-  },
-  tradingModeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  tradingModeEmoji: {
-    fontSize: 20,
-    marginRight: 10,
-  },
-  tradingModeName: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  tradingModeNameActive: {
-    color: '#fff',
-  },
-  tradingModeCheck: {
-    color: '#00d4aa',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  tradingModeDescription: {
-    color: '#666',
-    fontSize: 13,
-    marginLeft: 30,
   },
   dangerButton: {
     backgroundColor: '#ff4757',
@@ -611,6 +321,12 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginBottom: 4,
+  },
+  infoTextHint: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 });
 
