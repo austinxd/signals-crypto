@@ -52,6 +52,14 @@ const HomeScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [expandedSubs, setExpandedSubs] = useState({});  // Track expanded subscriptions
+
+  const toggleExpanded = (subId) => {
+    setExpandedSubs(prev => ({
+      ...prev,
+      [subId]: !prev[subId]
+    }));
+  };
 
   // Get push token on mount
   useEffect(() => {
@@ -202,37 +210,63 @@ const HomeScreen = () => {
         <>
           {subscriptions.map((sub) => {
             const modeInfo = TRADING_MODE_LABELS[sub.trading_mode] || TRADING_MODE_LABELS.balanced;
+            const isExpanded = expandedSubs[sub.id] !== false; // Default expanded
+            const pairData = marketData[`${sub.pair}_${sub.timeframe}`];
+            const price = pairData?.price;
+            const hasSignal = pairData?.indicators && (
+              (pairData.indicators.price_above_ema && pairData.indicators.rsi_rising) ||
+              (!pairData.indicators.price_above_ema && pairData.indicators.rsi_falling)
+            );
+
             return (
               <View key={sub.id} style={styles.subscriptionWrapper}>
-                {/* Subscription header with badges */}
-                <View style={styles.subscriptionHeader}>
-                  <View style={styles.subscriptionBadges}>
-                    <View style={styles.timeframeBadgeSmall}>
-                      <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
-                    </View>
-                    <View style={[styles.modeBadge, { backgroundColor: getModeColor(sub.trading_mode) }]}>
-                      <Text style={styles.modeBadgeText}>
-                        {modeInfo.emoji} {modeInfo.label}
-                      </Text>
-                    </View>
+                {/* Compact header - always visible */}
+                <TouchableOpacity
+                  style={styles.subscriptionHeader}
+                  onPress={() => toggleExpanded(sub.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.subscriptionLeft}>
+                    <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+                    <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
+                    {price && (
+                      <Text style={styles.subscriptionPrice}>${price.toLocaleString()}</Text>
+                    )}
+                    {hasSignal && (
+                      <View style={styles.signalDot} />
+                    )}
                   </View>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleRemoveSubscription(sub.id)}
-                  >
-                    <Text style={styles.deleteText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-                <PairCard
-                  pair={sub.pair}
-                  data={marketData[`${sub.pair}_${sub.timeframe}`]}
-                  timeframe={sub.timeframe}
-                  onPress={() => {
-                    setSelectedPair(sub.pair);
-                    setSelectedSubscription(sub);
-                    setModalVisible(true);
-                  }}
-                />
+                  <View style={styles.subscriptionRight}>
+                    <View style={styles.subscriptionBadges}>
+                      <View style={styles.timeframeBadgeSmall}>
+                        <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                      </View>
+                      <View style={[styles.modeBadgeSmall, { backgroundColor: getModeColor(sub.trading_mode) }]}>
+                        <Text style={styles.modeBadgeTextSmall}>{modeInfo.emoji}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleRemoveSubscription(sub.id)}
+                    >
+                      <Text style={styles.deleteText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Expanded content */}
+                {isExpanded && (
+                  <PairCard
+                    pair={sub.pair}
+                    data={pairData}
+                    timeframe={sub.timeframe}
+                    onPress={() => {
+                      setSelectedPair(sub.pair);
+                      setSelectedSubscription(sub);
+                      setModalVisible(true);
+                    }}
+                  />
+                )}
               </View>
             );
           })}
@@ -524,51 +558,84 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   subscriptionWrapper: {
-    marginBottom: 4,
+    marginBottom: 8,
   },
   subscriptionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 4,
-    marginBottom: 6,
+    backgroundColor: '#1a1a2e',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  subscriptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  expandIcon: {
+    color: '#666',
+    fontSize: 10,
+    marginRight: 10,
+  },
+  subscriptionPairName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  subscriptionPrice: {
+    color: '#888',
+    fontSize: 14,
+  },
+  signalDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00d4aa',
+    marginLeft: 8,
+  },
+  subscriptionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   subscriptionBadges: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   timeframeBadgeSmall: {
     backgroundColor: '#00d4aa',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   timeframeBadgeText: {
     color: '#0a0a14',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
   },
-  modeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+  modeBadgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
-  modeBadgeText: {
-    color: '#0a0a14',
+  modeBadgeTextSmall: {
     fontSize: 12,
-    fontWeight: '600',
   },
   deleteButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#2a2a4a',
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteText: {
     color: '#ff4757',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   addFirstButton: {
