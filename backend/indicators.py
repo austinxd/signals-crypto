@@ -240,6 +240,13 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     latest = df.iloc[-1]
     previous = df.iloc[-2]
 
+    # Smoothed RSI detection using 3-period average to reduce noise
+    # Instead of just comparing latest vs previous, we compare:
+    # latest RSI vs average of last 3 RSI values (excluding current)
+    rsi_last_3 = df["rsi"].iloc[-4:-1].mean()  # Average of 3 candles before current
+    rsi_smoothed_rising = latest["rsi"] > rsi_last_3
+    rsi_smoothed_falling = latest["rsi"] < rsi_last_3
+
     result = {
         "price": latest["close"],
         "ema_200": latest["ema_200"],
@@ -247,9 +254,10 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         "rsi": latest["rsi"],
         "rsi_previous": previous["rsi"],
         "rsi_ma": latest["rsi_ma"],
+        "rsi_avg_3": rsi_last_3,  # For debugging
         "rsi_above_ma": latest["rsi"] > latest["rsi_ma"],
-        "rsi_rising": latest["rsi"] > previous["rsi"],
-        "rsi_falling": latest["rsi"] < previous["rsi"],
+        "rsi_rising": rsi_smoothed_rising,  # Now uses 3-period average
+        "rsi_falling": rsi_smoothed_falling,  # Now uses 3-period average
         "macd": latest["macd"],
         "macd_signal": latest["macd_signal"],
         "macd_previous": previous["macd"],

@@ -18,12 +18,16 @@ from config import (
     AVAILABLE_TIMEFRAMES,
     DEFAULT_TIMEFRAME,
     POLL_INTERVAL,
-    SIGNAL_COOLDOWN,
 )
 from binance_client import get_binance_client
 from indicators import add_all_indicators, get_latest_indicators
 from signals import detect_signal, SignalHistory
 from notifications import NotificationManager, send_test_notification
+from database import init_db, get_db, DBHelper
+
+
+# Available trading modes
+TRADING_MODES = ["conservative", "balanced", "aggressive"]
 
 
 # Global state
@@ -40,12 +44,14 @@ class TokenRegistration(BaseModel):
     token: str
     pairs: Optional[List[str]] = None
     timeframe: Optional[str] = None
+    trading_mode: Optional[str] = "balanced"
 
 
 class PreferencesUpdate(BaseModel):
     token: str
     pairs: Optional[List[str]] = None
     timeframe: Optional[str] = None
+    trading_mode: Optional[str] = None
 
 
 class TestNotification(BaseModel):
@@ -59,8 +65,21 @@ class UserSettings(BaseModel):
 def get_all_monitored_pairs() -> Set[str]:
     """Get all pairs that any user is monitoring."""
     pairs = set(DEFAULT_PAIRS)
-    for settings in notification_manager.tokens.values():
-        pairs.update(settings.get("pairs", []))
+
+    if notification_manager.use_db:
+        try:
+            db = get_db()
+            users = DBHelper.get_all_users(db)
+            for user in users:
+                if user.pairs:
+                    pairs.update(user.pairs)
+            db.close()
+        except Exception as e:
+            print(f"Error getting monitored pairs from DB: {e}")
+    else:
+        for settings in notification_manager.tokens.values():
+            pairs.update(settings.get("pairs", []))
+
     return pairs
 
 
@@ -69,11 +88,23 @@ def get_all_monitored_timeframes() -> Set[str]:
     # Monitor common timeframes by default (including short-term)
     default_monitored = {"15m", "30m", "1h", "4h", "1d"}
     timeframes = set(default_monitored)
-    # Also add any timeframes registered by users
-    for settings in notification_manager.tokens.values():
-        tf = settings.get("timeframe")
-        if tf and tf in AVAILABLE_TIMEFRAMES:
-            timeframes.add(tf)
+
+    if notification_manager.use_db:
+        try:
+            db = get_db()
+            users = DBHelper.get_all_users(db)
+            for user in users:
+                if user.timeframe and user.timeframe in AVAILABLE_TIMEFRAMES:
+                    timeframes.add(user.timeframe)
+            db.close()
+        except Exception as e:
+            print(f"Error getting monitored timeframes from DB: {e}")
+    else:
+        for settings in notification_manager.tokens.values():
+            tf = settings.get("timeframe")
+            if tf and tf in AVAILABLE_TIMEFRAMES:
+                timeframes.add(tf)
+
     return timeframes
 
 
@@ -134,7 +165,7 @@ def monitor_markets():
                             result = notification_manager.send_signal_to_subscribers(
                                 signal, pair, timeframe
                             )
-                            print(f"Signal: {signal.signal_type.value} {pair} ({timeframe})")
+                            print(f"Signal: {signal.signal_type.value} {pair} ({timeframe}) - {signal.quality.value}")
                             print(f"Notification result: {result}")
 
                 except Exception as e:
@@ -150,6 +181,13 @@ def monitor_markets():
 # Lifespan management
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize database
+    try:
+        init_db()
+        print("Database initialized")
+    except Exception as e:
+        print(f"Database initialization failed (using JSON fallback): {e}")
+
     # Start background monitoring
     monitor_thread = threading.Thread(target=monitor_markets, daemon=True)
     monitor_thread.start()
@@ -165,7 +203,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Crypto Signals API",
     description="API for crypto trading signals with push notifications",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -186,6 +224,7 @@ async def root():
     return {
         "status": "ok",
         "monitoring": monitoring_active,
+        "database": notification_manager.use_db,
         "active_pairs": list(active_pairs),
         "active_timeframes": list(active_timeframes),
     }
@@ -197,8 +236,10 @@ async def get_config():
     return {
         "available_pairs": AVAILABLE_PAIRS,
         "available_timeframes": list(AVAILABLE_TIMEFRAMES.keys()),
+        "available_trading_modes": TRADING_MODES,
         "default_pairs": DEFAULT_PAIRS,
         "default_timeframe": DEFAULT_TIMEFRAME,
+        "default_trading_mode": "balanced",
     }
 
 
@@ -287,6 +328,7 @@ async def register_token(data: TokenRegistration):
     """Register a push token for notifications."""
     pairs = data.pairs or DEFAULT_PAIRS
     timeframe = data.timeframe or DEFAULT_TIMEFRAME
+    trading_mode = data.trading_mode or "balanced"
 
     # Validate pairs
     invalid_pairs = [p for p in pairs if p not in AVAILABLE_PAIRS]
@@ -297,7 +339,11 @@ async def register_token(data: TokenRegistration):
     if timeframe not in AVAILABLE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
 
-    success = notification_manager.register_token(data.token, pairs, timeframe)
+    # Validate trading mode
+    if trading_mode not in TRADING_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid trading mode: {trading_mode}")
+
+    success = notification_manager.register_token(data.token, pairs, timeframe, trading_mode)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid push token")
 
@@ -305,6 +351,7 @@ async def register_token(data: TokenRegistration):
         "status": "registered",
         "pairs": pairs,
         "timeframe": timeframe,
+        "trading_mode": trading_mode,
     }
 
 
@@ -317,7 +364,7 @@ async def unregister_token(data: TokenRegistration):
 
 @app.post("/api/preferences")
 async def update_preferences(data: PreferencesUpdate):
-    """Update notification preferences (pairs and/or timeframe)."""
+    """Update notification preferences (pairs, timeframe, and/or trading mode)."""
     # Validate pairs if provided
     if data.pairs:
         invalid_pairs = [p for p in data.pairs if p not in AVAILABLE_PAIRS]
@@ -328,30 +375,37 @@ async def update_preferences(data: PreferencesUpdate):
     if data.timeframe and data.timeframe not in AVAILABLE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"Invalid timeframe: {data.timeframe}")
 
+    # Validate trading mode if provided
+    if data.trading_mode and data.trading_mode not in TRADING_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid trading mode: {data.trading_mode}")
+
     success = notification_manager.update_preferences(
-        data.token, data.pairs, data.timeframe
+        data.token, data.pairs, data.timeframe, data.trading_mode
     )
     if not success:
         raise HTTPException(status_code=404, detail="Token not found. Register first.")
 
-    settings = notification_manager.tokens.get(data.token, {})
+    # Get updated settings
+    settings = notification_manager.get_user_settings(data.token)
     return {
         "status": "updated",
-        "pairs": settings.get("pairs"),
-        "timeframe": settings.get("timeframe"),
+        "pairs": settings.get("pairs") if settings else None,
+        "timeframe": settings.get("timeframe") if settings else None,
+        "trading_mode": settings.get("trading_mode") if settings else None,
     }
 
 
 @app.post("/api/settings")
 async def get_user_settings(data: UserSettings):
     """Get current settings for a registered token."""
-    if data.token not in notification_manager.tokens:
+    settings = notification_manager.get_user_settings(data.token)
+    if not settings:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    settings = notification_manager.tokens[data.token]
     return {
         "pairs": settings.get("pairs", DEFAULT_PAIRS),
         "timeframe": settings.get("timeframe", DEFAULT_TIMEFRAME),
+        "trading_mode": settings.get("trading_mode", "balanced"),
         "enabled": settings.get("enabled", True),
     }
 
@@ -383,19 +437,38 @@ async def get_available_timeframes():
     }
 
 
+@app.get("/api/trading-modes")
+async def get_trading_modes():
+    """Get list of available trading modes with descriptions."""
+    return {
+        "modes": [
+            {
+                "id": "conservative",
+                "name": "Conservador",
+                "description": "Solo señales óptimas (score >= 2.5)",
+                "min_score": 2.5,
+            },
+            {
+                "id": "balanced",
+                "name": "Balanceado",
+                "description": "Señales buenas y óptimas (score >= 1.5)",
+                "min_score": 1.5,
+            },
+            {
+                "id": "aggressive",
+                "name": "Agresivo",
+                "description": "Todas las señales (incluyendo tempranas)",
+                "min_score": 0,
+            },
+        ],
+        "default": "balanced",
+    }
+
+
 @app.get("/api/subscribers")
 async def get_subscribers():
     """Get list of registered subscribers (tokens masked for security)."""
-    subscribers = []
-    for token, settings in notification_manager.tokens.items():
-        # Mask token for security (show first 20 and last 5 chars)
-        masked = token[:20] + "..." + token[-5:] if len(token) > 25 else token[:10] + "..."
-        subscribers.append({
-            "token_masked": masked,
-            "pairs": settings.get("pairs", DEFAULT_PAIRS),
-            "timeframe": settings.get("timeframe", DEFAULT_TIMEFRAME),
-            "enabled": settings.get("enabled", True),
-        })
+    subscribers = notification_manager.get_all_subscribers()
     return {
         "total": len(subscribers),
         "subscribers": subscribers,
