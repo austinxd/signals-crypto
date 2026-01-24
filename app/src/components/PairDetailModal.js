@@ -330,7 +330,7 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
             {/* Fibonacci Levels */}
             {ind.fibonacci && (() => {
               // Use indicator signals to determine direction, not just Fibonacci trend
-              const fiboIsLong = longMet >= shortMet;
+              const fiboIsLong = longBaseMet >= shortBaseMet;
 
               return (
               <View style={styles.section}>
@@ -345,7 +345,7 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                       {fiboIsLong ? '📈 Setup LONG' : '📉 Setup SHORT'}
                     </Text>
                     <Text style={styles.fiboRecSubtitle}>
-                      Basado en indicadores ({fiboIsLong ? longMet : shortMet}/5 condiciones)
+                      Basado en condiciones base ({fiboIsLong ? longBaseMet : shortBaseMet}/2)
                     </Text>
                     <Text style={[styles.fiboRecQuality, {
                       color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
