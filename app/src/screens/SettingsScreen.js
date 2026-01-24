@@ -16,6 +16,8 @@ import {
   setUserPairs,
   getUserTimeframe,
   setUserTimeframe,
+  getUserTradingMode,
+  setUserTradingMode,
   registerPushToken,
   updatePreferences,
   sendTestNotification,
@@ -27,11 +29,33 @@ import {
   clearNotificationHistory,
 } from '../services/notifications';
 
+const TRADING_MODES = [
+  {
+    id: 'conservative',
+    name: 'Conservador',
+    emoji: '🔥',
+    description: 'Solo Mejor momento (score ≥ 2.5)',
+  },
+  {
+    id: 'balanced',
+    name: 'Balanceado',
+    emoji: '🟡',
+    description: 'Operable + Mejor momento (score ≥ 1.5)',
+  },
+  {
+    id: 'aggressive',
+    name: 'Agresivo',
+    emoji: '⚠️',
+    description: 'Todas las señales',
+  },
+];
+
 const SettingsScreen = () => {
   const [apiUrl, setApiUrlState] = useState('');
   const [pushToken, setPushToken] = useState(null);
   const [selectedPairs, setSelectedPairs] = useState([]);
   const [selectedTimeframe, setSelectedTimeframe] = useState('4h');
+  const [selectedTradingMode, setSelectedTradingMode] = useState('balanced');
   const [availablePairs, setAvailablePairs] = useState([]);
   const [availableTimeframes, setAvailableTimeframes] = useState([]);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -58,6 +82,9 @@ const SettingsScreen = () => {
 
       const timeframe = await getUserTimeframe();
       setSelectedTimeframe(timeframe);
+
+      const tradingMode = await getUserTradingMode();
+      setSelectedTradingMode(tradingMode);
 
       // Fetch available options from server
       try {
@@ -95,7 +122,7 @@ const SettingsScreen = () => {
       const token = await registerForPushNotifications();
       if (token) {
         setPushToken(token);
-        await registerPushToken(token, selectedPairs, selectedTimeframe);
+        await registerPushToken(token, selectedPairs, selectedTimeframe, selectedTradingMode);
         setIsRegistered(true);
         Alert.alert('Registrado', 'Notificaciones push activadas');
       } else {
@@ -140,7 +167,7 @@ const SettingsScreen = () => {
 
     if (pushToken && isRegistered) {
       try {
-        await updatePreferences(pushToken, newPairs, selectedTimeframe);
+        await updatePreferences(pushToken, newPairs, selectedTimeframe, selectedTradingMode);
       } catch (err) {
         console.error('Error updating preferences:', err);
       }
@@ -153,9 +180,22 @@ const SettingsScreen = () => {
 
     if (pushToken && isRegistered) {
       try {
-        await updatePreferences(pushToken, selectedPairs, tf);
+        await updatePreferences(pushToken, selectedPairs, tf, selectedTradingMode);
       } catch (err) {
         console.error('Error updating timeframe:', err);
+      }
+    }
+  };
+
+  const selectTradingMode = async (mode) => {
+    setSelectedTradingMode(mode);
+    await setUserTradingMode(mode);
+
+    if (pushToken && isRegistered) {
+      try {
+        await updatePreferences(pushToken, selectedPairs, selectedTimeframe, mode);
+      } catch (err) {
+        console.error('Error updating trading mode:', err);
       }
     }
   };
@@ -270,6 +310,42 @@ const SettingsScreen = () => {
               >
                 {tf}
               </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Trading Mode */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Tipo de Señales</Text>
+        <Text style={styles.helperText}>
+          Selecciona qué señales quieres recibir
+        </Text>
+        <View style={styles.tradingModeList}>
+          {TRADING_MODES.map((mode) => (
+            <TouchableOpacity
+              key={mode.id}
+              style={[
+                styles.tradingModeItem,
+                selectedTradingMode === mode.id && styles.tradingModeItemActive,
+              ]}
+              onPress={() => selectTradingMode(mode.id)}
+            >
+              <View style={styles.tradingModeHeader}>
+                <Text style={styles.tradingModeEmoji}>{mode.emoji}</Text>
+                <Text
+                  style={[
+                    styles.tradingModeName,
+                    selectedTradingMode === mode.id && styles.tradingModeNameActive,
+                  ]}
+                >
+                  {mode.name}
+                </Text>
+                {selectedTradingMode === mode.id && (
+                  <Text style={styles.tradingModeCheck}>✓</Text>
+                )}
+              </View>
+              <Text style={styles.tradingModeDescription}>{mode.description}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -477,6 +553,49 @@ const styles = StyleSheet.create({
   },
   pairChipTextActive: {
     color: '#0f0f1a',
+  },
+  tradingModeList: {
+    marginTop: 8,
+  },
+  tradingModeItem: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  tradingModeItemActive: {
+    borderColor: '#00d4aa',
+    backgroundColor: '#0f1a1a',
+  },
+  tradingModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  tradingModeEmoji: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  tradingModeName: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  tradingModeNameActive: {
+    color: '#fff',
+  },
+  tradingModeCheck: {
+    color: '#00d4aa',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  tradingModeDescription: {
+    color: '#666',
+    fontSize: 13,
+    marginLeft: 30,
   },
   dangerButton: {
     backgroundColor: '#ff4757',

@@ -53,44 +53,70 @@ const PairCard = ({ pair, data, onPress }) => {
     return '⚖️';
   };
 
-  const getFiboColor = (quality) => {
-    if (quality === 'optimal') return '#00d4aa';  // Óptima - green
-    if (quality === 'good') return '#ffd93d';     // Buena - yellow
-    return '#ff9f43';                              // Temprana - orange
+  // Check BASE conditions (2 required for signal)
+  const checkLongBase = () => {
+    if (!indicators) return { met: false, conditions: [] };
+    const conditions = [];
+    if (indicators.price_above_ema) conditions.push('EMA ✓');
+    if (indicators.rsi_rising) conditions.push('RSI ↑');
+    return { met: conditions.length === 2, conditions };
   };
 
-  const getFiboEmoji = (quality) => {
-    if (quality === 'optimal') return '🔥';  // Óptima
-    if (quality === 'good') return '🟡';     // Buena
-    return '⚡';                              // Temprana
+  const checkShortBase = () => {
+    if (!indicators) return { met: false, conditions: [] };
+    const conditions = [];
+    if (!indicators.price_above_ema) conditions.push('EMA ✓');
+    if (indicators.rsi_falling) conditions.push('RSI ↓');
+    return { met: conditions.length === 2, conditions };
   };
 
-  // Count met conditions for signal proximity
-  const countLongConditions = () => {
+  // Calculate SCORE for quality
+  const calculateLongScore = () => {
     if (!indicators) return 0;
-    let count = 0;
-    if (indicators.price_above_ema) count++;
-    if (indicators.rsi < 40) count++;
-    if (indicators.rsi_rising) count++;
-    if (indicators.macd_crossover_bullish) count++;
-    if (indicators.volume_above_average) count++;
-    return count;
+    let score = 0;
+    if (indicators.rsi < 40) score += 1;           // RSI zone
+    if (indicators.macd_crossover_bullish) score += 1;  // MACD crossover
+    if (indicators.volume_above_average) score += 1;    // Volume
+    if (funding?.sentiment === 'too_many_shorts') score += 0.5;  // Funding
+    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo
+    else if (indicators.fibonacci?.near_key_level) score += 0.25;
+    return score;
   };
 
-  const countShortConditions = () => {
+  const calculateShortScore = () => {
     if (!indicators) return 0;
-    let count = 0;
-    if (!indicators.price_above_ema) count++;
-    if (indicators.rsi > 60) count++;
-    if (indicators.rsi_falling) count++;
-    if (indicators.macd_crossover_bearish) count++;
-    if (indicators.volume_above_average) count++;
-    return count;
+    let score = 0;
+    if (indicators.rsi > 60) score += 1;           // RSI zone
+    if (indicators.macd_crossover_bearish) score += 1;  // MACD crossover
+    if (indicators.volume_above_average) score += 1;    // Volume
+    if (funding?.sentiment === 'too_many_longs') score += 0.5;  // Funding
+    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo
+    else if (indicators.fibonacci?.near_key_level) score += 0.25;
+    return score;
   };
 
-  const longMet = countLongConditions();
-  const shortMet = countShortConditions();
-  const bestSignal = longMet >= shortMet ? { type: 'LONG', count: longMet } : { type: 'SHORT', count: shortMet };
+  const getQuality = (score) => {
+    if (score >= 3.0) return { label: 'Mejor momento', color: '#00d4aa', emoji: '🔥' };
+    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟡' };
+    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '⚠️' };
+  };
+
+  const longBase = checkLongBase();
+  const shortBase = checkShortBase();
+  const longScore = calculateLongScore();
+  const shortScore = calculateShortScore();
+
+  // Determine which signal is active
+  const isLongSignal = longBase.met;
+  const isShortSignal = shortBase.met;
+  const hasSignal = isLongSignal || isShortSignal;
+  const signalType = isLongSignal ? 'LONG' : (isShortSignal ? 'SHORT' : null);
+  const activeScore = isLongSignal ? longScore : shortScore;
+  const quality = getQuality(activeScore);
+
+  // For UI display - which direction has more conditions
+  const longMet = longBase.conditions.length;
+  const shortMet = shortBase.conditions.length;
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -123,86 +149,157 @@ const PairCard = ({ pair, data, onPress }) => {
             </View>
           )}
 
-          {/* Fibonacci Indicator with Trade Setup */}
+          {/* Fibonacci - Informativo con niveles específicos */}
           {indicators.fibonacci && indicators.fibonacci.levels && (() => {
             const fib = indicators.fibonacci;
-            const levels = Object.entries(fib.levels)
-              .map(([name, p]) => ({ name, price: p }))
-              .sort((a, b) => a.price - b.price);
-
+            const levels = fib.levels;
             const currentPrice = price;
 
-            // Use indicator signals to determine direction, not just Fibonacci trend
-            const isLong = longMet >= shortMet;
+            // Find nearest support (below price) and resistance (above price)
+            const levelEntries = Object.entries(levels)
+              .map(([name, p]) => ({ name, price: parseFloat(p) }))
+              .sort((a, b) => a.price - b.price);
 
-            const levelsBelow = levels.filter(l => l.price < currentPrice);
-            const levelsAbove = levels.filter(l => l.price > currentPrice);
+            const supports = levelEntries.filter(l => l.price < currentPrice);
+            const resistances = levelEntries.filter(l => l.price > currentPrice);
 
-            let entry, stopLoss, takeProfit;
+            const nearestSupport = supports.length > 0 ? supports[supports.length - 1] : null;
+            const nearestResistance = resistances.length > 0 ? resistances[0] : null;
 
-            if (isLong) {
-              entry = levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null;
-              stopLoss = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : null;
-              takeProfit = levelsAbove.length > 1 ? levelsAbove[1] : (levelsAbove.length > 0 ? levelsAbove[0] : null);
-            } else {
-              entry = levelsAbove.length > 0 ? levelsAbove[0] : null;
-              stopLoss = levelsAbove.length > 1 ? levelsAbove[1] : null;
-              takeProfit = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : (levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null);
-            }
+            // Calculate distances
+            const supportDist = nearestSupport ? ((currentPrice - nearestSupport.price) / currentPrice * 100) : null;
+            const resistanceDist = nearestResistance ? ((nearestResistance.price - currentPrice) / currentPrice * 100) : null;
+
+            // Determine which is closer
+            const closerToSupport = supportDist && resistanceDist ? supportDist < resistanceDist : supportDist != null;
+            const closestDist = closerToSupport ? supportDist : resistanceDist;
+
+            const getProximityInfo = () => {
+              if (!closestDist) return { label: 'Sin niveles', color: '#888', emoji: '❓' };
+              if (closestDist < 0.5) return { label: '¡En nivel!', color: '#00d4aa', emoji: '🎯' };
+              if (closestDist < 1.5) return { label: 'Muy cerca', color: '#ffd93d', emoji: '📍' };
+              if (closestDist < 3) return { label: 'Cerca', color: '#ff9f43', emoji: '⏳' };
+              return { label: 'Entre niveles', color: '#888', emoji: '📏' };
+            };
+
+            const proximityInfo = getProximityInfo();
 
             return (
               <View style={styles.fiboContainer}>
                 <View style={styles.fiboHeader}>
-                  <Text style={[styles.fiboSetupType, { color: isLong ? '#00d4aa' : '#ff4757' }]}>
-                    {isLong ? '📈 LONG' : '📉 SHORT'}
-                  </Text>
-                  <Text style={[styles.fiboEntryRec, { color: getFiboColor(fib.entry_quality) }]}>
-                    {getFiboEmoji(fib.entry_quality)} {fib.entry_quality === 'optimal' ? 'Óptima' : fib.entry_quality === 'good' ? 'Buena' : 'Temprana'}
-                  </Text>
+                  <Text style={styles.fiboLabel}>📐 Fibonacci</Text>
+                  <View style={[styles.distanceBadge, { backgroundColor: proximityInfo.color + '20', borderColor: proximityInfo.color }]}>
+                    <Text style={[styles.distanceText, { color: proximityInfo.color }]}>
+                      {proximityInfo.emoji} {proximityInfo.label}
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={styles.tradeSetupCompact}>
-                  <View style={styles.tradeSetupItem}>
-                    <Text style={styles.tradeSetupItemLabel}>📍 Entrada</Text>
-                    <Text style={styles.tradeSetupItemValue}>
-                      ${entry?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
+                <View style={styles.fiboLevels}>
+                  {nearestResistance && (
+                    <View style={styles.fiboLevelRow}>
+                      <Text style={styles.fiboLevelLabel}>↑ Resistencia {nearestResistance.name}%</Text>
+                      <Text style={[styles.fiboLevelPrice, { color: '#ff4757' }]}>
+                        ${nearestResistance.price.toLocaleString(undefined, {maximumFractionDigits: 0})} (+{resistanceDist?.toFixed(1)}%)
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.fiboLevelRow}>
+                    <Text style={styles.fiboLevelLabel}>● Precio actual</Text>
+                    <Text style={styles.fiboLevelPriceCurrent}>
+                      ${currentPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}
                     </Text>
                   </View>
-                  <View style={styles.tradeSetupItem}>
-                    <Text style={styles.tradeSetupItemLabel}>🎯 TP</Text>
-                    <Text style={[styles.tradeSetupItemValue, { color: '#00d4aa' }]}>
-                      ${takeProfit?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
-                    </Text>
-                  </View>
-                  <View style={styles.tradeSetupItem}>
-                    <Text style={styles.tradeSetupItemLabel}>🛑 SL</Text>
-                    <Text style={[styles.tradeSetupItemValue, { color: '#ff4757' }]}>
-                      ${stopLoss?.price?.toLocaleString(undefined, {maximumFractionDigits: 0}) || '-'}
-                    </Text>
-                  </View>
+                  {nearestSupport && (
+                    <View style={styles.fiboLevelRow}>
+                      <Text style={styles.fiboLevelLabel}>↓ Soporte {nearestSupport.name}%</Text>
+                      <Text style={[styles.fiboLevelPrice, { color: '#00d4aa' }]}>
+                        ${nearestSupport.price.toLocaleString(undefined, {maximumFractionDigits: 0})} (-{supportDist?.toFixed(1)}%)
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
             );
           })()}
 
           <View style={styles.signalProximity}>
-            <Text style={styles.proximityLabel}>Proximidad señal:</Text>
-            <View style={styles.proximityBars}>
-              <View style={styles.proximityItem}>
-                <Text style={styles.proximityType}>LONG</Text>
-                <View style={styles.miniBar}>
-                  <View style={[styles.miniFill, styles.longFill, { width: `${(longMet / 5) * 100}%` }]} />
+            {hasSignal ? (
+              <>
+                <View style={styles.signalHeader}>
+                  <Text style={[styles.signalType, { color: signalType === 'LONG' ? '#00d4aa' : '#ff4757' }]}>
+                    {signalType === 'LONG' ? '🟢' : '🔴'} Señal {signalType}
+                  </Text>
+                  <View style={[styles.qualityBadge, { backgroundColor: quality.color + '20', borderColor: quality.color }]}>
+                    <Text style={[styles.qualityText, { color: quality.color }]}>
+                      {quality.emoji} {quality.label}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={styles.proximityCount}>{longMet}/5</Text>
-              </View>
-              <View style={styles.proximityItem}>
-                <Text style={styles.proximityType}>SHORT</Text>
-                <View style={styles.miniBar}>
-                  <View style={[styles.miniFill, styles.shortFill, { width: `${(shortMet / 5) * 100}%` }]} />
+
+                {/* Entry/TP/SL basado en ATR */}
+                {indicators.atr && (() => {
+                  const atr = indicators.atr;
+                  const entry = price;
+                  const slDistance = atr * 1.5;
+                  const tpDistance = atr * 3;
+
+                  const stopLoss = signalType === 'LONG' ? entry - slDistance : entry + slDistance;
+                  const takeProfit = signalType === 'LONG' ? entry + tpDistance : entry - tpDistance;
+
+                  const tpPercent = ((takeProfit - entry) / entry * 100);
+                  const slPercent = ((stopLoss - entry) / entry * 100);
+
+                  return (
+                    <View style={styles.tradeSetupCompact}>
+                      <View style={styles.tradeSetupItem}>
+                        <Text style={styles.tradeSetupItemLabel}>📍 Entrada</Text>
+                        <Text style={styles.tradeSetupItemValue}>
+                          ${entry?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                        </Text>
+                      </View>
+                      <View style={styles.tradeSetupItem}>
+                        <Text style={styles.tradeSetupItemLabel}>🎯 TP ({tpPercent > 0 ? '+' : ''}{tpPercent.toFixed(1)}%)</Text>
+                        <Text style={[styles.tradeSetupItemValue, { color: '#00d4aa' }]}>
+                          ${takeProfit?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                        </Text>
+                      </View>
+                      <View style={styles.tradeSetupItem}>
+                        <Text style={styles.tradeSetupItemLabel}>🛑 SL ({slPercent > 0 ? '+' : ''}{slPercent.toFixed(1)}%)</Text>
+                        <Text style={[styles.tradeSetupItemValue, { color: '#ff4757' }]}>
+                          ${stopLoss?.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <View style={styles.scoreContainer}>
+                  <Text style={styles.scoreLabel}>Score: {activeScore.toFixed(1)} pts</Text>
+                  <View style={styles.scoreBar}>
+                    <View style={[styles.scoreFill, { width: `${Math.min((activeScore / 4) * 100, 100)}%`, backgroundColor: quality.color }]} />
+                  </View>
                 </View>
-                <Text style={styles.proximityCount}>{shortMet}/5</Text>
-              </View>
-            </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.proximityLabel}>Condiciones base:</Text>
+                <View style={styles.baseConditions}>
+                  <View style={styles.baseItem}>
+                    <Text style={styles.baseLabel}>LONG</Text>
+                    <Text style={[styles.baseStatus, { color: longBase.met ? '#00d4aa' : '#666' }]}>
+                      {longBase.conditions.join(' ')} ({longMet}/2)
+                    </Text>
+                  </View>
+                  <View style={styles.baseItem}>
+                    <Text style={styles.baseLabel}>SHORT</Text>
+                    <Text style={[styles.baseStatus, { color: shortBase.met ? '#ff4757' : '#666' }]}>
+                      {shortBase.conditions.join(' ')} ({shortMet}/2)
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           <View style={styles.indicatorsGrid}>
@@ -342,8 +439,48 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   fiboLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  distanceBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  distanceText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  fiboDetail: {
     color: '#888',
     fontSize: 12,
+    marginTop: 8,
+  },
+  fiboLevels: {
+    marginTop: 10,
+  },
+  fiboLevelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a4a',
+  },
+  fiboLevelLabel: {
+    color: '#888',
+    fontSize: 12,
+  },
+  fiboLevelPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  fiboLevelPriceCurrent: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   fiboQuality: {
     fontSize: 13,
@@ -353,14 +490,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  fiboSetupType: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  fiboEntryRec: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   tradeSetupCompact: {
     flexDirection: 'row',
@@ -403,44 +532,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 8,
   },
-  proximityBars: {
+  signalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  proximityItem: {
-    flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 4,
+    marginBottom: 8,
   },
-  proximityType: {
-    color: '#666',
-    fontSize: 10,
-    width: 40,
+  signalType: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
-  miniBar: {
-    flex: 1,
+  qualityBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  qualityText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  scoreContainer: {
+    marginTop: 4,
+  },
+  scoreLabel: {
+    color: '#888',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  scoreBar: {
     height: 6,
     backgroundColor: '#2a2a4a',
     borderRadius: 3,
-    marginHorizontal: 6,
     overflow: 'hidden',
   },
-  miniFill: {
+  scoreFill: {
     height: '100%',
     borderRadius: 3,
   },
-  longFill: {
-    backgroundColor: '#00d4aa',
+  baseConditions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  shortFill: {
-    backgroundColor: '#ff4757',
+  baseItem: {
+    flex: 1,
+    marginHorizontal: 4,
   },
-  proximityCount: {
-    color: '#888',
+  baseLabel: {
+    color: '#666',
     fontSize: 10,
-    width: 24,
-    textAlign: 'right',
+    marginBottom: 2,
+  },
+  baseStatus: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   indicatorsGrid: {
     flexDirection: 'row',

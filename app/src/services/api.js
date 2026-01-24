@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const API_URL_KEY = '@api_url';
 const USER_PAIRS_KEY = '@user_pairs';
 const USER_TIMEFRAME_KEY = '@user_timeframe';
+const USER_TRADING_MODE_KEY = '@user_trading_mode';
 
 // Default API URL (change this to your server's URL)
 // Use your computer's local IP when testing on physical device
@@ -103,8 +104,9 @@ export async function getPairData(pair, timeframe = null) {
 /**
  * Get recent signals
  */
-export async function getSignals(limit = 20) {
-  return apiRequest(`/api/signals?limit=${limit}`);
+export async function getSignals(limit = 20, timeframe = null) {
+  const tf = timeframe || (await getUserTimeframe());
+  return apiRequest(`/api/signals?limit=${limit}&timeframe=${tf}`);
 }
 
 /**
@@ -124,9 +126,10 @@ export async function getAvailableTimeframes() {
 /**
  * Register push token with the server
  */
-export async function registerPushToken(token, pairs = null, timeframe = null) {
+export async function registerPushToken(token, pairs = null, timeframe = null, tradingMode = null) {
   const userPairs = pairs || (await getUserPairs());
   const userTimeframe = timeframe || (await getUserTimeframe());
+  const userTradingMode = tradingMode || (await getUserTradingMode());
 
   return apiRequest('/api/register', {
     method: 'POST',
@@ -134,6 +137,7 @@ export async function registerPushToken(token, pairs = null, timeframe = null) {
       token,
       pairs: userPairs,
       timeframe: userTimeframe,
+      trading_mode: userTradingMode,
     }),
   });
 }
@@ -151,10 +155,15 @@ export async function unregisterPushToken(token) {
 /**
  * Update notification preferences
  */
-export async function updatePreferences(token, pairs, timeframe) {
+export async function updatePreferences(token, pairs, timeframe, tradingMode = null) {
   return apiRequest('/api/preferences', {
     method: 'POST',
-    body: JSON.stringify({ token, pairs, timeframe }),
+    body: JSON.stringify({
+      token,
+      pairs,
+      timeframe,
+      trading_mode: tradingMode,
+    }),
   });
 }
 
@@ -224,4 +233,66 @@ export async function setUserTimeframe(timeframe) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Get user's trading mode from local storage
+ */
+export async function getUserTradingMode() {
+  try {
+    const mode = await AsyncStorage.getItem(USER_TRADING_MODE_KEY);
+    return mode || 'balanced';
+  } catch {
+    return 'balanced';
+  }
+}
+
+/**
+ * Save user's trading mode to local storage
+ */
+export async function setUserTradingMode(mode) {
+  try {
+    await AsyncStorage.setItem(USER_TRADING_MODE_KEY, mode);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Add a new subscription
+ */
+export async function addSubscription(token, pair, timeframe, tradingMode) {
+  return apiRequest('/api/subscriptions/add', {
+    method: 'POST',
+    body: JSON.stringify({
+      token,
+      pair,
+      timeframe,
+      trading_mode: tradingMode,
+    }),
+  });
+}
+
+/**
+ * Remove a subscription
+ */
+export async function removeSubscription(token, subscriptionId) {
+  return apiRequest('/api/subscriptions/remove', {
+    method: 'POST',
+    body: JSON.stringify({
+      token,
+      subscription_id: subscriptionId,
+    }),
+  });
+}
+
+/**
+ * Get all subscriptions for the user
+ */
+export async function getSubscriptions(token) {
+  return apiRequest('/api/subscriptions/list', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 }

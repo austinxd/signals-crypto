@@ -17,18 +17,18 @@ from database import (
 QUALITY_CONFIG = {
     SignalQuality.OPTIMA: {
         "emoji": "🔥",
-        "label": "ÓPTIMO",
+        "label": "Mejor momento",
         "subtitle": "Alta confluencia técnica",
     },
     SignalQuality.BUENA: {
         "emoji": "🟡",
-        "label": "",
-        "subtitle": "Momentum detectado",
+        "label": "Operable",
+        "subtitle": "Señal confirmada",
     },
     SignalQuality.TEMPRANA: {
-        "emoji": "⚡",
-        "label": "TEMPRANO",
-        "subtitle": "Momentum iniciando",
+        "emoji": "⚠️",
+        "label": "Alto Riesgo",
+        "subtitle": "Esperar más confirmación",
     },
 }
 
@@ -58,11 +58,7 @@ def format_notification(signal: Signal, reason: str = None) -> Dict[str, Any]:
 
     # Build title based on quality
     pair_short = signal.pair.replace("/USDT", "")
-
-    if signal.quality == SignalQuality.OPTIMA:
-        title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} {quality_info['label']} ({signal.timeframe})"
-    else:
-        title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} ({signal.timeframe})"
+    title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} - {quality_info['label']} ({signal.timeframe})"
 
     # Calculate percentages
     tp_percent = abs((signal.take_profit - signal.entry_price) / signal.entry_price * 100)
@@ -377,12 +373,20 @@ class NotificationManager:
                         "timeframe": timeframe,
                     }
 
-                # Get users who should receive this signal
-                users = DBHelper.get_users_for_signal(
-                    db, pair, timeframe, quality_db, signal.score
+                # Get users who should receive this signal (via subscriptions)
+                subscribers = DBHelper.get_subscriptions_for_signal(
+                    db, pair, timeframe, signal.score
                 )
 
-                if not users:
+                # Fallback to old system if no subscriptions found
+                if not subscribers:
+                    users = DBHelper.get_users_for_signal(
+                        db, pair, timeframe, quality_db, signal.score
+                    )
+                    if users:
+                        subscribers = [{"push_token": u.push_token} for u in users]
+
+                if not subscribers:
                     db.close()
                     return {
                         "status": "no_subscribers",
@@ -420,7 +424,7 @@ class NotificationManager:
                 db.close()
 
                 # Send notifications
-                tokens = [u.push_token for u in users]
+                tokens = [s["push_token"] for s in subscribers]
                 return send_push_notification(tokens, signal, reason)
 
             except Exception as e:

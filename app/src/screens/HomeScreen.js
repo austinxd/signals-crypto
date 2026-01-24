@@ -6,45 +6,85 @@ import {
   RefreshControl,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Linking,
+  Alert,
 } from 'react-native';
-import { getMarketData, getSignals, getUserPairs, getUserTimeframe } from '../services/api';
-import { getNotificationHistory } from '../services/notifications';
+import {
+  getMarketData,
+  getSignals,
+  getSubscriptions,
+  addSubscription,
+  removeSubscription,
+  getPairData,
+} from '../services/api';
+import { getNotificationHistory, getStoredPushToken } from '../services/notifications';
 import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
-import PairSelectorModal from '../components/PairSelectorModal';
+import AddSubscriptionModal from '../components/AddSubscriptionModal';
+
+const TRADING_MODE_LABELS = {
+  conservative: { label: 'Conservador', emoji: '🔥' },
+  balanced: { label: 'Balanceado', emoji: '🟡' },
+  aggressive: { label: 'Agresivo', emoji: '⚠️' },
+};
+
+const getModeColor = (mode) => {
+  switch (mode) {
+    case 'conservative': return '#00d4aa';
+    case 'balanced': return '#ffd93d';
+    case 'aggressive': return '#ff9f43';
+    default: return '#888';
+  }
+};
 
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
   const [marketData, setMarketData] = useState({});
   const [signals, setSignals] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [userPairs, setUserPairs] = useState([]);
-  const [timeframe, setTimeframe] = useState('4h');
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [pushToken, setPushToken] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedPair, setSelectedPair] = useState(null);
+  const [selectedSubscription, setSelectedSubscription] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [pairSelectorVisible, setPairSelectorVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+
+  // Get push token on mount
+  useEffect(() => {
+    const loadToken = async () => {
+      const token = await getStoredPushToken();
+      setPushToken(token);
+    };
+    loadToken();
+  }, []);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
       setError(null);
-      const pairs = await getUserPairs();
-      setUserPairs(pairs);
-
-      const tf = await getUserTimeframe();
-      setTimeframe(tf);
 
       if (activeTab === 'market') {
+        // Load subscriptions from server
+        if (pushToken) {
+          try {
+            const result = await getSubscriptions(pushToken);
+            setSubscriptions(result.subscriptions || []);
+          } catch (err) {
+            console.log('Could not fetch subscriptions, using empty list');
+            setSubscriptions([]);
+          }
+        }
+
+        // Load market data for all pairs across all timeframes
         const data = await getMarketData(null, forceRefresh);
         setMarketData(data.pairs || {});
         setLastUpdate(new Date());
       } else if (activeTab === 'signals') {
-        const data = await getSignals(20);
+        // Get signals for user's subscribed pairs/timeframes
+        const data = await getSignals(20, null);
         setSignals(data.signals || []);
       } else {
         const history = await getNotificationHistory();
@@ -54,7 +94,7 @@ const HomeScreen = () => {
       setError('Error conectando al servidor');
       console.error('Fetch error:', err);
     }
-  }, [activeTab]);
+  }, [activeTab, pushToken]);
 
   useEffect(() => {
     fetchData();
@@ -68,9 +108,44 @@ const HomeScreen = () => {
     setRefreshing(false);
   }, [fetchData]);
 
-  const handlePairsSaved = (newPairs) => {
-    setUserPairs(newPairs);
-    fetchData(true);
+  const handleAddSubscription = async (pair, timeframe, tradingMode) => {
+    if (!pushToken) {
+      Alert.alert('Error', 'No se ha registrado el token de notificaciones');
+      return;
+    }
+
+    try {
+      await addSubscription(pushToken, pair, timeframe, tradingMode);
+      fetchData(true);
+    } catch (err) {
+      console.error('Error adding subscription:', err);
+      Alert.alert('Error', 'No se pudo agregar la suscripción');
+    }
+  };
+
+  const handleRemoveSubscription = async (subscriptionId) => {
+    if (!pushToken) return;
+
+    Alert.alert(
+      'Eliminar suscripción',
+      '¿Estás seguro de que quieres eliminar esta suscripción?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeSubscription(pushToken, subscriptionId);
+              fetchData(true);
+            } catch (err) {
+              console.error('Error removing subscription:', err);
+              Alert.alert('Error', 'No se pudo eliminar la suscripción');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderContent = () => {
@@ -87,25 +162,66 @@ const HomeScreen = () => {
     }
 
     if (activeTab === 'market') {
+      if (subscriptions.length === 0) {
+        return (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📊</Text>
+            <Text style={styles.emptyText}>No tienes suscripciones</Text>
+            <Text style={styles.emptyHint}>Agrega pares para recibir notificaciones</Text>
+            <TouchableOpacity
+              style={styles.addFirstButton}
+              onPress={() => setAddModalVisible(true)}
+            >
+              <Text style={styles.addFirstText}>+ Agregar mi primer par</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
       return (
         <>
-          {userPairs.map((pair) => (
-            <PairCard
-              key={pair}
-              pair={pair}
-              data={marketData[pair]}
-              onPress={() => {
-                setSelectedPair(pair);
-                setModalVisible(true);
-              }}
-            />
-          ))}
+          {subscriptions.map((sub) => {
+            const modeInfo = TRADING_MODE_LABELS[sub.trading_mode] || TRADING_MODE_LABELS.balanced;
+            return (
+              <View key={sub.id} style={styles.subscriptionWrapper}>
+                {/* Subscription header with badges */}
+                <View style={styles.subscriptionHeader}>
+                  <View style={styles.subscriptionBadges}>
+                    <View style={styles.timeframeBadgeSmall}>
+                      <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                    </View>
+                    <View style={[styles.modeBadge, { backgroundColor: getModeColor(sub.trading_mode) }]}>
+                      <Text style={styles.modeBadgeText}>
+                        {modeInfo.emoji} {modeInfo.label}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleRemoveSubscription(sub.id)}
+                  >
+                    <Text style={styles.deleteText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <PairCard
+                  pair={sub.pair}
+                  data={marketData[sub.pair]}
+                  timeframe={sub.timeframe}
+                  onPress={() => {
+                    setSelectedPair(sub.pair);
+                    setSelectedSubscription(sub);
+                    setModalVisible(true);
+                  }}
+                />
+              </View>
+            );
+          })}
           <TouchableOpacity
             style={styles.addPairButton}
-            onPress={() => setPairSelectorVisible(true)}
+            onPress={() => setAddModalVisible(true)}
           >
             <Text style={styles.addPairIcon}>+</Text>
-            <Text style={styles.addPairText}>Agregar o quitar pares</Text>
+            <Text style={styles.addPairText}>Agregar par</Text>
           </TouchableOpacity>
         </>
       );
@@ -167,11 +283,13 @@ const HomeScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.headerRight}>
-            <View style={styles.timeframeBadge}>
-              <Text style={styles.timeframeText}>{timeframe}</Text>
+          {subscriptions.length > 0 && activeTab === 'market' && (
+            <View style={styles.headerRight}>
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>{subscriptions.length} pares</Text>
+              </View>
             </View>
-          </View>
+          )}
         </View>
         {lastUpdate && activeTab === 'market' && (
           <Text style={styles.lastUpdate}>
@@ -219,15 +337,20 @@ const HomeScreen = () => {
       {/* Modals */}
       <PairDetailModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={() => {
+          setModalVisible(false);
+          setSelectedSubscription(null);
+        }}
         pair={selectedPair}
         data={selectedPair ? marketData[selectedPair] : null}
+        subscription={selectedSubscription}
       />
 
-      <PairSelectorModal
-        visible={pairSelectorVisible}
-        onClose={() => setPairSelectorVisible(false)}
-        onSave={handlePairsSaved}
+      <AddSubscriptionModal
+        visible={addModalVisible}
+        onClose={() => setAddModalVisible(false)}
+        onAdd={handleAddSubscription}
+        existingSubscriptions={subscriptions}
       />
     </View>
   );
@@ -288,16 +411,18 @@ const styles = StyleSheet.create({
   headerRight: {
     alignItems: 'flex-end',
   },
-  timeframeBadge: {
-    backgroundColor: '#00d4aa',
+  countBadge: {
+    backgroundColor: '#1a1a2e',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#00d4aa',
   },
-  timeframeText: {
-    color: '#0a0a14',
-    fontSize: 14,
-    fontWeight: 'bold',
+  countText: {
+    color: '#00d4aa',
+    fontSize: 12,
+    fontWeight: '600',
   },
   lastUpdate: {
     color: '#666',
@@ -377,6 +502,66 @@ const styles = StyleSheet.create({
     color: '#0a0a14',
     fontWeight: '600',
     fontSize: 16,
+  },
+  subscriptionWrapper: {
+    marginBottom: 4,
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    marginBottom: 6,
+  },
+  subscriptionBadges: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  timeframeBadgeSmall: {
+    backgroundColor: '#00d4aa',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  timeframeBadgeText: {
+    color: '#0a0a14',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  modeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  modeBadgeText: {
+    color: '#0a0a14',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2a2a4a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteText: {
+    color: '#ff4757',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  addFirstButton: {
+    marginTop: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: '#00d4aa',
+    borderRadius: 12,
+  },
+  addFirstText: {
+    color: '#0a0a14',
+    fontSize: 16,
+    fontWeight: '600',
   },
   addPairButton: {
     flexDirection: 'row',

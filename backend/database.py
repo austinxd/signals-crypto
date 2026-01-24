@@ -52,12 +52,29 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     push_token = Column(String(255), unique=True, nullable=False, index=True)
-    pairs = Column(JSON, default=["BTC/USDT", "ETH/USDT"])
-    timeframe = Column(String(10), default="4h")
-    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
+    pairs = Column(JSON, default=["BTC/USDT", "ETH/USDT"])  # Legacy - kept for compatibility
+    timeframe = Column(String(10), default="4h")  # Legacy - kept for compatibility
+    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)  # Legacy
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Subscription(Base):
+    """Individual subscription for a pair/timeframe/trading_mode combination."""
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    pair = Column(String(20), nullable=False)
+    timeframe = Column(String(10), nullable=False)
+    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        {'mysql_charset': 'utf8mb4'},
+    )
 
 
 class Signal(Base):
@@ -332,6 +349,96 @@ class DBHelper:
     def get_all_users(db: Session) -> list[User]:
         """Get all users."""
         return db.query(User).all()
+
+    # Subscription methods
+    @staticmethod
+    def add_subscription(
+        db: Session,
+        user_id: int,
+        pair: str,
+        timeframe: str,
+        trading_mode: TradingMode = TradingMode.BALANCED
+    ) -> Subscription:
+        """Add a new subscription for a user."""
+        # Check if already exists
+        existing = db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.pair == pair,
+            Subscription.timeframe == timeframe
+        ).first()
+
+        if existing:
+            existing.trading_mode = trading_mode
+            existing.enabled = True
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        sub = Subscription(
+            user_id=user_id,
+            pair=pair,
+            timeframe=timeframe,
+            trading_mode=trading_mode
+        )
+        db.add(sub)
+        db.commit()
+        db.refresh(sub)
+        return sub
+
+    @staticmethod
+    def remove_subscription(db: Session, subscription_id: int, user_id: int) -> bool:
+        """Remove a subscription."""
+        sub = db.query(Subscription).filter(
+            Subscription.id == subscription_id,
+            Subscription.user_id == user_id
+        ).first()
+        if sub:
+            db.delete(sub)
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
+    def get_user_subscriptions(db: Session, user_id: int) -> list[Subscription]:
+        """Get all subscriptions for a user."""
+        return db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.enabled == True
+        ).all()
+
+    @staticmethod
+    def get_subscriptions_for_signal(
+        db: Session,
+        pair: str,
+        timeframe: str,
+        score: float
+    ) -> list[dict]:
+        """Get users who should receive this signal based on their subscriptions."""
+        subs = db.query(Subscription).filter(
+            Subscription.pair == pair,
+            Subscription.timeframe == timeframe,
+            Subscription.enabled == True
+        ).all()
+
+        result = []
+        for sub in subs:
+            # Check trading mode threshold
+            if sub.trading_mode == TradingMode.CONSERVATIVE and score < 2.5:
+                continue
+            elif sub.trading_mode == TradingMode.BALANCED and score < 1.5:
+                continue
+            # AGGRESSIVE gets all signals
+
+            # Get user token
+            user = db.query(User).filter(User.id == sub.user_id).first()
+            if user and user.enabled:
+                result.append({
+                    "user_id": user.id,
+                    "push_token": user.push_token,
+                    "subscription": sub
+                })
+
+        return result
 
 
 # Migration helper to import existing tokens.json

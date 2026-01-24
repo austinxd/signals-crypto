@@ -23,7 +23,7 @@ from binance_client import get_binance_client
 from indicators import add_all_indicators, get_latest_indicators
 from signals import detect_signal, SignalHistory
 from notifications import NotificationManager, send_test_notification
-from database import init_db, get_db, DBHelper
+from database import init_db, get_db, DBHelper, TradingMode, Subscription
 
 
 # Available trading modes
@@ -62,13 +62,35 @@ class UserSettings(BaseModel):
     token: str
 
 
+class SubscriptionAdd(BaseModel):
+    token: str
+    pair: str
+    timeframe: str
+    trading_mode: Optional[str] = "balanced"
+
+
+class SubscriptionRemove(BaseModel):
+    token: str
+    subscription_id: int
+
+
+class SubscriptionList(BaseModel):
+    token: str
+
+
 def get_all_monitored_pairs() -> Set[str]:
-    """Get all pairs that any user is monitoring."""
+    """Get all pairs that any user is monitoring (via subscriptions or legacy)."""
     pairs = set(DEFAULT_PAIRS)
 
     if notification_manager.use_db:
         try:
             db = get_db()
+            # Get pairs from subscriptions
+            subs = db.query(Subscription).filter(Subscription.enabled == True).all()
+            for sub in subs:
+                pairs.add(sub.pair)
+
+            # Also check legacy user pairs
             users = DBHelper.get_all_users(db)
             for user in users:
                 if user.pairs:
@@ -84,7 +106,7 @@ def get_all_monitored_pairs() -> Set[str]:
 
 
 def get_all_monitored_timeframes() -> Set[str]:
-    """Get all timeframes that any user is monitoring."""
+    """Get all timeframes that any user is monitoring (via subscriptions or legacy)."""
     # Monitor common timeframes by default (including short-term)
     default_monitored = {"15m", "30m", "1h", "4h", "1d"}
     timeframes = set(default_monitored)
@@ -92,6 +114,13 @@ def get_all_monitored_timeframes() -> Set[str]:
     if notification_manager.use_db:
         try:
             db = get_db()
+            # Get timeframes from subscriptions
+            subs = db.query(Subscription).filter(Subscription.enabled == True).all()
+            for sub in subs:
+                if sub.timeframe in AVAILABLE_TIMEFRAMES:
+                    timeframes.add(sub.timeframe)
+
+            # Also check legacy user timeframes
             users = DBHelper.get_all_users(db)
             for user in users:
                 if user.timeframe and user.timeframe in AVAILABLE_TIMEFRAMES:
@@ -315,11 +344,34 @@ async def get_pair_data(pair: str, timeframe: str = DEFAULT_TIMEFRAME):
 
 
 @app.get("/api/signals")
-async def get_signals(limit: int = 20):
-    """Get recent signals."""
+async def get_signals(
+    limit: int = 20,
+    timeframe: Optional[str] = None,
+    pair: Optional[str] = None,
+    min_score: Optional[float] = None,
+):
+    """Get recent signals with optional filters."""
+    signals = signal_history.get_recent_signals(limit * 5)  # Get more to filter
+
+    # Apply filters
+    if timeframe:
+        signals = [s for s in signals if s.get("timeframe") == timeframe]
+    if pair:
+        signals = [s for s in signals if s.get("pair") == pair]
+    if min_score is not None:
+        signals = [s for s in signals if s.get("score", 0) >= min_score]
+
+    # Limit results
+    signals = signals[:limit]
+
     return {
-        "signals": signal_history.get_recent_signals(limit),
-        "total": len(signal_history.signals),
+        "signals": signals,
+        "total": len(signals),
+        "filters": {
+            "timeframe": timeframe,
+            "pair": pair,
+            "min_score": min_score,
+        }
     }
 
 
@@ -473,6 +525,101 @@ async def get_subscribers():
         "total": len(subscribers),
         "subscribers": subscribers,
     }
+
+
+# Subscription endpoints
+@app.post("/api/subscriptions/add")
+async def add_subscription(data: SubscriptionAdd):
+    """Add a new subscription for a user."""
+    # Validate pair
+    if data.pair not in AVAILABLE_PAIRS:
+        raise HTTPException(status_code=400, detail=f"Invalid pair: {data.pair}")
+
+    # Validate timeframe
+    if data.timeframe not in AVAILABLE_TIMEFRAMES:
+        raise HTTPException(status_code=400, detail=f"Invalid timeframe: {data.timeframe}")
+
+    # Validate trading mode
+    if data.trading_mode not in TRADING_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid trading mode: {data.trading_mode}")
+
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found. Register first.")
+
+        mode = TradingMode(data.trading_mode)
+        sub = DBHelper.add_subscription(db, user.id, data.pair, data.timeframe, mode)
+        db.close()
+
+        return {
+            "status": "added",
+            "subscription": {
+                "id": sub.id,
+                "pair": sub.pair,
+                "timeframe": sub.timeframe,
+                "trading_mode": sub.trading_mode.value,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/subscriptions/remove")
+async def remove_subscription(data: SubscriptionRemove):
+    """Remove a subscription."""
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        success = DBHelper.remove_subscription(db, data.subscription_id, user.id)
+        db.close()
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+
+        return {"status": "removed", "subscription_id": data.subscription_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/subscriptions/list")
+async def list_subscriptions(data: SubscriptionList):
+    """Get all subscriptions for a user."""
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found. Register first.")
+
+        subs = DBHelper.get_user_subscriptions(db, user.id)
+        db.close()
+
+        return {
+            "subscriptions": [
+                {
+                    "id": sub.id,
+                    "pair": sub.pair,
+                    "timeframe": sub.timeframe,
+                    "trading_mode": sub.trading_mode.value,
+                }
+                for sub in subs
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # For running directly
