@@ -58,138 +58,174 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
 
   const fundingWarning = getFundingWarning();
 
-  // Calculate signal proximity for LONG
-  const longConditions = {
+  // BASE conditions (2 required for signal)
+  const longBase = {
     ema: {
       label: 'Precio > EMA200',
       met: ind.price_above_ema,
-      value: ind.price,
-      target: ind.ema_200,
-      progress: ind.price_above_ema ? 100 : Math.min(99, (ind.price / ind.ema_200) * 100),
-      detail: `$${ind.price?.toLocaleString()} / $${ind.ema_200?.toFixed(2)}`,
+      detail: `$${ind.price?.toLocaleString()} vs $${ind.ema_200?.toFixed(0)}`,
     },
-    rsi: {
-      label: 'RSI < 40 (sobreventa)',
-      met: ind.rsi < 40,
-      value: ind.rsi,
-      target: 40,
-      progress: ind.rsi < 40 ? 100 : Math.max(0, ((70 - ind.rsi) / 30) * 100),
-      detail: `RSI: ${ind.rsi?.toFixed(1)}`,
-    },
-    rsiRising: {
+    rsiDirection: {
       label: 'RSI subiendo',
       met: ind.rsi_rising,
-      value: ind.rsi_rising,
-      progress: ind.rsi_rising ? 100 : 0,
-      detail: ind.rsi_rising ? 'Subiendo' : 'Bajando',
-    },
-    macd: {
-      label: 'MACD cruce alcista',
-      met: ind.macd_crossover_bullish,
-      value: ind.macd_histogram,
-      progress: ind.macd_crossover_bullish ? 100 : Math.max(0, Math.min(99, 50 + (ind.macd_histogram / Math.abs(ind.macd_signal || 1)) * 50)),
-      detail: `Hist: ${ind.macd_histogram?.toFixed(4)}`,
-    },
-    volume: {
-      label: 'Volumen > promedio',
-      met: ind.volume_above_average,
-      value: ind.volume_ratio,
-      target: 1.0,
-      progress: Math.min(100, (ind.volume_ratio || 0) * 100),
-      detail: `Ratio: ${ind.volume_ratio?.toFixed(2)}x`,
+      detail: ind.rsi_rising ? '↑ Subiendo' : '↓ Bajando',
     },
   };
 
-  // Calculate signal proximity for SHORT
-  const shortConditions = {
+  const shortBase = {
     ema: {
       label: 'Precio < EMA200',
       met: !ind.price_above_ema,
-      value: ind.price,
-      target: ind.ema_200,
-      progress: !ind.price_above_ema ? 100 : Math.min(99, (ind.ema_200 / ind.price) * 100),
-      detail: `$${ind.price?.toLocaleString()} / $${ind.ema_200?.toFixed(2)}`,
+      detail: `$${ind.price?.toLocaleString()} vs $${ind.ema_200?.toFixed(0)}`,
     },
-    rsi: {
-      label: 'RSI > 60 (sobrecompra)',
-      met: ind.rsi > 60,
-      value: ind.rsi,
-      target: 60,
-      progress: ind.rsi > 60 ? 100 : Math.max(0, ((ind.rsi - 30) / 30) * 100),
-      detail: `RSI: ${ind.rsi?.toFixed(1)}`,
-    },
-    rsiFalling: {
+    rsiDirection: {
       label: 'RSI bajando',
       met: ind.rsi_falling,
-      value: ind.rsi_falling,
-      progress: ind.rsi_falling ? 100 : 0,
-      detail: ind.rsi_falling ? 'Bajando' : 'Subiendo',
+      detail: ind.rsi_falling ? '↓ Bajando' : '↑ Subiendo',
     },
-    macd: {
+  };
+
+  // QUALITY factors (contribute to score)
+  const qualityFactors = {
+    rsiZoneLong: {
+      label: 'RSI en zona de compra (<40)',
+      met: ind.rsi < 40,
+      points: 1,
+      detail: `RSI: ${ind.rsi?.toFixed(1)}`,
+      forLong: true,
+    },
+    rsiZoneShort: {
+      label: 'RSI en zona de venta (>60)',
+      met: ind.rsi > 60,
+      points: 1,
+      detail: `RSI: ${ind.rsi?.toFixed(1)}`,
+      forLong: false,
+    },
+    macdLong: {
+      label: 'MACD cruce alcista',
+      met: ind.macd_crossover_bullish,
+      points: 1,
+      detail: `Hist: ${ind.macd_histogram?.toFixed(4)}`,
+      forLong: true,
+    },
+    macdShort: {
       label: 'MACD cruce bajista',
       met: ind.macd_crossover_bearish,
-      value: ind.macd_histogram,
-      progress: ind.macd_crossover_bearish ? 100 : Math.max(0, Math.min(99, 50 - (ind.macd_histogram / Math.abs(ind.macd_signal || 1)) * 50)),
+      points: 1,
       detail: `Hist: ${ind.macd_histogram?.toFixed(4)}`,
+      forLong: false,
     },
     volume: {
       label: 'Volumen > promedio',
       met: ind.volume_above_average,
-      value: ind.volume_ratio,
-      target: 1.0,
-      progress: Math.min(100, (ind.volume_ratio || 0) * 100),
+      points: 1,
       detail: `Ratio: ${ind.volume_ratio?.toFixed(2)}x`,
+      forLong: null, // applies to both
+    },
+    fundingLong: {
+      label: 'Funding favorece LONG',
+      met: funding?.sentiment === 'too_many_shorts',
+      points: 0.5,
+      detail: funding ? `${funding.funding_rate_percent?.toFixed(4)}%` : 'N/A',
+      forLong: true,
+    },
+    fundingShort: {
+      label: 'Funding favorece SHORT',
+      met: funding?.sentiment === 'too_many_longs',
+      points: 0.5,
+      detail: funding ? `${funding.funding_rate_percent?.toFixed(4)}%` : 'N/A',
+      forLong: false,
+    },
+    fiboKey: {
+      label: 'En nivel Fibonacci clave',
+      met: ind.fibonacci?.at_key_level,
+      points: 0.5,
+      detail: ind.fibonacci?.closest_level_name ? `Nivel ${ind.fibonacci.closest_level_name}%` : 'N/A',
+      forLong: null,
+    },
+    fiboNear: {
+      label: 'Cerca de nivel Fibonacci',
+      met: ind.fibonacci?.near_key_level && !ind.fibonacci?.at_key_level,
+      points: 0.25,
+      detail: ind.fibonacci?.closest_level_name ? `Nivel ${ind.fibonacci.closest_level_name}%` : 'N/A',
+      forLong: null,
     },
   };
 
-  const longMet = Object.values(longConditions).filter(c => c.met).length;
-  const shortMet = Object.values(shortConditions).filter(c => c.met).length;
-  const totalConditions = 5;
+  // Calculate if base conditions are met
+  const longBaseMet = Object.values(longBase).filter(c => c.met).length;
+  const shortBaseMet = Object.values(shortBase).filter(c => c.met).length;
+  const isLongSignal = longBaseMet === 2;
+  const isShortSignal = shortBaseMet === 2;
 
-  const renderCondition = (condition, key) => (
-    <View key={key} style={styles.conditionRow}>
-      <View style={styles.conditionHeader}>
-        <Text style={[styles.conditionLabel, condition.met && styles.conditionMet]}>
-          {condition.met ? '✓' : '○'} {condition.label}
+  // Calculate scores
+  const calculateScore = (forLong) => {
+    let score = 0;
+    Object.values(qualityFactors).forEach(f => {
+      if (f.met && (f.forLong === forLong || f.forLong === null)) {
+        score += f.points;
+      }
+    });
+    return score;
+  };
+
+  const longScore = calculateScore(true);
+  const shortScore = calculateScore(false);
+
+  const getQualityLabel = (score) => {
+    if (score >= 2.5) return { label: 'Mejor momento', color: '#00d4aa', emoji: '🔥' };
+    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟡' };
+    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '⚠️' };
+  };
+
+  const renderBaseCondition = (condition, key, color) => (
+    <View key={key} style={styles.baseConditionRow}>
+      <Text style={[styles.baseConditionIcon, { color: condition.met ? color : '#666' }]}>
+        {condition.met ? '✓' : '○'}
+      </Text>
+      <View style={styles.baseConditionContent}>
+        <Text style={[styles.baseConditionLabel, condition.met && { color }]}>
+          {condition.label}
         </Text>
-        <Text style={styles.conditionDetail}>{condition.detail}</Text>
-      </View>
-      <View style={styles.progressBar}>
-        <View
-          style={[
-            styles.progressFill,
-            { width: `${condition.progress}%` },
-            condition.met ? styles.progressMet : styles.progressPending
-          ]}
-        />
+        <Text style={styles.baseConditionDetail}>{condition.detail}</Text>
       </View>
     </View>
   );
 
-  const renderSignalGauge = (met, total, type) => {
-    const percentage = (met / total) * 100;
+  const renderQualityFactor = (factor, key) => (
+    <View key={key} style={styles.qualityFactorRow}>
+      <Text style={[styles.qualityFactorIcon, { color: factor.met ? '#00d4aa' : '#444' }]}>
+        {factor.met ? '✓' : '○'}
+      </Text>
+      <Text style={[styles.qualityFactorLabel, factor.met && styles.qualityFactorLabelMet]}>
+        {factor.label}
+      </Text>
+      <Text style={styles.qualityFactorPoints}>
+        {factor.met ? `+${factor.points}` : ''}
+      </Text>
+    </View>
+  );
+
+  const renderSignalStatus = (baseMet, isSignal, score, type) => {
     const color = type === 'LONG' ? '#00d4aa' : '#ff4757';
+    const quality = getQualityLabel(score);
 
     return (
-      <View style={styles.gaugeContainer}>
-        <View style={styles.gaugeOuter}>
-          <View
-            style={[
-              styles.gaugeInner,
-              {
-                width: `${percentage}%`,
-                backgroundColor: color,
-              }
-            ]}
-          />
-        </View>
-        <Text style={[styles.gaugeText, { color }]}>
-          {met}/{total} condiciones
-        </Text>
-        {met === total && (
-          <Text style={[styles.signalReady, { color }]}>
-            {type === 'LONG' ? '🟢' : '🔴'} SEÑAL LISTA
+      <View style={styles.signalStatusContainer}>
+        <View style={[styles.signalStatusBadge, {
+          backgroundColor: isSignal ? color + '20' : '#2a2a4a',
+          borderColor: isSignal ? color : '#444'
+        }]}>
+          <Text style={[styles.signalStatusText, { color: isSignal ? color : '#666' }]}>
+            {isSignal ? `${type === 'LONG' ? '🟢' : '🔴'} SEÑAL ACTIVA` : `Sin señal (${baseMet}/2 base)`}
           </Text>
+        </View>
+        {isSignal && (
+          <View style={[styles.qualityBadge, { backgroundColor: quality.color + '20', borderColor: quality.color }]}>
+            <Text style={[styles.qualityBadgeText, { color: quality.color }]}>
+              {quality.emoji} {quality.label} ({score.toFixed(1)} pts)
+            </Text>
+          </View>
         )}
       </View>
     );
@@ -246,18 +282,48 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
             {/* LONG Signal Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🟢 LONG</Text>
-              {renderSignalGauge(longMet, totalConditions, 'LONG')}
-              {Object.entries(longConditions).map(([key, condition]) =>
-                renderCondition(condition, `long-${key}`)
+              {renderSignalStatus(longBaseMet, isLongSignal, longScore, 'LONG')}
+
+              <Text style={styles.subsectionTitle}>Condiciones Base (2 requeridas)</Text>
+              <View style={styles.baseConditionsBox}>
+                {Object.entries(longBase).map(([key, condition]) =>
+                  renderBaseCondition(condition, `long-base-${key}`, '#00d4aa')
+                )}
+              </View>
+
+              {isLongSignal && (
+                <>
+                  <Text style={styles.subsectionTitle}>Factores de Calidad</Text>
+                  <View style={styles.qualityFactorsBox}>
+                    {Object.entries(qualityFactors)
+                      .filter(([_, f]) => f.forLong === true || f.forLong === null)
+                      .map(([key, factor]) => renderQualityFactor(factor, `long-quality-${key}`))}
+                  </View>
+                </>
               )}
             </View>
 
             {/* SHORT Signal Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🔴 SHORT</Text>
-              {renderSignalGauge(shortMet, totalConditions, 'SHORT')}
-              {Object.entries(shortConditions).map(([key, condition]) =>
-                renderCondition(condition, `short-${key}`)
+              {renderSignalStatus(shortBaseMet, isShortSignal, shortScore, 'SHORT')}
+
+              <Text style={styles.subsectionTitle}>Condiciones Base (2 requeridas)</Text>
+              <View style={styles.baseConditionsBox}>
+                {Object.entries(shortBase).map(([key, condition]) =>
+                  renderBaseCondition(condition, `short-base-${key}`, '#ff4757')
+                )}
+              </View>
+
+              {isShortSignal && (
+                <>
+                  <Text style={styles.subsectionTitle}>Factores de Calidad</Text>
+                  <View style={styles.qualityFactorsBox}>
+                    {Object.entries(qualityFactors)
+                      .filter(([_, f]) => f.forLong === false || f.forLong === null)
+                      .map(([key, factor]) => renderQualityFactor(factor, `short-quality-${key}`))}
+                  </View>
+                </>
               )}
             </View>
 
@@ -522,65 +588,99 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
   },
-  gaugeContainer: {
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  gaugeOuter: {
-    width: '100%',
-    height: 24,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  gaugeInner: {
-    height: '100%',
-    borderRadius: 12,
-  },
-  gaugeText: {
-    marginTop: 8,
-    fontSize: 14,
+  subsectionTitle: {
+    color: '#888',
+    fontSize: 13,
     fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  signalReady: {
-    marginTop: 4,
-    fontSize: 16,
+  signalStatusContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  signalStatusBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  signalStatusText: {
+    fontSize: 14,
     fontWeight: 'bold',
   },
-  conditionRow: {
-    marginBottom: 12,
+  qualityBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  conditionHeader: {
+  qualityBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  baseConditionsBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 12,
+  },
+  baseConditionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a2e',
   },
-  conditionLabel: {
-    color: '#888',
-    fontSize: 14,
+  baseConditionIcon: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    width: 28,
   },
-  conditionMet: {
-    color: '#00d4aa',
+  baseConditionContent: {
+    flex: 1,
   },
-  conditionDetail: {
+  baseConditionLabel: {
+    color: '#ccc',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  baseConditionDetail: {
     color: '#666',
     fontSize: 12,
+    marginTop: 2,
   },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 3,
-    overflow: 'hidden',
+  qualityFactorsBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 12,
   },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
+  qualityFactorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
   },
-  progressMet: {
-    backgroundColor: '#00d4aa',
+  qualityFactorIcon: {
+    fontSize: 14,
+    width: 24,
   },
-  progressPending: {
-    backgroundColor: '#ff9f43',
+  qualityFactorLabel: {
+    color: '#666',
+    fontSize: 13,
+    flex: 1,
+  },
+  qualityFactorLabelMet: {
+    color: '#aaa',
+  },
+  qualityFactorPoints: {
+    color: '#00d4aa',
+    fontSize: 13,
+    fontWeight: 'bold',
+    width: 40,
+    textAlign: 'right',
   },
   indicatorGrid: {
     flexDirection: 'row',
