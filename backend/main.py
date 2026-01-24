@@ -275,11 +275,16 @@ async def get_config():
 @app.get("/api/market")
 async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = False):
     """Get current market data for all pairs in a timeframe."""
+    global active_pairs
+
     if timeframe not in AVAILABLE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"Invalid timeframe: {timeframe}")
 
-    # If refresh requested, fetch fresh data for all active pairs
+    # If refresh requested, fetch fresh data for all monitored pairs
     if refresh:
+        # Update active_pairs immediately from database
+        active_pairs = get_all_monitored_pairs()
+
         client = get_binance_client()
         if timeframe not in market_data:
             market_data[timeframe] = {}
@@ -288,6 +293,7 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
             try:
                 df = client.fetch_ohlcv(pair, timeframe)
                 if df is None or len(df) < 200:
+                    print(f"Skipping {pair}: insufficient data")
                     continue
                 df = add_all_indicators(df)
                 indicators = get_latest_indicators(df)
@@ -301,6 +307,7 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
                         "funding": funding_data,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
+                    print(f"Refreshed {pair} ({timeframe})")
             except Exception as e:
                 print(f"Error refreshing {pair}: {e}")
 
@@ -308,6 +315,7 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
     return {
         "timeframe": timeframe,
         "pairs": data,
+        "active_pairs": list(active_pairs),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
