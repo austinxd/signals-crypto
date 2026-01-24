@@ -68,19 +68,39 @@ const HomeScreen = () => {
 
       if (activeTab === 'market') {
         // Load subscriptions from server
+        let subs = [];
         if (pushToken) {
           try {
             const result = await getSubscriptions(pushToken);
-            setSubscriptions(result.subscriptions || []);
+            subs = result.subscriptions || [];
+            setSubscriptions(subs);
           } catch (err) {
             console.log('Could not fetch subscriptions, using empty list');
             setSubscriptions([]);
           }
         }
 
-        // Load market data for all pairs across all timeframes
-        const data = await getMarketData(null, forceRefresh);
-        setMarketData(data.pairs || {});
+        // Get unique timeframes from subscriptions
+        const uniqueTimeframes = [...new Set(subs.map(s => s.timeframe))];
+        if (uniqueTimeframes.length === 0) {
+          uniqueTimeframes.push('4h'); // Default
+        }
+
+        // Fetch market data for each timeframe and combine
+        const combinedData = {};
+        for (const tf of uniqueTimeframes) {
+          try {
+            const data = await getMarketData(tf, forceRefresh);
+            const pairs = data.pairs || {};
+            // Key by pair_timeframe to distinguish same pair in different timeframes
+            for (const [pair, pairData] of Object.entries(pairs)) {
+              combinedData[`${pair}_${tf}`] = { ...pairData, timeframe: tf };
+            }
+          } catch (err) {
+            console.log(`Could not fetch data for ${tf}:`, err);
+          }
+        }
+        setMarketData(combinedData);
         setLastUpdate(new Date());
       } else if (activeTab === 'signals') {
         // Get signals filtered by user's subscriptions
@@ -205,7 +225,7 @@ const HomeScreen = () => {
                 </View>
                 <PairCard
                   pair={sub.pair}
-                  data={marketData[sub.pair]}
+                  data={marketData[`${sub.pair}_${sub.timeframe}`]}
                   timeframe={sub.timeframe}
                   onPress={() => {
                     setSelectedPair(sub.pair);
@@ -342,7 +362,7 @@ const HomeScreen = () => {
           setSelectedSubscription(null);
         }}
         pair={selectedPair}
-        data={selectedPair ? marketData[selectedPair] : null}
+        data={selectedPair && selectedSubscription ? marketData[`${selectedPair}_${selectedSubscription.timeframe}`] : null}
         subscription={selectedSubscription}
       />
 
