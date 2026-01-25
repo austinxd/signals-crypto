@@ -65,24 +65,6 @@ const getModeColor = (mode) => {
   }
 };
 
-// Timeframe color based on speed (fast=red, medium=yellow, slow=green)
-const getTimeframeColor = (timeframe) => {
-  switch (timeframe) {
-    case '15m':
-    case '30m':
-      return '#ff4757'; // Rojo - rápido
-    case '1h':
-    case '2h':
-      return '#ffd93d'; // Amarillo - medio
-    case '4h':
-    case '1d':
-    case '1w':
-      return '#00d4aa'; // Verde - lento
-    default:
-      return '#888';
-  }
-};
-
 const formatRelativeTime = (timestamp) => {
   const date = new Date(timestamp);
   const now = new Date();
@@ -393,9 +375,6 @@ const HomeScreen = () => {
                   </View>
                   <View style={styles.subscriptionRight}>
                     <View style={styles.subscriptionBadges}>
-                      <View style={[styles.timeframeBadgeSmall, { backgroundColor: getTimeframeColor(sub.timeframe) }]}>
-                        <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
-                      </View>
                       {/* Signal indicator: green for LONG, red for SHORT, gray for none */}
                       {activeSignal.hasSignal ? (
                         <>
@@ -404,6 +383,9 @@ const HomeScreen = () => {
                               {activeSignal.side === 'LONG' ? '🟢' : '🔴'}
                             </Text>
                           </View>
+                          <View style={styles.timeframeBadgeSmall}>
+                            <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                          </View>
                           <View style={[styles.qualityBadgeSmall, { backgroundColor: realTimeQuality.color + '30', borderColor: realTimeQuality.color }]}>
                             <Text style={[styles.qualityBadgeTextSmall, { color: realTimeQuality.color }]}>
                               {realTimeQuality.emoji} {realTimeQuality.label}
@@ -411,9 +393,14 @@ const HomeScreen = () => {
                           </View>
                         </>
                       ) : (
-                        <View style={styles.noSignalIndicator}>
-                          <Text style={styles.noSignalText}>⚪</Text>
-                        </View>
+                        <>
+                          <View style={styles.noSignalIndicator}>
+                            <Text style={styles.noSignalText}>⚪</Text>
+                          </View>
+                          <View style={styles.timeframeBadgeSmall}>
+                            <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                          </View>
+                        </>
                       )}
                     </View>
                     <TouchableOpacity
@@ -886,6 +873,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   timeframeBadgeSmall: {
+    backgroundColor: '#00d4aa',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
