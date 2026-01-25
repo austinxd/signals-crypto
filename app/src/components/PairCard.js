@@ -149,11 +149,11 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
 
       {indicators && (
         <>
-          {/* Funding Rate Indicator */}
+          {/* Tasa de Fondeo Indicator */}
           {funding && (
             <View style={styles.fundingContainer}>
               <View style={styles.fundingHeader}>
-                <Text style={styles.fundingLabel}>Funding Rate</Text>
+                <Text style={styles.fundingLabel}>Tasa de Fondeo</Text>
                 <Text style={[styles.fundingRate, { color: getFundingColor(funding.sentiment) }]}>
                   {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
                 </Text>

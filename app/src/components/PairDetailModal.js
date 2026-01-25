@@ -325,7 +325,7 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
               </View>
             )}
 
-            {/* Funding Rate Warning */}
+            {/* Tasa de Fondeo Warning */}
             {fundingWarning && (
               <View style={[styles.warningBox, { backgroundColor: fundingWarning.bgColor, borderColor: fundingWarning.color }]}>
                 <Text style={styles.warningEmoji}>{fundingWarning.emoji}</Text>
@@ -336,10 +336,10 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
               </View>
             )}
 
-            {/* Funding Rate Section */}
+            {/* Tasa de Fondeo Section */}
             {funding && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>📊 Funding Rate</Text>
+                <Text style={styles.sectionTitle}>📊 Tasa de Fondeo</Text>
                 <View style={styles.fundingBox}>
                   <View style={styles.fundingRow}>
                     <Text style={styles.fundingLabel}>Tasa actual:</Text>
