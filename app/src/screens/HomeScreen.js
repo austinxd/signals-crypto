@@ -372,6 +372,9 @@ const HomeScreen = () => {
                     {price && (
                       <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
                     )}
+                    <View style={styles.timeframeBadgeSmall}>
+                      <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                    </View>
                   </View>
                   <View style={styles.subscriptionRight}>
                     <View style={styles.subscriptionBadges}>
@@ -383,9 +386,6 @@ const HomeScreen = () => {
                               {activeSignal.side === 'LONG' ? '🟢' : '🔴'}
                             </Text>
                           </View>
-                          <View style={styles.timeframeBadgeSmall}>
-                            <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
-                          </View>
                           <View style={[styles.qualityBadgeSmall, { backgroundColor: realTimeQuality.color + '30', borderColor: realTimeQuality.color }]}>
                             <Text style={[styles.qualityBadgeTextSmall, { color: realTimeQuality.color }]}>
                               {realTimeQuality.emoji} {realTimeQuality.label}
@@ -393,14 +393,9 @@ const HomeScreen = () => {
                           </View>
                         </>
                       ) : (
-                        <>
-                          <View style={styles.noSignalIndicator}>
-                            <Text style={styles.noSignalText}>⚪</Text>
-                          </View>
-                          <View style={styles.timeframeBadgeSmall}>
-                            <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
-                          </View>
-                        </>
+                        <View style={styles.noSignalIndicator}>
+                          <Text style={styles.noSignalText}>⚪</Text>
+                        </View>
                       )}
                     </View>
                     <TouchableOpacity
