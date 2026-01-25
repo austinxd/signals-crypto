@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
   },
   cardEmbedded: {
     padding: 12,
-    paddingTop: 0,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#2a2a4a',
   },
