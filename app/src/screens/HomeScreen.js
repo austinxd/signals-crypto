@@ -27,9 +27,9 @@ import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
 
 const TRADING_MODE_LABELS = {
-  conservative: { label: 'Conservador', emoji: '⭐' },
-  balanced: { label: 'Balanceado', emoji: '🎯' },
-  aggressive: { label: 'Agresivo', emoji: '⚠️' },
+  conservative: { label: 'Conservador', emoji: '▂' },
+  balanced: { label: 'Balanceado', emoji: '▂▄' },
+  aggressive: { label: 'Agresivo', emoji: '▂▄▆' },
 };
 
 const getModeColor = (mode) => {

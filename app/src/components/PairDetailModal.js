@@ -12,9 +12,9 @@ import {
 const { width } = Dimensions.get('window');
 
 const TRADING_MODE_CONFIG = {
-  conservative: { label: 'Conservador', emoji: '🔥', color: '#00d4aa', description: 'Solo señales de alta calidad (≥2.5 pts)' },
-  balanced: { label: 'Balanceado', emoji: '🟠', color: '#ffd93d', description: 'Señales operables (≥1.5 pts)' },
-  aggressive: { label: 'Agresivo', emoji: '🔴', color: '#ff9f43', description: 'Todas las señales (cualquier score)' },
+  conservative: { label: 'Conservador', emoji: '▂', color: '#00d4aa', description: 'Solo señales Óptimas (≥2.5 pts)' },
+  balanced: { label: 'Balanceado', emoji: '▂▄', color: '#ffd93d', description: 'Óptimas + Buenas (≥1.5 pts)' },
+  aggressive: { label: 'Agresivo', emoji: '▂▄▆', color: '#ff9f43', description: 'Todas las señales' },
 };
 
 const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal }) => {
