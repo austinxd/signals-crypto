@@ -10,10 +10,33 @@ import {
 } from 'react-native';
 import { getConfig } from '../services/api';
 
+// Signal bars component (like iOS WiFi indicator)
+const SignalBars = ({ level, color = '#fff', size = 12 }) => {
+  const barWidth = size / 4;
+  const gap = size / 8;
+  const heights = [size * 0.4, size * 0.7, size];
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: gap }}>
+      {[0, 1, 2].map((i) => (
+        <View
+          key={i}
+          style={{
+            width: barWidth,
+            height: heights[i],
+            backgroundColor: i < level ? color : '#444',
+            borderRadius: 1,
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
 const TRADING_MODES = [
-  { id: 'conservative', name: 'Conservador', emoji: '│', description: 'Solo Óptimas' },
-  { id: 'balanced', name: 'Balanceado', emoji: '││', description: 'Óptimas + Buenas' },
-  { id: 'aggressive', name: 'Agresivo', emoji: '│││', description: 'Todas las señales' },
+  { id: 'conservative', name: 'Conservador', level: 1, color: '#00d4aa', description: 'Solo Óptimas' },
+  { id: 'balanced', name: 'Balanceado', level: 2, color: '#ffd93d', description: 'Óptimas + Buenas' },
+  { id: 'aggressive', name: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las señales' },
 ];
 
 const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions = [] }) => {
@@ -159,7 +182,13 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
             onPress={() => setSelectedMode(mode.id)}
           >
             <View style={styles.modeHeader}>
-              <Text style={styles.modeEmoji}>{mode.emoji}</Text>
+              <View style={styles.modeEmoji}>
+                <SignalBars
+                  level={mode.level}
+                  color={selectedMode === mode.id ? mode.color : '#666'}
+                  size={20}
+                />
+              </View>
               <Text style={[
                 styles.modeName,
                 selectedMode === mode.id && styles.modeNameSelected,
@@ -376,7 +405,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   modeEmoji: {
-    fontSize: 20,
     marginRight: 10,
   },
   modeName: {

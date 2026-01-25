@@ -26,10 +26,34 @@ import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
 
+// Signal bars component (like iOS WiFi indicator)
+const SignalBars = ({ level, color = '#fff', size = 12 }) => {
+  // level: 1 = conservative, 2 = balanced, 3 = aggressive
+  const barWidth = size / 4;
+  const gap = size / 8;
+  const heights = [size * 0.4, size * 0.7, size];
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: gap }}>
+      {[0, 1, 2].map((i) => (
+        <View
+          key={i}
+          style={{
+            width: barWidth,
+            height: heights[i],
+            backgroundColor: i < level ? color : '#444',
+            borderRadius: 1,
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
 const TRADING_MODE_LABELS = {
-  conservative: { label: 'Conservador', emoji: '│' },
-  balanced: { label: 'Balanceado', emoji: '││' },
-  aggressive: { label: 'Agresivo', emoji: '│││' },
+  conservative: { label: 'Conservador', level: 1 },
+  balanced: { label: 'Balanceado', level: 2 },
+  aggressive: { label: 'Agresivo', level: 3 },
 };
 
 const getModeColor = (mode) => {
@@ -337,7 +361,13 @@ const HomeScreen = () => {
                 >
                   <View style={styles.subscriptionLeft}>
                     <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
-                    <Text style={styles.modeIconMini}>{TRADING_MODE_LABELS[sub.trading_mode]?.emoji || '🎯'}</Text>
+                    <View style={styles.modeIconMini}>
+                      <SignalBars
+                        level={TRADING_MODE_LABELS[sub.trading_mode]?.level || 2}
+                        color={getModeColor(sub.trading_mode)}
+                        size={14}
+                      />
+                    </View>
                     <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
                     {price && (
                       <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
@@ -784,8 +814,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   modeIconMini: {
-    fontSize: 14,
-    marginRight: 6,
+    marginRight: 8,
   },
   subscriptionPrice: {
     color: '#888',

@@ -11,10 +11,33 @@ import {
 
 const { width } = Dimensions.get('window');
 
+// Signal bars component (like iOS WiFi indicator)
+const SignalBars = ({ level, color = '#fff', size = 12 }) => {
+  const barWidth = size / 4;
+  const gap = size / 8;
+  const heights = [size * 0.4, size * 0.7, size];
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: gap }}>
+      {[0, 1, 2].map((i) => (
+        <View
+          key={i}
+          style={{
+            width: barWidth,
+            height: heights[i],
+            backgroundColor: i < level ? color : '#444',
+            borderRadius: 1,
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
 const TRADING_MODE_CONFIG = {
-  conservative: { label: 'Conservador', emoji: '│', color: '#00d4aa', description: 'Solo señales Óptimas (≥2.5 pts)' },
-  balanced: { label: 'Balanceado', emoji: '││', color: '#ffd93d', description: 'Óptimas + Buenas (≥1.5 pts)' },
-  aggressive: { label: 'Agresivo', emoji: '│││', color: '#ff9f43', description: 'Todas las señales' },
+  conservative: { label: 'Conservador', level: 1, color: '#00d4aa', description: 'Solo señales Óptimas (≥2.5 pts)' },
+  balanced: { label: 'Balanceado', level: 2, color: '#ffd93d', description: 'Óptimas + Buenas (≥1.5 pts)' },
+  aggressive: { label: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las señales' },
 };
 
 const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal }) => {
@@ -310,9 +333,13 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
                   { backgroundColor: TRADING_MODE_CONFIG[subscription.trading_mode]?.color + '20',
                     borderColor: TRADING_MODE_CONFIG[subscription.trading_mode]?.color }
                 ]}>
-                  <Text style={styles.alertModeEmoji}>
-                    {TRADING_MODE_CONFIG[subscription.trading_mode]?.emoji}
-                  </Text>
+                  <View style={styles.alertModeEmoji}>
+                    <SignalBars
+                      level={TRADING_MODE_CONFIG[subscription.trading_mode]?.level || 2}
+                      color={TRADING_MODE_CONFIG[subscription.trading_mode]?.color}
+                      size={24}
+                    />
+                  </View>
                   <View>
                     <Text style={[styles.alertModeText, { color: TRADING_MODE_CONFIG[subscription.trading_mode]?.color }]}>
                       {TRADING_MODE_CONFIG[subscription.trading_mode]?.label}
