@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 12,
   },
   fundingLabel: {
     color: '#888',
