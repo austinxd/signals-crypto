@@ -188,19 +188,22 @@ def monitor_markets():
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
-                    # Check for signals
-                    signal_key = f"{pair}_{timeframe}"
-                    if signal_history.can_send_signal(signal_key):
-                        signal = detect_signal(pair, indicators, funding_data)
-                        if signal:
-                            signal.timeframe = timeframe
-                            signal_history.add_signal(signal)
-                            # Send to users monitoring this pair and timeframe
-                            result = notification_manager.send_signal_to_subscribers(
-                                signal, pair, timeframe
-                            )
+                    # Check for signals (always detect, let notification logic decide)
+                    signal = detect_signal(pair, indicators, funding_data)
+                    if signal:
+                        signal.timeframe = timeframe
+                        # Send to users monitoring this pair and timeframe
+                        result = notification_manager.send_signal_to_subscribers(
+                            signal, pair, timeframe
+                        )
+                        if result.get("status") not in ["skipped", "no_subscribers"]:
                             print(f"Signal: {signal.signal_type.value} {pair} ({timeframe}) - {signal.quality.value}")
                             print(f"Notification result: {result}")
+                    else:
+                        # No signal detected - check if we need to notify signal disappeared
+                        result = notification_manager.notify_signal_disappeared(pair, timeframe)
+                        if result.get("status") == "notified":
+                            print(f"Signal disappeared: {pair} ({timeframe})")
 
                 except Exception as e:
                     print(f"Error monitoring {pair} ({timeframe}): {e}")
@@ -219,8 +222,6 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         print("Database initialized")
-        # Load cooldown state from database (so cooldowns persist across restarts)
-        signal_history.load_cooldowns_from_db()
     except Exception as e:
         print(f"Database initialization failed (using JSON fallback): {e}")
 

@@ -9,12 +9,12 @@ const SignalCard = ({ signal }) => {
   const getQualityConfig = (quality) => {
     switch (quality) {
       case 'OPTIMA':
-        return { emoji: '🔥', color: '#00d4aa', label: 'Óptima' };
+        return { emoji: '✅', color: '#00d4aa', label: 'Óptima' };
       case 'BUENA':
-        return { emoji: '🟡', color: '#ffd93d', label: 'Buena' };
+        return { emoji: '', color: '#ffd93d', label: 'Buena' };
       case 'TEMPRANA':
       default:
-        return { emoji: '⚡', color: '#ff9f43', label: 'Temprana' };
+        return { emoji: '', color: '#ff4757', label: 'Alto Riesgo' };
     }
   };
 

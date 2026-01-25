@@ -112,9 +112,9 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
   };
 
   const getQuality = (score) => {
-    if (score >= 3.0) return { label: 'Mejor momento', color: '#00d4aa', emoji: '🔥' };
-    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟠' };
-    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '🔴' };
+    if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
+    if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '' };
+    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
   };
 
   const longBase = checkLongBase();

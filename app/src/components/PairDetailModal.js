@@ -179,9 +179,9 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
   const shortScore = calculateScore(false);
 
   const getQualityLabel = (score) => {
-    if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '🔥' };
-    if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '🟡' };
-    return { label: 'Temprana', color: '#ff9f43', emoji: '⚡' };
+    if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
+    if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '' };
+    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
   };
 
   const renderBaseCondition = (condition, key, color) => (
@@ -241,12 +241,12 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
   const getQualityFromSignal = (qualityStr) => {
     switch (qualityStr) {
       case 'OPTIMA':
-        return { label: 'Óptima', color: '#00d4aa', emoji: '🔥' };
+        return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
       case 'BUENA':
-        return { label: 'Buena', color: '#ffd93d', emoji: '🟡' };
+        return { label: 'Buena', color: '#ffd93d', emoji: '' };
       case 'TEMPRANA':
       default:
-        return { label: 'Temprana', color: '#ff9f43', emoji: '⚡' };
+        return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
     }
   };
 

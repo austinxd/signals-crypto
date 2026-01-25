@@ -16,17 +16,17 @@ from database import (
 # Quality-based emojis and labels
 QUALITY_CONFIG = {
     SignalQuality.OPTIMA: {
-        "emoji": "🔥",
-        "label": "Mejor momento",
+        "emoji": "✅",
+        "label": "Óptima",
         "subtitle": "Alta confluencia técnica",
     },
     SignalQuality.BUENA: {
-        "emoji": "🟠",
-        "label": "Operable",
+        "emoji": "",
+        "label": "Buena",
         "subtitle": "Señal confirmada",
     },
     SignalQuality.TEMPRANA: {
-        "emoji": "🔴",
+        "emoji": "",
         "label": "Alto Riesgo",
         "subtitle": "Esperar más confirmación",
     },
@@ -450,6 +450,86 @@ class NotificationManager:
             }
 
         return send_push_notification(tokens, signal)
+
+    def notify_signal_disappeared(
+        self,
+        pair: str,
+        timeframe: str,
+    ) -> Dict[str, Any]:
+        """
+        Notify subscribers that a signal has disappeared (conditions no longer met).
+        """
+        if not self.use_db:
+            return {"status": "skipped", "reason": "no_db"}
+
+        try:
+            db = get_db()
+
+            # Check if we should notify
+            should_notify, reason = DBHelper.should_notify_disappeared(db, pair, timeframe)
+
+            if not should_notify:
+                db.close()
+                return {"status": "skipped", "reason": reason}
+
+            # Get the previous state to know what disappeared
+            state = DBHelper.get_alert_state(db, pair, timeframe)
+            previous_side = state.current_side if state else "?"
+
+            # Get subscribers for this pair/timeframe (all modes, since this is important)
+            from database import Subscription, User
+            subs = db.query(Subscription).filter(
+                Subscription.pair == pair,
+                Subscription.timeframe == timeframe,
+                Subscription.enabled == True
+            ).all()
+
+            tokens = []
+            for sub in subs:
+                user = db.query(User).filter(User.id == sub.user_id).first()
+                if user and user.enabled:
+                    tokens.append(user.push_token)
+
+            if not tokens:
+                db.close()
+                return {"status": "no_subscribers", "pair": pair, "timeframe": timeframe}
+
+            # Clear the alert state
+            DBHelper.clear_alert_state(db, pair, timeframe)
+            db.close()
+
+            # Send notification
+            pair_short = pair.replace("/USDT", "")
+            messages = []
+            for token in tokens:
+                if not token.startswith("ExponentPushToken"):
+                    continue
+                messages.append({
+                    "to": token,
+                    "sound": "default",
+                    "title": f"⚪ {pair_short} - Señal cerrada ({timeframe})",
+                    "body": f"La señal {previous_side} ya no cumple las condiciones base.\nEl mercado puede estar cambiando de dirección.",
+                    "data": {"type": "signal_disappeared", "pair": pair, "timeframe": timeframe},
+                    "priority": "high",
+                    "channelId": "signals",
+                })
+
+            if messages:
+                import requests
+                from config import EXPO_PUSH_URL
+                response = requests.post(
+                    EXPO_PUSH_URL,
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                    json=messages,
+                    timeout=10,
+                )
+                return {"status": "notified", "reason": "signal_disappeared", "pair": pair}
+
+            return {"status": "no_valid_tokens"}
+
+        except Exception as e:
+            print(f"Error notifying signal disappeared: {e}")
+            return {"status": "error", "message": str(e)}
 
     def get_all_subscribers(self) -> List[Dict[str, Any]]:
         """Get all subscribers (for admin endpoint)."""

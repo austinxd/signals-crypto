@@ -303,18 +303,27 @@ class DBHelper:
     ) -> tuple[bool, str]:
         """
         Determine if we should send notification based on state change.
+
+        ALWAYS notify (no cooldown):
+        - New signal appears (was None)
+        - Direction changes (LONG <-> SHORT)
+
+        WITH 1 hour cooldown:
+        - Quality improves (same direction)
+
         Returns (should_notify, reason)
         """
         state = DBHelper.get_alert_state(db, pair, timeframe)
 
+        # New signal - always notify
         if not state or state.current_side is None:
             return True, "new_signal"
 
-        # Side changed (LONG -> SHORT or vice versa)
+        # Side changed (LONG -> SHORT or vice versa) - ALWAYS notify immediately
         if state.current_side != new_side:
             return True, "side_changed"
 
-        # Quality improved
+        # Same direction - check for quality improvement with cooldown
         quality_order = {
             SignalQualityDB.TEMPRANA: 0,
             SignalQualityDB.BUENA: 1,
@@ -324,13 +333,31 @@ class DBHelper:
         new_quality_val = quality_order.get(new_quality, -1)
 
         if new_quality_val > old_quality_val:
+            # Quality improved - apply 1 hour cooldown
+            if state.last_notified_at:
+                elapsed = (datetime.utcnow() - state.last_notified_at).total_seconds()
+                if elapsed < 3600:  # 1 hour cooldown for quality improvements
+                    return False, "quality_cooldown"
             return True, "quality_improved"
 
-        # Score increased significantly (0.5+ points)
-        if state.current_score and new_score >= state.current_score + 0.5:
-            return True, "score_increased"
-
         return False, "no_change"
+
+    @staticmethod
+    def should_notify_disappeared(
+        db: Session,
+        pair: str,
+        timeframe: str
+    ) -> tuple[bool, str]:
+        """
+        Check if we should notify that a signal disappeared.
+        Only notify if there was an active signal before.
+        """
+        state = DBHelper.get_alert_state(db, pair, timeframe)
+
+        if state and state.current_side is not None:
+            return True, "signal_disappeared"
+
+        return False, "no_previous_signal"
 
     @staticmethod
     def clear_alert_state(db: Session, pair: str, timeframe: str):
