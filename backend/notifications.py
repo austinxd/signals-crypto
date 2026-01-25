@@ -21,12 +21,12 @@ QUALITY_CONFIG = {
         "subtitle": "Alta confluencia técnica",
     },
     SignalQuality.BUENA: {
-        "emoji": "🟡",
+        "emoji": "🟠",
         "label": "Operable",
         "subtitle": "Señal confirmada",
     },
     SignalQuality.TEMPRANA: {
-        "emoji": "⚠️",
+        "emoji": "🔴",
         "label": "Alto Riesgo",
         "subtitle": "Esperar más confirmación",
     },
@@ -373,18 +373,10 @@ class NotificationManager:
                         "timeframe": timeframe,
                     }
 
-                # Get users who should receive this signal (via subscriptions)
+                # Get users who should receive this signal (via subscriptions only)
                 subscribers = DBHelper.get_subscriptions_for_signal(
                     db, pair, timeframe, signal.score
                 )
-
-                # Fallback to old system if no subscriptions found
-                if not subscribers:
-                    users = DBHelper.get_users_for_signal(
-                        db, pair, timeframe, quality_db, signal.score
-                    )
-                    if users:
-                        subscribers = [{"push_token": u.push_token} for u in users]
 
                 if not subscribers:
                     db.close()

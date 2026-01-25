@@ -12,8 +12,8 @@ import { getConfig } from '../services/api';
 
 const TRADING_MODES = [
   { id: 'conservative', name: 'Conservador', emoji: '🔥', description: 'Solo Mejor momento' },
-  { id: 'balanced', name: 'Balanceado', emoji: '🟡', description: 'Operable + Mejor momento' },
-  { id: 'aggressive', name: 'Agresivo', emoji: '⚠️', description: 'Todas las señales' },
+  { id: 'balanced', name: 'Balanceado', emoji: '🟠', description: 'Operable + Mejor momento' },
+  { id: 'aggressive', name: 'Agresivo', emoji: '🔴', description: 'Todas las señales' },
 ];
 
 const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions = [] }) => {

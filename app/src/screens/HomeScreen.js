@@ -16,16 +16,19 @@ import {
   addSubscription,
   removeSubscription,
   getPairData,
+  getNotificationHistoryFromServer,
+  clearSignals,
+  clearNotifications,
 } from '../services/api';
-import { getNotificationHistory, getStoredPushToken } from '../services/notifications';
+import { getStoredPushToken } from '../services/notifications';
 import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
 
 const TRADING_MODE_LABELS = {
-  conservative: { label: 'Conservador', emoji: '🔥' },
-  balanced: { label: 'Balanceado', emoji: '🟡' },
+  conservative: { label: 'Conservador', emoji: '⭐' },
+  balanced: { label: 'Balanceado', emoji: '🎯' },
   aggressive: { label: 'Agresivo', emoji: '⚠️' },
 };
 
@@ -35,6 +38,32 @@ const getModeColor = (mode) => {
     case 'balanced': return '#ffd93d';
     case 'aggressive': return '#ff9f43';
     default: return '#888';
+  }
+};
+
+const formatRelativeTime = (timestamp) => {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) {
+    return 'Ahora';
+  } else if (diffMins < 60) {
+    return `Hace ${diffMins} min`;
+  } else if (diffHours < 24) {
+    return `Hace ${diffHours}h`;
+  } else if (diffDays < 7) {
+    return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+  } else {
+    return date.toLocaleString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 };
 
@@ -50,7 +79,8 @@ const formatPrice = (p) => {
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
   const [marketData, setMarketData] = useState({});
-  const [signals, setSignals] = useState([]);
+  const [signals, setSignals] = useState([]);  // For signals list (filtered by user)
+  const [badgeSignals, setBadgeSignals] = useState([]);  // For badges (current market state)
   const [notifications, setNotifications] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [pushToken, setPushToken] = useState(null);
@@ -64,10 +94,14 @@ const HomeScreen = () => {
   const [expandedSubs, setExpandedSubs] = useState({});  // Track expanded subscriptions
 
   const toggleExpanded = (subId) => {
-    setExpandedSubs(prev => ({
-      ...prev,
-      [subId]: !prev[subId]
-    }));
+    setExpandedSubs(prev => {
+      // Si es undefined, tratarlo como true (expandido por defecto)
+      const currentState = prev[subId] !== false;
+      return {
+        ...prev,
+        [subId]: !currentState
+      };
+    });
   };
 
   // Get push token on mount
@@ -119,13 +153,28 @@ const HomeScreen = () => {
         }
         setMarketData(combinedData);
         setLastUpdate(new Date());
+
+        // Load signals for badges (current market state, no user filter)
+        const badgeData = await getSignals(50, null, null);
+        setBadgeSignals(badgeData.signals || []);
       } else if (activeTab === 'signals') {
-        // Get signals filtered by user's subscriptions
+        // Get signals filtered by user's subscriptions and cleared date
         const data = await getSignals(20, null, pushToken);
         setSignals(data.signals || []);
+        // Also update badge signals
+        const badgeData = await getSignals(50, null, null);
+        setBadgeSignals(badgeData.signals || []);
       } else {
-        const history = await getNotificationHistory();
-        setNotifications(history);
+        // Get notification history from server
+        if (pushToken) {
+          const data = await getNotificationHistoryFromServer(pushToken);
+          setNotifications(data.notifications || []);
+        } else {
+          setNotifications([]);
+        }
+        // Also update badge signals
+        const badgeData = await getSignals(50, null, null);
+        setBadgeSignals(badgeData.signals || []);
       }
     } catch (err) {
       setError('Error conectando al servidor');
@@ -215,17 +264,27 @@ const HomeScreen = () => {
         );
       }
 
+      // Helper to get quality badge config
+      const getQualityBadge = (quality) => {
+        switch (quality) {
+          case 'OPTIMA':
+            return { label: 'Óptima', color: '#00d4aa', emoji: '🔥' };
+          case 'BUENA':
+            return { label: 'Buena', color: '#ffd93d', emoji: '🟡' };
+          case 'TEMPRANA':
+          default:
+            return { label: 'Temprana', color: '#ff9f43', emoji: '⚡' };
+        }
+      };
+
       return (
         <>
           {subscriptions.map((sub) => {
-            const modeInfo = TRADING_MODE_LABELS[sub.trading_mode] || TRADING_MODE_LABELS.balanced;
             const isExpanded = expandedSubs[sub.id] !== false; // Default expanded
             const pairData = marketData[`${sub.pair}_${sub.timeframe}`];
             const price = pairData?.price;
-            const hasSignal = pairData?.indicators && (
-              (pairData.indicators.price_above_ema && pairData.indicators.rsi_rising) ||
-              (!pairData.indicators.price_above_ema && pairData.indicators.rsi_falling)
-            );
+            // Find actual signal for this pair/timeframe (use badgeSignals for current market state)
+            const pairSignal = badgeSignals.find(s => s.pair === sub.pair && s.timeframe === sub.timeframe);
 
             return (
               <View key={sub.id} style={styles.subscriptionWrapper}>
@@ -237,12 +296,10 @@ const HomeScreen = () => {
                 >
                   <View style={styles.subscriptionLeft}>
                     <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+                    <Text style={styles.modeIconMini}>{TRADING_MODE_LABELS[sub.trading_mode]?.emoji || '🎯'}</Text>
                     <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
                     {price && (
                       <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
-                    )}
-                    {hasSignal && (
-                      <View style={styles.signalDot} />
                     )}
                   </View>
                   <View style={styles.subscriptionRight}>
@@ -250,9 +307,25 @@ const HomeScreen = () => {
                       <View style={styles.timeframeBadgeSmall}>
                         <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
                       </View>
-                      <View style={[styles.modeBadgeSmall, { backgroundColor: getModeColor(sub.trading_mode) }]}>
-                        <Text style={styles.modeBadgeTextSmall}>{modeInfo.emoji}</Text>
-                      </View>
+                      {/* Signal indicator: green for LONG, red for SHORT, gray for none */}
+                      {pairSignal ? (
+                        <>
+                          <View style={[styles.signalIndicator, { backgroundColor: pairSignal.side === 'LONG' ? '#00d4aa' : '#ff4757' }]}>
+                            <Text style={styles.signalIndicatorText}>
+                              {pairSignal.side === 'LONG' ? '🟢' : '🔴'}
+                            </Text>
+                          </View>
+                          <View style={[styles.qualityBadgeSmall, { backgroundColor: getQualityBadge(pairSignal.quality).color + '30', borderColor: getQualityBadge(pairSignal.quality).color }]}>
+                            <Text style={[styles.qualityBadgeTextSmall, { color: getQualityBadge(pairSignal.quality).color }]}>
+                              {getQualityBadge(pairSignal.quality).emoji} {getQualityBadge(pairSignal.quality).label}
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.noSignalIndicator}>
+                          <Text style={styles.noSignalText}>⚪</Text>
+                        </View>
+                      )}
                     </View>
                     <TouchableOpacity
                       style={styles.deleteButton}
@@ -269,6 +342,7 @@ const HomeScreen = () => {
                     pair={sub.pair}
                     data={pairData}
                     timeframe={sub.timeframe}
+                    embedded={true}
                     onPress={() => {
                       setSelectedPair(sub.pair);
                       setSelectedSubscription(sub);
@@ -300,9 +374,42 @@ const HomeScreen = () => {
           </View>
         );
       }
-      return signals.map((signal, index) => (
-        <SignalCard key={`${signal.timestamp}-${index}`} signal={signal} />
-      ));
+      return (
+        <>
+          <TouchableOpacity
+            style={styles.clearButtonTop}
+            onPress={() => {
+              Alert.alert(
+                'Limpiar Señales',
+                '¿Estás seguro de que quieres limpiar todas las señales?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Limpiar',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        if (pushToken) {
+                          await clearSignals(pushToken);
+                        }
+                        setSignals([]);
+                      } catch (e) {
+                        console.error('Error clearing signals:', e);
+                        setSignals([]); // Clear locally even if server fails
+                      }
+                    }
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={styles.clearButtonText}>🗑️ Limpiar señales</Text>
+          </TouchableOpacity>
+          {signals.map((signal, index) => (
+            <SignalCard key={`${signal.timestamp}-${index}`} signal={signal} />
+          ))}
+        </>
+      );
     }
 
     if (notifications.length === 0) {
@@ -315,15 +422,54 @@ const HomeScreen = () => {
       );
     }
 
-    return notifications.map((notif) => (
-      <View key={notif.id} style={styles.notificationCard}>
-        <Text style={styles.notificationTitle}>{notif.title}</Text>
-        <Text style={styles.notificationBody}>{notif.body}</Text>
-        <Text style={styles.notificationTime}>
-          {new Date(notif.receivedAt).toLocaleString('es-ES')}
-        </Text>
-      </View>
-    ));
+    return (
+      <>
+        <TouchableOpacity
+          style={styles.clearButtonTop}
+          onPress={() => {
+            Alert.alert(
+              'Limpiar Historial',
+              '¿Estás seguro de que quieres limpiar todo el historial de notificaciones?',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Limpiar',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      if (pushToken) {
+                        await clearNotifications(pushToken);
+                      }
+                      setNotifications([]);
+                    } catch (e) {
+                      console.error('Error clearing notifications:', e);
+                      setNotifications([]); // Clear locally even if server fails
+                    }
+                  }
+                },
+              ]
+            );
+          }}
+        >
+          <Text style={styles.clearButtonText}>🗑️ Limpiar historial</Text>
+        </TouchableOpacity>
+        {notifications.map((notif) => {
+          // Transform notification to signal format for SignalCard
+          const signalData = {
+            pair: notif.pair,
+            side: notif.side,
+            timeframe: notif.timeframe,
+            quality: notif.quality,
+            score: notif.score,
+            entry: notif.entry_price,
+            takeProfit: notif.take_profit,
+            stopLoss: notif.stop_loss,
+            timestamp: notif.receivedAt,
+          };
+          return <SignalCard key={notif.id} signal={signalData} />;
+        })}
+      </>
+    );
   };
 
   return (
@@ -407,6 +553,7 @@ const HomeScreen = () => {
         pair={selectedPair}
         data={selectedPair && selectedSubscription ? marketData[`${selectedPair}_${selectedSubscription.timeframe}`] : null}
         subscription={selectedSubscription}
+        signal={selectedPair && selectedSubscription ? badgeSignals.find(s => s.pair === selectedPair && s.timeframe === selectedSubscription.timeframe) : null}
       />
 
       <AddSubscriptionModal
@@ -567,17 +714,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   subscriptionWrapper: {
-    marginBottom: 8,
+    marginBottom: 12,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   subscriptionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#1a1a2e',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 4,
   },
   subscriptionLeft: {
     flexDirection: 'row',
@@ -593,7 +740,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-    marginRight: 10,
+    marginRight: 6,
+  },
+  modeIconMini: {
+    fontSize: 14,
+    marginRight: 6,
   },
   subscriptionPrice: {
     color: '#888',
@@ -605,6 +756,37 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#00d4aa',
     marginLeft: 8,
+  },
+  signalIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signalIndicatorText: {
+    fontSize: 14,
+  },
+  qualityBadgeSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  qualityBadgeTextSmall: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  noSignalIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2a2a4a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noSignalText: {
+    fontSize: 12,
   },
   subscriptionRight: {
     flexDirection: 'row',
@@ -679,6 +861,30 @@ const styles = StyleSheet.create({
   addPairText: {
     color: '#888',
     fontSize: 14,
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a2a4a',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  clearButtonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a2a4a',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  clearButtonText: {
+    color: '#ff4757',
+    fontSize: 14,
+    fontWeight: '600',
   },
   notificationCard: {
     backgroundColor: '#1a1a2e',

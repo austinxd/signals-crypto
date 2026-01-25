@@ -302,3 +302,33 @@ export async function getSubscriptions(token) {
     body: JSON.stringify({ token }),
   });
 }
+
+/**
+ * Get notification history from server
+ */
+export async function getNotificationHistoryFromServer(token, limit = 50) {
+  return apiRequest('/api/notifications/history', {
+    method: 'POST',
+    body: JSON.stringify({ token, limit }),
+  });
+}
+
+/**
+ * Clear signals for user (hides signals before current time)
+ */
+export async function clearSignals(token) {
+  return apiRequest('/api/signals/clear', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+/**
+ * Clear notifications for user (hides notifications before current time)
+ */
+export async function clearNotifications(token) {
+  return apiRequest('/api/notifications/clear', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}

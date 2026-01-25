@@ -114,7 +114,7 @@ export function addNotificationResponseListener(callback) {
 /**
  * Save notification to local history
  */
-async function saveNotificationToHistory(content) {
+export async function saveNotificationToHistory(content) {
   try {
     const historyJson = await AsyncStorage.getItem(NOTIFICATION_HISTORY_KEY);
     const history = historyJson ? JSON.parse(historyJson) : [];

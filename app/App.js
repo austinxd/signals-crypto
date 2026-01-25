@@ -11,7 +11,7 @@ import {
   getStoredPushToken,
   addNotificationListener,
   addNotificationResponseListener,
-  saveNotificationFromResponse,
+  saveNotificationToHistory,
 } from './src/services/notifications';
 import { registerPushToken, getUserPairs, getUserTimeframe } from './src/services/api';
 
@@ -46,6 +46,24 @@ export default function App() {
   useEffect(() => {
     // Auto-sync push token on startup
     syncPushToken();
+
+    // Set up notification listeners to save to history
+    const notificationListener = addNotificationListener((notification) => {
+      console.log('Notification received:', notification.request.content.title);
+    });
+
+    const responseListener = addNotificationResponseListener((response) => {
+      // Save notification when user taps on it
+      const content = response.notification.request.content;
+      saveNotificationToHistory(content);
+      console.log('Notification tapped:', content.title);
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      notificationListener.remove();
+      responseListener.remove();
+    };
   }, []);
 
   return (

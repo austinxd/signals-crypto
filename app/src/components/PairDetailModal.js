@@ -11,7 +11,13 @@ import {
 
 const { width } = Dimensions.get('window');
 
-const PairDetailModal = ({ visible, onClose, pair, data }) => {
+const TRADING_MODE_CONFIG = {
+  conservative: { label: 'Conservador', emoji: '🔥', color: '#00d4aa', description: 'Solo señales de alta calidad (≥2.5 pts)' },
+  balanced: { label: 'Balanceado', emoji: '🟠', color: '#ffd93d', description: 'Señales operables (≥1.5 pts)' },
+  aggressive: { label: 'Agresivo', emoji: '🔴', color: '#ff9f43', description: 'Todas las señales (cualquier score)' },
+};
+
+const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal }) => {
   if (!data || !data.indicators) {
     return (
       <Modal visible={visible} animationType="slide" transparent>
@@ -173,9 +179,9 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
   const shortScore = calculateScore(false);
 
   const getQualityLabel = (score) => {
-    if (score >= 2.5) return { label: 'Mejor momento', color: '#00d4aa', emoji: '🔥' };
-    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟡' };
-    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '⚠️' };
+    if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '🔥' };
+    if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '🟡' };
+    return { label: 'Temprana', color: '#ff9f43', emoji: '⚡' };
   };
 
   const renderBaseCondition = (condition, key, color) => (
@@ -231,6 +237,45 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
     );
   };
 
+  // Get quality config from signal quality string (from backend)
+  const getQualityFromSignal = (qualityStr) => {
+    switch (qualityStr) {
+      case 'OPTIMA':
+        return { label: 'Óptima', color: '#00d4aa', emoji: '🔥' };
+      case 'BUENA':
+        return { label: 'Buena', color: '#ffd93d', emoji: '🟡' };
+      case 'TEMPRANA':
+      default:
+        return { label: 'Temprana', color: '#ff9f43', emoji: '⚡' };
+    }
+  };
+
+  // Get signal info for header - use actual signal data if available
+  const getSignalInfo = () => {
+    // If we have a real signal from backend, use it
+    if (signal) {
+      const quality = getQualityFromSignal(signal.quality);
+      return {
+        type: signal.side,
+        emoji: signal.side === 'LONG' ? '🟢' : '🔴',
+        quality,
+        score: signal.score,
+      };
+    }
+    // Fallback to calculated signal
+    if (isLongSignal) {
+      const quality = getQualityLabel(longScore);
+      return { type: 'LONG', emoji: '🟢', quality, score: longScore };
+    }
+    if (isShortSignal) {
+      const quality = getQualityLabel(shortScore);
+      return { type: 'SHORT', emoji: '🔴', quality, score: shortScore };
+    }
+    return null;
+  };
+
+  const signalInfo = getSignalInfo();
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
@@ -238,10 +283,48 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
           <View style={styles.header}>
             <Text style={styles.title}>{pair}</Text>
             <Text style={styles.price}>${ind.price?.toLocaleString()}</Text>
-            <Text style={styles.timeframe}>{data.timeframe}</Text>
+            <View style={styles.headerBadges}>
+              <Text style={styles.timeframe}>{data.timeframe}</Text>
+              {signalInfo ? (
+                <View style={[styles.signalBadge, { backgroundColor: signalInfo.quality.color + '20', borderColor: signalInfo.quality.color }]}>
+                  <Text style={[styles.signalBadgeText, { color: signalInfo.quality.color }]}>
+                    {signalInfo.emoji} {signalInfo.type} {signalInfo.quality.emoji} {signalInfo.quality.label}
+                    {signalInfo.score !== undefined ? ` (${signalInfo.score.toFixed(1)})` : ''}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.noSignalBadge}>
+                  <Text style={styles.noSignalBadgeText}>Sin señal</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Subscription Alert Mode */}
+            {subscription && (
+              <View style={styles.alertModeSection}>
+                <Text style={styles.alertModeLabel}>🔔 Modo de Alertas</Text>
+                <View style={[
+                  styles.alertModeBadge,
+                  { backgroundColor: TRADING_MODE_CONFIG[subscription.trading_mode]?.color + '20',
+                    borderColor: TRADING_MODE_CONFIG[subscription.trading_mode]?.color }
+                ]}>
+                  <Text style={styles.alertModeEmoji}>
+                    {TRADING_MODE_CONFIG[subscription.trading_mode]?.emoji}
+                  </Text>
+                  <View>
+                    <Text style={[styles.alertModeText, { color: TRADING_MODE_CONFIG[subscription.trading_mode]?.color }]}>
+                      {TRADING_MODE_CONFIG[subscription.trading_mode]?.label}
+                    </Text>
+                    <Text style={styles.alertModeDesc}>
+                      {TRADING_MODE_CONFIG[subscription.trading_mode]?.description}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* Funding Rate Warning */}
             {fundingWarning && (
               <View style={[styles.warningBox, { backgroundColor: fundingWarning.bgColor, borderColor: fundingWarning.color }]}>
@@ -327,127 +410,17 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
               )}
             </View>
 
-            {/* Fibonacci Levels */}
-            {ind.fibonacci && (() => {
-              // Use indicator signals to determine direction, not just Fibonacci trend
-              const fiboIsLong = longBaseMet >= shortBaseMet;
-
-              return (
+            {/* Fibonacci Levels - Informativo */}
+            {ind.fibonacci && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>📐 Análisis Fibonacci</Text>
+                <Text style={styles.sectionTitle}>📐 Niveles Fibonacci</Text>
                 <View style={styles.fiboBox}>
-                  {/* Recommendation Banner - based on indicators, not Fibo trend */}
-                  <View style={[styles.fiboRecommendationBanner, {
-                    backgroundColor: fiboIsLong ? 'rgba(0, 212, 170, 0.15)' : 'rgba(255, 71, 87, 0.15)',
-                    borderColor: fiboIsLong ? '#00d4aa' : '#ff4757'
-                  }]}>
-                    <Text style={[styles.fiboRecPosition, { color: fiboIsLong ? '#00d4aa' : '#ff4757' }]}>
-                      {fiboIsLong ? '📈 Setup LONG' : '📉 Setup SHORT'}
-                    </Text>
-                    <Text style={styles.fiboRecSubtitle}>
-                      Basado en condiciones base ({fiboIsLong ? longBaseMet : shortBaseMet}/2)
-                    </Text>
-                    <Text style={[styles.fiboRecQuality, {
-                      color: ind.fibonacci.entry_quality === 'optimal' ? '#00d4aa' :
-                             ind.fibonacci.entry_quality === 'good' ? '#ffd93d' : '#ff9f43'
-                    }]}>
-                      {ind.fibonacci.entry_quality === 'optimal' ? '🔥 Entrada Óptima' :
-                       ind.fibonacci.entry_quality === 'good' ? '🟡 Entrada Buena' : '⚡ Entrada Temprana'}
-                    </Text>
-                  </View>
-
-                  {/* Trade Setup Based on Fibonacci */}
-                  {ind.fibonacci.levels && (() => {
-                    const levels = Object.entries(ind.fibonacci.levels)
-                      .map(([name, price]) => ({ name, price }))
-                      .sort((a, b) => a.price - b.price);
-
-                    const currentPrice = ind.price;
-                    const isLong = fiboIsLong;
-
-                    // Find levels above and below current price
-                    const levelsBelow = levels.filter(l => l.price < currentPrice);
-                    const levelsAbove = levels.filter(l => l.price > currentPrice);
-
-                    let entry, stopLoss, takeProfit;
-
-                    if (isLong) {
-                      // LONG: Entry at support, SL below, TP above
-                      entry = levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null;
-                      stopLoss = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : null;
-                      takeProfit = levelsAbove.length > 1 ? levelsAbove[1] : (levelsAbove.length > 0 ? levelsAbove[0] : null);
-                    } else {
-                      // SHORT: Entry at resistance, SL above, TP below
-                      entry = levelsAbove.length > 0 ? levelsAbove[0] : null;
-                      stopLoss = levelsAbove.length > 1 ? levelsAbove[1] : null;
-                      takeProfit = levelsBelow.length > 1 ? levelsBelow[levelsBelow.length - 2] : (levelsBelow.length > 0 ? levelsBelow[levelsBelow.length - 1] : null);
-                    }
-
-                    // Calculate percentages
-                    const slPercent = stopLoss && entry ? Math.abs((stopLoss.price - entry.price) / entry.price * 100) : null;
-                    const tpPercent = takeProfit && entry ? Math.abs((takeProfit.price - entry.price) / entry.price * 100) : null;
-                    const riskReward = slPercent && tpPercent ? (tpPercent / slPercent).toFixed(1) : null;
-
-                    return (
-                      <View style={styles.tradeSetupBox}>
-                        <Text style={styles.tradeSetupTitle}>
-                          {isLong ? '🟢 Setup LONG' : '🔴 Setup SHORT'}
-                        </Text>
-
-                        <View style={styles.tradeSetupRow}>
-                          <Text style={styles.tradeSetupLabel}>📍 Entrada (Fibo {entry?.name}%):</Text>
-                          <Text style={styles.tradeSetupValue}>
-                            ${entry?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
-                          </Text>
-                        </View>
-
-                        <View style={styles.tradeSetupRow}>
-                          <Text style={styles.tradeSetupLabel}>🎯 Take Profit (Fibo {takeProfit?.name}%):</Text>
-                          <Text style={[styles.tradeSetupValue, { color: '#00d4aa' }]}>
-                            ${takeProfit?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
-                            {tpPercent && <Text style={styles.tradeSetupPercent}> (+{tpPercent.toFixed(1)}%)</Text>}
-                          </Text>
-                        </View>
-
-                        <View style={styles.tradeSetupRow}>
-                          <Text style={styles.tradeSetupLabel}>🛑 Stop Loss (Fibo {stopLoss?.name}%):</Text>
-                          <Text style={[styles.tradeSetupValue, { color: '#ff4757' }]}>
-                            ${stopLoss?.price?.toLocaleString(undefined, {maximumFractionDigits: 2}) || 'N/A'}
-                            {slPercent && <Text style={styles.tradeSetupPercent}> (-{slPercent.toFixed(1)}%)</Text>}
-                          </Text>
-                        </View>
-
-                        {riskReward && (
-                          <View style={styles.tradeSetupRatio}>
-                            <Text style={styles.tradeSetupRatioLabel}>Riesgo/Beneficio:</Text>
-                            <Text style={[styles.tradeSetupRatioValue, {
-                              color: parseFloat(riskReward) >= 2 ? '#00d4aa' : parseFloat(riskReward) >= 1.5 ? '#ffd93d' : '#ff9f43'
-                            }]}>
-                              1:{riskReward}
-                            </Text>
-                          </View>
-                        )}
-
-                        <Text style={styles.tradeSetupNote}>
-                          Precio actual: ${currentPrice?.toLocaleString(undefined, {maximumFractionDigits: 2})}
-                        </Text>
-                      </View>
-                    );
-                  })()}
-
                   <View style={styles.fiboInfoRow}>
                     <Text style={styles.fiboInfoLabel}>Tendencia (50 velas):</Text>
                     <Text style={[styles.fiboInfoValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
                       {ind.fibonacci.is_uptrend ? 'Alcista' : 'Bajista'}
                     </Text>
                   </View>
-                  <View style={styles.fiboInfoRow}>
-                    <Text style={styles.fiboInfoLabel}>Niveles Fibo actúan como:</Text>
-                    <Text style={styles.fiboInfoValue}>
-                      {ind.fibonacci.is_uptrend ? 'Soporte' : 'Resistencia'}
-                    </Text>
-                  </View>
-                  <Text style={styles.fiboRec}>{ind.fibonacci.recommendation}</Text>
 
                   <View style={styles.fiboLevelsContainer}>
                     <Text style={styles.fiboLevelsTitle}>Niveles:</Text>
@@ -482,8 +455,7 @@ const PairDetailModal = ({ visible, onClose, pair, data }) => {
                   </View>
                 </View>
               </View>
-              );
-            })()}
+            )}
 
             {/* Raw Indicators */}
             <View style={styles.section}>
@@ -571,10 +543,68 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 8,
   },
+  headerBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
   timeframe: {
     color: '#888',
     fontSize: 14,
-    marginTop: 4,
+    backgroundColor: '#2a2a4a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  signalBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  signalBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  noSignalBadge: {
+    backgroundColor: '#2a2a4a',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  noSignalBadgeText: {
+    color: '#666',
+    fontSize: 13,
+  },
+  alertModeSection: {
+    marginBottom: 16,
+  },
+  alertModeLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  alertModeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  alertModeEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  alertModeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  alertModeDesc: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
   },
   content: {
     padding: 16,

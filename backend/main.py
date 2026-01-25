@@ -78,6 +78,11 @@ class SubscriptionList(BaseModel):
     token: str
 
 
+class NotificationHistory(BaseModel):
+    token: str
+    limit: Optional[int] = 50
+
+
 def get_all_monitored_pairs() -> Set[str]:
     """Get all pairs that any user is monitoring (via subscriptions or legacy)."""
     pairs = set(DEFAULT_PAIRS)
@@ -364,14 +369,16 @@ async def get_signals(
     """Get recent signals with optional filters. If token provided, filter by user subscriptions."""
     signals = signal_history.get_recent_signals(limit * 5)  # Get more to filter
 
-    # If token provided, filter by user's subscriptions
+    # If token provided, filter by user's subscriptions and cleared_at
     user_pairs = set()
     user_timeframes = set()
+    signals_cleared_at = None
     if token and notification_manager.use_db:
         try:
             db = get_db()
             user = DBHelper.get_user_by_token(db, token)
             if user:
+                signals_cleared_at = user.signals_cleared_at
                 # Get subscriptions for this user
                 subs = db.query(Subscription).filter(
                     Subscription.user_id == user.id,
@@ -395,6 +402,11 @@ async def get_signals(
         signals = [s for s in signals if s.get("pair") == pair]
     if min_score is not None:
         signals = [s for s in signals if s.get("score", 0) >= min_score]
+
+    # Filter by signals_cleared_at
+    if signals_cleared_at:
+        from dateutil.parser import parse as parse_date
+        signals = [s for s in signals if parse_date(s.get("timestamp", "1970-01-01")) > signals_cleared_at]
 
     # Limit results
     signals = signals[:limit]
@@ -655,6 +667,137 @@ async def list_subscriptions(data: SubscriptionList):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notifications/history")
+async def get_notification_history(data: NotificationHistory):
+    """Get notification/signal history for a user based on their subscriptions."""
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get user's subscriptions
+        subs = DBHelper.get_user_subscriptions(db, user.id)
+        if not subs:
+            db.close()
+            return {"notifications": [], "total": 0}
+
+        # Build filter for signals matching user's subscriptions
+        from sqlalchemy import or_, and_
+        from database import Signal as SignalDB
+
+        # Create conditions for each subscription
+        conditions = []
+        for sub in subs:
+            conditions.append(
+                and_(
+                    SignalDB.pair == sub.pair,
+                    SignalDB.timeframe == sub.timeframe
+                )
+            )
+
+        # Build base query
+        query = db.query(SignalDB).filter(or_(*conditions))
+
+        # Filter by notifications_cleared_at if set
+        if user.notifications_cleared_at:
+            query = query.filter(SignalDB.created_at > user.notifications_cleared_at)
+
+        # Query signals matching any subscription
+        signals = query.order_by(SignalDB.created_at.desc()).limit(data.limit).all()
+
+        db.close()
+
+        # Format response
+        notifications = []
+        for sig in signals:
+            # Determine quality emoji
+            quality_emoji = "🔥" if sig.quality.value == "OPTIMA" else "🟠" if sig.quality.value == "BUENA" else "🔴"
+            direction_emoji = "🟢" if sig.side == "LONG" else "🔴"
+
+            pair_short = sig.pair.replace("/USDT", "")
+            title = f"{quality_emoji} {pair_short} {sig.side} ({sig.timeframe})"
+
+            tp_percent = abs((sig.take_profit - sig.entry_price) / sig.entry_price * 100)
+            sl_percent = abs((sig.stop_loss - sig.entry_price) / sig.entry_price * 100)
+
+            body = f"Entrada: ${sig.entry_price:,.2f}\nTP: +{tp_percent:.1f}% | SL: -{sl_percent:.1f}%"
+
+            notifications.append({
+                "id": sig.id,
+                "title": title,
+                "body": body,
+                "pair": sig.pair,
+                "timeframe": sig.timeframe,
+                "side": sig.side,
+                "quality": sig.quality.value,
+                "score": sig.score,
+                "entry_price": sig.entry_price,
+                "take_profit": sig.take_profit,
+                "stop_loss": sig.stop_loss,
+                "receivedAt": sig.created_at.isoformat(),
+            })
+
+        return {
+            "notifications": notifications,
+            "total": len(notifications),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting notification history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ClearRequest(BaseModel):
+    token: str
+
+
+@app.post("/api/signals/clear")
+async def clear_signals(data: ClearRequest):
+    """Clear signal history for a user (hides signals before current time)."""
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.signals_cleared_at = datetime.now(timezone.utc)
+        db.commit()
+        db.close()
+
+        return {"status": "cleared", "cleared_at": user.signals_cleared_at.isoformat()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error clearing signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notifications/clear")
+async def clear_notifications(data: ClearRequest):
+    """Clear notification history for a user (hides notifications before current time)."""
+    try:
+        db = get_db()
+        user = DBHelper.get_user_by_token(db, data.token)
+        if not user:
+            db.close()
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.notifications_cleared_at = datetime.now(timezone.utc)
+        db.commit()
+        db.close()
+
+        return {"status": "cleared", "cleared_at": user.notifications_cleared_at.isoformat()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error clearing notifications: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

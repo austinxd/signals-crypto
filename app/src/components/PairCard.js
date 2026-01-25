@@ -1,10 +1,12 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-const PairCard = ({ pair, data, onPress }) => {
+const PairCard = ({ pair, data, onPress, embedded = false }) => {
+  const cardStyle = embedded ? styles.cardEmbedded : styles.card;
+
   if (!data) {
     return (
-      <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7}>
         <Text style={styles.pair}>{pair}</Text>
         <Text style={styles.loading}>Cargando...</Text>
       </TouchableOpacity>
@@ -92,8 +94,8 @@ const PairCard = ({ pair, data, onPress }) => {
     if (indicators.macd_crossover_bullish) score += 1;  // MACD crossover
     if (indicators.volume_above_average) score += 1;    // Volume
     if (funding?.sentiment === 'too_many_shorts') score += 0.5;  // Funding
-    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo
-    else if (indicators.fibonacci?.near_key_level) score += 0.25;
+    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo en nivel clave
+    else if (indicators.fibonacci?.near_key_level) score += 0.25;  // Fibo cerca
     return score;
   };
 
@@ -104,15 +106,15 @@ const PairCard = ({ pair, data, onPress }) => {
     if (indicators.macd_crossover_bearish) score += 1;  // MACD crossover
     if (indicators.volume_above_average) score += 1;    // Volume
     if (funding?.sentiment === 'too_many_longs') score += 0.5;  // Funding
-    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo
-    else if (indicators.fibonacci?.near_key_level) score += 0.25;
+    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo en nivel clave
+    else if (indicators.fibonacci?.near_key_level) score += 0.25;  // Fibo cerca
     return score;
   };
 
   const getQuality = (score) => {
     if (score >= 3.0) return { label: 'Mejor momento', color: '#00d4aa', emoji: '🔥' };
-    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟡' };
-    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '⚠️' };
+    if (score >= 1.5) return { label: 'Operable', color: '#ffd93d', emoji: '🟠' };
+    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '🔴' };
   };
 
   const longBase = checkLongBase();
@@ -133,14 +135,17 @@ const PairCard = ({ pair, data, onPress }) => {
   const shortMet = shortBase.conditions.length;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.pair}>{pair}</Text>
-          <Text style={styles.tapHint}>Toca para ver detalles</Text>
+    <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7}>
+      {/* Header solo si no está embebido (ya se muestra en subscriptionHeader) */}
+      {!embedded && (
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.pair}>{pair}</Text>
+            <Text style={styles.tapHint}>Toca para ver detalles</Text>
+          </View>
+          <Text style={styles.price}>{formatPrice(price)}</Text>
         </View>
-        <Text style={styles.price}>{formatPrice(price)}</Text>
-      </View>
+      )}
 
       {indicators && (
         <>
@@ -163,13 +168,11 @@ const PairCard = ({ pair, data, onPress }) => {
             </View>
           )}
 
-          {/* Fibonacci - Informativo con niveles específicos */}
+          {/* Fibonacci - Solo niveles informativos */}
           {indicators.fibonacci && indicators.fibonacci.levels && (() => {
-            const fib = indicators.fibonacci;
-            const levels = fib.levels;
+            const levels = indicators.fibonacci.levels;
             const currentPrice = price;
 
-            // Find nearest support (below price) and resistance (above price)
             const levelEntries = Object.entries(levels)
               .map(([name, p]) => ({ name, price: parseFloat(p) }))
               .sort((a, b) => a.price - b.price);
@@ -180,35 +183,12 @@ const PairCard = ({ pair, data, onPress }) => {
             const nearestSupport = supports.length > 0 ? supports[supports.length - 1] : null;
             const nearestResistance = resistances.length > 0 ? resistances[0] : null;
 
-            // Calculate distances
             const supportDist = nearestSupport ? ((currentPrice - nearestSupport.price) / currentPrice * 100) : null;
             const resistanceDist = nearestResistance ? ((nearestResistance.price - currentPrice) / currentPrice * 100) : null;
 
-            // Determine which is closer
-            const closerToSupport = supportDist && resistanceDist ? supportDist < resistanceDist : supportDist != null;
-            const closestDist = closerToSupport ? supportDist : resistanceDist;
-
-            const getProximityInfo = () => {
-              if (!closestDist) return { label: 'Sin niveles', color: '#888', emoji: '❓' };
-              if (closestDist < 0.5) return { label: '¡En nivel!', color: '#00d4aa', emoji: '🎯' };
-              if (closestDist < 1.5) return { label: 'Muy cerca', color: '#ffd93d', emoji: '📍' };
-              if (closestDist < 3) return { label: 'Cerca', color: '#ff9f43', emoji: '⏳' };
-              return { label: 'Entre niveles', color: '#888', emoji: '📏' };
-            };
-
-            const proximityInfo = getProximityInfo();
-
             return (
               <View style={styles.fiboContainer}>
-                <View style={styles.fiboHeader}>
-                  <Text style={styles.fiboLabel}>📐 Fibonacci</Text>
-                  <View style={[styles.distanceBadge, { backgroundColor: proximityInfo.color + '20', borderColor: proximityInfo.color }]}>
-                    <Text style={[styles.distanceText, { color: proximityInfo.color }]}>
-                      {proximityInfo.emoji} {proximityInfo.label}
-                    </Text>
-                  </View>
-                </View>
-
+                <Text style={styles.fiboLabel}>📐 Fibonacci</Text>
                 <View style={styles.fiboLevels}>
                   {nearestResistance && (
                     <View style={styles.fiboLevelRow}>
@@ -376,6 +356,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+  },
+  cardEmbedded: {
+    padding: 12,
+    paddingTop: 0,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
   },
   header: {
     flexDirection: 'row',

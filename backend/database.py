@@ -58,6 +58,8 @@ class User(Base):
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    signals_cleared_at = Column(DateTime, nullable=True)  # Hide signals before this time
+    notifications_cleared_at = Column(DateTime, nullable=True)  # Hide notifications before this time
 
 
 class Subscription(Base):
