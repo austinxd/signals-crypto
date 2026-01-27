@@ -676,6 +676,12 @@ def _compute_position_indicators(symbol: str, side: str):
 
         is_long = side == "long"
 
+        # Determine if sentiment goes against position
+        sentiment_against = (sentiment == "bullish" and not is_long) or (sentiment == "bearish" and is_long)
+        sentiment_favor = (sentiment == "bullish" and is_long) or (sentiment == "bearish" and not is_long)
+
+        side_label = "SHORT" if not is_long else "LONG"
+
         # Suggestion logic (priority order)
         if rsi is not None and rsi > 75 and is_long:
             suggestion = f"RSI sobrecomprado ({rsi:.0f}) - considerar tomar ganancias parciales"
@@ -683,26 +689,54 @@ def _compute_position_indicators(symbol: str, side: str):
         elif rsi is not None and rsi < 25 and not is_long:
             suggestion = f"RSI sobrevendido ({rsi:.0f}) - considerar tomar ganancias parciales"
             risk_level = "high"
+        elif rsi is not None and rsi > 65 and not is_long:
+            suggestion = f"RSI alto ({rsi:.0f}) en contra de {side_label} - precaución"
+            risk_level = "high"
+        elif rsi is not None and rsi < 35 and is_long:
+            suggestion = f"RSI bajo ({rsi:.0f}) en contra de {side_label} - precaución"
+            risk_level = "high"
         elif (macd_cross_bear and is_long) or (macd_cross_bull and not is_long):
             direction = "bearish" if macd_cross_bear else "bullish"
-            suggestion = f"MACD cruzando {direction} - vigilar stop loss"
+            suggestion = f"MACD cruzando {direction} en contra de {side_label} - vigilar stop loss"
             risk_level = "high"
         elif divergence_type:
             against = (divergence_type == "bearish" and is_long) or (divergence_type == "bullish" and not is_long)
             if against:
-                suggestion = "Divergencia detectada - posible reversión"
+                suggestion = f"Divergencia {divergence_type} contra {side_label} - posible reversión"
                 risk_level = "high"
         elif price_above_ema is not None:
             ema_against = (not price_above_ema and is_long) or (price_above_ema and not is_long)
             if ema_against:
-                suggestion = "Precio cruzó EMA200 en contra - gestionar riesgo"
+                suggestion = f"Precio {'por encima' if price_above_ema else 'por debajo'} de EMA200 - en contra de {side_label}"
                 risk_level = "medium"
 
-        if risk_level == "low" and vol_above:
-            trend_favor = (sentiment == "bullish" and is_long) or (sentiment == "bearish" and not is_long)
-            if trend_favor:
-                suggestion = "Volumen alto a favor - tendencia fuerte, mantener"
-                risk_level = "low"
+        # If no high/medium alert, check sentiment vs position
+        if risk_level == "low":
+            if sentiment_against:
+                # Count how many indicators go against
+                against_details = []
+                if rsi is not None and rsi > 50 and not is_long:
+                    against_details.append(f"RSI {rsi:.0f}")
+                elif rsi is not None and rsi < 50 and is_long:
+                    against_details.append(f"RSI {rsi:.0f}")
+                if macd_trend == "bullish" and not is_long:
+                    against_details.append("MACD alcista")
+                elif macd_trend == "bearish" and is_long:
+                    against_details.append("MACD bajista")
+                if price_above_ema and not is_long:
+                    against_details.append("precio sobre EMA200")
+                elif not price_above_ema and is_long:
+                    against_details.append("precio bajo EMA200")
+
+                detail_str = ", ".join(against_details) if against_details else "indicadores"
+                suggestion = f"Mercado en contra de {side_label} ({detail_str}) - gestionar riesgo"
+                risk_level = "medium"
+            elif vol_above and sentiment_favor:
+                suggestion = f"Volumen alto a favor de {side_label} - tendencia fuerte, mantener"
+            elif sentiment_favor:
+                suggestion = f"Indicadores a favor de {side_label} - mantener posición"
+            else:
+                suggestion = f"Sin señales claras - monitorear {side_label}"
 
     except Exception as e:
         logger.error(f"Error computing indicators for {symbol}: {e}")
