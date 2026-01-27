@@ -221,8 +221,11 @@ const SettingsScreen = () => {
       {/* Binance API Keys */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Binance API</Text>
-        {profile?.has_binance_keys ? (
-          <Text style={styles.tokenText}>API Keys configuradas ✓</Text>
+        {profile && profile.has_binance_keys === true ? (
+          <View style={styles.keysStatus}>
+            <Text style={styles.keysStatusIcon}>✅</Text>
+            <Text style={styles.keysStatusText}>API Keys configuradas y encriptadas</Text>
+          </View>
         ) : (
           <Text style={styles.helperText}>Conecta tu cuenta de Binance Futures</Text>
         )}
@@ -486,6 +489,23 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginBottom: 4,
+  },
+  keysStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00d4aa20',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  keysStatusIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  keysStatusText: {
+    color: '#00d4aa',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modeRow: {
     flexDirection: 'row',
