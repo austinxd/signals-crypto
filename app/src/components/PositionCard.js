@@ -366,14 +366,19 @@ const PositionCard = ({ position }) => {
       {position.suggestion && (
         <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
           <View style={styles.suggestionTitleRow}>
-            <Text style={styles.suggestionTitle}>{'Recomendaci\u00F3n'}</Text>
+            <Text style={styles.suggestionTitle}>{`An\u00E1lisis de tu ${isLong ? 'LONG' : 'SHORT'}`}</Text>
             <View style={[styles.riskBadge, { backgroundColor: riskColor + '25' }]}>
               <Text style={[styles.riskBadgeText, { color: riskColor }]}>
                 {position.risk_level === 'high' ? 'Riesgo alto' : position.risk_level === 'medium' ? 'Riesgo medio' : 'Riesgo bajo'}
               </Text>
             </View>
           </View>
-          <Text style={styles.suggestionText}>{position.suggestion}</Text>
+          {position.suggestion.split('\n').map((line, i) => (
+            <View key={i} style={styles.suggestionLine}>
+              <Text style={styles.suggestionBullet}>{'\u2022'}</Text>
+              <Text style={styles.suggestionLineText}>{line}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -494,6 +499,9 @@ const styles = StyleSheet.create({
   riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   riskBadgeText: { fontSize: 10, fontWeight: 'bold' },
   suggestionText: { color: '#ddd', fontSize: 13, lineHeight: 18 },
+  suggestionLine: { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-start' },
+  suggestionBullet: { color: '#888', fontSize: 13, marginRight: 6, marginTop: 1 },
+  suggestionLineText: { color: '#ddd', fontSize: 13, lineHeight: 18, flex: 1 },
   // Alerts
   alertsToggle: { paddingVertical: 6 },
   alertsToggleText: { color: '#888', fontSize: 13 },

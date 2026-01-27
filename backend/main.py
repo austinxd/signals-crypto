@@ -683,17 +683,31 @@ def _fetch_tf_indicators(client, pair: str, timeframe: str):
         return None
 
 
+def _format_price(p):
+    if p is None:
+        return "-"
+    if p < 0.01:
+        return f"${p:.6f}"
+    if p < 1:
+        return f"${p:.4f}"
+    if p < 10:
+        return f"${p:.3f}"
+    if p < 1000:
+        return f"${p:.2f}"
+    return f"${p:,.0f}"
+
+
 def _compute_position_indicators(symbol: str, side: str):
-    """Fetch multi-timeframe indicators and generate suggestion."""
+    """Fetch multi-timeframe indicators and generate detailed suggestion."""
     empty_tf = {
         "rsi": None, "macd_histogram": None, "macd_trend": None,
         "price_above_ema": None, "volume_above_average": None,
         "atr": None, "divergence": None, "fibonacci": None, "sentiment": "neutral",
     }
-    timeframes_data = {tf: empty_tf for tf in POSITION_TIMEFRAMES}
+    timeframes_data = {tf: dict(empty_tf) for tf in POSITION_TIMEFRAMES}
     sentiment = "neutral"
     risk_level = "low"
-    suggestion = "Sin señales de alerta - mantener posición"
+    suggestion = "Sin datos suficientes para analizar."
 
     try:
         client = get_binance_client()
@@ -704,10 +718,9 @@ def _compute_position_indicators(symbol: str, side: str):
             if result:
                 timeframes_data[tf] = result
 
-        # Use 1h as primary for suggestion logic, but consider all
+        # Use 1h as primary, fallback to 15m
         primary = timeframes_data["1h"]
         if primary["rsi"] is None:
-            # Fallback to 15m if 1h not available
             primary = timeframes_data["15m"]
 
         rsi = primary.get("rsi")
@@ -717,138 +730,161 @@ def _compute_position_indicators(symbol: str, side: str):
         price_above_ema = primary.get("price_above_ema")
         vol_above = primary.get("volume_above_average", False)
         divergence_type = primary.get("divergence")
-
-        # Multi-timeframe sentiment: weighted vote
-        tf_sentiments = []
-        for tf in POSITION_TIMEFRAMES:
-            s = timeframes_data[tf].get("sentiment", "neutral")
-            if s != "neutral":
-                tf_sentiments.append(s)
-
-        if tf_sentiments:
-            bull_count = sum(1 for s in tf_sentiments if s == "bullish")
-            bear_count = sum(1 for s in tf_sentiments if s == "bearish")
-            if bull_count > bear_count:
-                sentiment = "bullish"
-            elif bear_count > bull_count:
-                sentiment = "bearish"
-            else:
-                sentiment = "neutral"
-        else:
-            sentiment = primary.get("sentiment", "neutral")
+        atr = primary.get("atr")
+        fib = primary.get("fibonacci")
 
         is_long = side == "long"
+        side_label = "SHORT" if not is_long else "LONG"
+        opposite = "suba" if not is_long else "baje"
+        favor_dir = "baje" if not is_long else "suba"
+
+        # Multi-timeframe sentiment
+        tf_sentiments = {}
+        for tf in POSITION_TIMEFRAMES:
+            tf_sentiments[tf] = timeframes_data[tf].get("sentiment", "neutral")
+
+        bull_count = sum(1 for s in tf_sentiments.values() if s == "bullish")
+        bear_count = sum(1 for s in tf_sentiments.values() if s == "bearish")
+        if bull_count > bear_count:
+            sentiment = "bullish"
+        elif bear_count > bull_count:
+            sentiment = "bearish"
+        else:
+            sentiment = "neutral"
+
         sentiment_against = (sentiment == "bullish" and not is_long) or (sentiment == "bearish" and is_long)
         sentiment_favor = (sentiment == "bullish" and is_long) or (sentiment == "bearish" and not is_long)
-        side_label = "SHORT" if not is_long else "LONG"
 
-        # Count how many timeframes agree against/favor
-        tf_against = 0
-        tf_favor = 0
-        for tf in POSITION_TIMEFRAMES:
-            s = timeframes_data[tf].get("sentiment", "neutral")
-            if (s == "bullish" and not is_long) or (s == "bearish" and is_long):
-                tf_against += 1
-            elif (s == "bullish" and is_long) or (s == "bearish" and not is_long):
-                tf_favor += 1
+        tf_against = sum(1 for tf in POSITION_TIMEFRAMES
+                         if (tf_sentiments[tf] == "bullish" and not is_long) or
+                            (tf_sentiments[tf] == "bearish" and is_long))
+        tf_favor = sum(1 for tf in POSITION_TIMEFRAMES
+                       if (tf_sentiments[tf] == "bullish" and is_long) or
+                          (tf_sentiments[tf] == "bearish" and not is_long))
 
-        # Suggestion logic (priority order)
-        if rsi is not None and rsi > 75 and is_long:
-            suggestion = f"RSI sobrecomprado ({rsi:.0f}) - considerar tomar ganancias parciales"
-            risk_level = "high"
-        elif rsi is not None and rsi < 25 and not is_long:
-            suggestion = f"RSI sobrevendido ({rsi:.0f}) - considerar tomar ganancias parciales"
-            risk_level = "high"
-        elif rsi is not None and rsi > 65 and not is_long:
-            suggestion = f"RSI alto ({rsi:.0f}) en contra de {side_label} - precaución"
-            risk_level = "high"
-        elif rsi is not None and rsi < 35 and is_long:
-            suggestion = f"RSI bajo ({rsi:.0f}) en contra de {side_label} - precaución"
-            risk_level = "high"
-        elif (macd_cross_bear and is_long) or (macd_cross_bull and not is_long):
-            direction = "bearish" if macd_cross_bear else "bullish"
-            suggestion = f"MACD cruzando {direction} en contra de {side_label} - vigilar stop loss"
-            risk_level = "high"
-        elif divergence_type:
+        # --- Build detailed recommendation ---
+        points = []  # list of (severity, text)  severity: 3=critical, 2=warning, 1=info, 0=positive
+
+        # RSI analysis
+        if rsi is not None:
+            if rsi > 75:
+                if is_long:
+                    points.append((3, f"RSI en {rsi:.0f} (sobrecompra). El precio podr\u00eda corregir pronto. Considerar\u00e1 tomar ganancias parciales o subir el stop loss."))
+                else:
+                    points.append((2, f"RSI en {rsi:.0f} (sobrecompra), pero tu posici\u00f3n es {side_label}. Si el RSI empieza a bajar desde aqu\u00ed, podr\u00eda favorecer tu entrada."))
+            elif rsi < 25:
+                if not is_long:
+                    points.append((3, f"RSI en {rsi:.0f} (sobreventa). El precio podr\u00eda rebotar. Considerar\u00e1 tomar ganancias parciales o ajustar el stop loss."))
+                else:
+                    points.append((2, f"RSI en {rsi:.0f} (sobreventa), pero tu posici\u00f3n es {side_label}. Si el RSI sube desde aqu\u00ed, favorecer\u00eda tu posici\u00f3n."))
+            elif rsi > 65 and not is_long:
+                points.append((2, f"RSI en {rsi:.0f}, zona alta para un {side_label}. El impulso alcista a\u00fan tiene fuerza. Vigilar si supera 70."))
+            elif rsi < 35 and is_long:
+                points.append((2, f"RSI en {rsi:.0f}, zona baja para un {side_label}. El impulso bajista a\u00fan tiene fuerza. Vigilar si cae bajo 30."))
+            elif (rsi > 50 and not is_long) or (rsi < 50 and is_long):
+                points.append((1, f"RSI en {rsi:.0f}, ligeramente en contra de tu {side_label}."))
+            else:
+                points.append((0, f"RSI en {rsi:.0f}, a favor de tu {side_label}."))
+
+        # MACD
+        if macd_cross_bear and is_long:
+            points.append((3, "MACD acaba de cruzar a la baja (cruce bajista). Se\u00f1al de posible cambio de tendencia. Ajustar stop loss o reducir exposici\u00f3n."))
+        elif macd_cross_bull and not is_long:
+            points.append((3, "MACD acaba de cruzar al alza (cruce alcista). Se\u00f1al de posible cambio de tendencia. Ajustar stop loss o reducir exposici\u00f3n."))
+        elif macd_trend:
+            if (macd_trend == "bullish" and not is_long) or (macd_trend == "bearish" and is_long):
+                trend_es = "alcista" if macd_trend == "bullish" else "bajista"
+                points.append((1, f"MACD {trend_es}, en contra de tu {side_label}. No hay cruce a\u00fan, pero la tendencia no te favorece."))
+            else:
+                trend_es = "alcista" if macd_trend == "bullish" else "bajista"
+                points.append((0, f"MACD {trend_es}, a favor de tu {side_label}."))
+
+        # Divergence
+        if divergence_type:
             against = (divergence_type == "bearish" and is_long) or (divergence_type == "bullish" and not is_long)
+            div_es = "bajista" if divergence_type == "bearish" else "alcista"
             if against:
-                suggestion = f"Divergencia {divergence_type} contra {side_label} - posible reversión"
-                risk_level = "high"
-        elif price_above_ema is not None:
+                points.append((3, f"Divergencia {div_es} detectada. El precio y el RSI se mueven en direcci\u00f3n opuesta, lo que sugiere una posible reversi\u00f3n contra tu {side_label}."))
+            else:
+                points.append((0, f"Divergencia {div_es} detectada a favor de tu {side_label}. Podr\u00eda confirmar la continuaci\u00f3n del movimiento."))
+
+        # EMA200
+        if price_above_ema is not None:
             ema_against = (not price_above_ema and is_long) or (price_above_ema and not is_long)
             if ema_against:
-                suggestion = f"Precio {'por encima' if price_above_ema else 'por debajo'} de EMA200 - en contra de {side_label}"
-                risk_level = "medium"
+                pos_rel = "por encima" if price_above_ema else "por debajo"
+                points.append((2, f"Precio {pos_rel} de la EMA200, en contra de tu {side_label}. La EMA200 es resistencia/soporte din\u00e1mico clave."))
+            else:
+                pos_rel = "por encima" if price_above_ema else "por debajo"
+                points.append((0, f"Precio {pos_rel} de la EMA200, a favor de tu {side_label}."))
 
-        # Build indicator summary from 1h
-        against_details = []
-        favor_details = []
-        if rsi is not None:
-            if (rsi > 50 and not is_long) or (rsi < 50 and is_long):
-                against_details.append(f"RSI {rsi:.0f}")
-            else:
-                favor_details.append(f"RSI {rsi:.0f}")
-        if macd_trend == "bullish" and not is_long:
-            against_details.append("MACD alcista")
-        elif macd_trend == "bearish" and is_long:
-            against_details.append("MACD bajista")
-        else:
-            favor_details.append(f"MACD {'alcista' if macd_trend == 'bullish' else 'bajista'}")
-        if price_above_ema is not None:
-            if (price_above_ema and not is_long) or (not price_above_ema and is_long):
-                against_details.append("precio sobre EMA200" if price_above_ema else "precio bajo EMA200")
-            else:
-                favor_details.append("precio sobre EMA200" if price_above_ema else "precio bajo EMA200")
+        # Volume
         if vol_above:
-            if sentiment_favor:
-                favor_details.append("volumen alto")
-            elif sentiment_against:
-                against_details.append("volumen alto")
-
-        total_indicators = len(against_details) + len(favor_details)
-        against_count = len(against_details)
-        favor_count = len(favor_details)
-
-        # Timeframe context string
-        tf_labels = {"15m": "15m", "1h": "1h", "4h": "4h"}
-        tf_summary_parts = []
-        for tf in POSITION_TIMEFRAMES:
-            s = timeframes_data[tf].get("sentiment", "neutral")
-            label = {"bullish": "alcista", "bearish": "bajista", "neutral": "neutral"}[s]
-            tf_summary_parts.append(f"{tf_labels[tf]}:{label}")
-        tf_context = " | ".join(tf_summary_parts)
-
-        if risk_level == "low":
-            if tf_against == 3:
-                suggestion = f"Todos los timeframes en contra de {side_label} ({tf_context}) - considerar cerrar"
-                risk_level = "high"
-            elif against_count >= 3:
-                detail_str = ", ".join(against_details)
-                suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - considerar cerrar o ajustar SL"
-                risk_level = "high"
-            elif tf_against >= 2:
-                suggestion = f"{tf_against}/3 timeframes en contra de {side_label} ({tf_context}) - gestionar riesgo"
-                risk_level = "medium"
-            elif against_count >= 2:
-                detail_str = ", ".join(against_details)
-                suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - gestionar riesgo"
-                risk_level = "medium"
-            elif against_count == 1:
-                detail_str = against_details[0]
-                suggestion = f"{detail_str} en contra de {side_label} - monitorear"
-                risk_level = "low"
-            elif tf_favor == 3:
-                suggestion = f"Todos los timeframes a favor de {side_label} ({tf_context}) - mantener"
-                risk_level = "low"
-            elif favor_count >= 2:
-                detail_str = ", ".join(favor_details)
-                suggestion = f"{favor_count}/{total_indicators} a favor de {side_label} ({detail_str}) - mantener"
-                risk_level = "low"
+            if sentiment_against:
+                points.append((2, f"Volumen alto con tendencia en contra de tu {side_label}. El movimiento adverso tiene fuerza."))
+            elif sentiment_favor:
+                points.append((0, f"Volumen alto con tendencia a favor de tu {side_label}. El movimiento tiene respaldo."))
             else:
-                suggestion = f"Sin señales claras - monitorear {side_label}"
+                points.append((1, "Volumen alto pero sin direcci\u00f3n clara. Podr\u00eda haber volatilidad."))
+
+        # Fibonacci context
+        if fib and fib.get("closest_level_name"):
+            closest = fib["closest_level_name"]
+            closest_price = fib.get("closest_level")
+            dist = fib.get("distance_percent", 0)
+            price_str = _format_price(closest_price) if closest_price else ""
+            if fib.get("at_key_level"):
+                points.append((2, f"Precio en nivel Fibonacci {closest}% ({price_str}). Zona de posible reacci\u00f3n, estar atento a un rebote o quiebre."))
+            elif fib.get("near_key_level") and dist is not None:
+                points.append((1, f"Precio a {abs(dist):.1f}% del nivel Fib {closest}% ({price_str}). Podr\u00eda actuar como {'resistencia' if not is_long else 'soporte'}."))
+
+        # ATR for stop loss suggestion
+        if atr and atr > 0:
+            # Suggest SL at 1.5 ATR away from current price
+            current_price_approx = fib.get("closest_level") if fib else None
+            if current_price_approx:
+                sl_distance = atr * 1.5
+                if is_long:
+                    suggested_sl = current_price_approx - sl_distance
+                else:
+                    suggested_sl = current_price_approx + sl_distance
+                points.append((1, f"ATR en {_format_price(atr)}. Stop loss sugerido a 1.5×ATR: {_format_price(suggested_sl)}."))
+
+        # Multi-timeframe context
+        tf_desc = []
+        for tf in POSITION_TIMEFRAMES:
+            s = tf_sentiments[tf]
+            label = {"bullish": "alcista", "bearish": "bajista", "neutral": "neutral"}[s]
+            tf_desc.append(f"{tf} {label}")
+        tf_str = ", ".join(tf_desc)
+
+        if tf_against == 3:
+            points.append((3, f"Los 3 timeframes ({tf_str}) est\u00e1n en contra de tu {side_label}. Escenario desfavorable."))
+        elif tf_against == 2:
+            points.append((2, f"2 de 3 timeframes en contra ({tf_str}). La mayor\u00eda del mercado no favorece tu {side_label}."))
+        elif tf_favor == 3:
+            points.append((0, f"Los 3 timeframes ({tf_str}) est\u00e1n a favor de tu {side_label}. Escenario favorable."))
+        elif tf_favor == 2:
+            points.append((0, f"2 de 3 timeframes a favor ({tf_str}). La tendencia general apoya tu {side_label}."))
+
+        # --- Compose final suggestion and risk ---
+        if not points:
+            suggestion = f"Sin se\u00f1ales claras. Monitorear {side_label}."
+            risk_level = "low"
         else:
-            if tf_against > 0:
-                suggestion += f" ({tf_against}/3 TF en contra)"
+            max_severity = max(p[0] for p in points)
+            if max_severity >= 3:
+                risk_level = "high"
+            elif max_severity >= 2:
+                risk_level = "medium"
+            else:
+                risk_level = "low"
+
+            # Take top points sorted by severity (most critical first)
+            sorted_points = sorted(points, key=lambda x: -x[0])
+            # Build multi-line suggestion
+            lines = [p[1] for p in sorted_points]
+            suggestion = "\n".join(lines)
 
     except Exception as e:
         logger.error(f"Error computing indicators for {symbol}: {e}")
