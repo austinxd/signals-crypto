@@ -123,10 +123,10 @@ const PositionCard = ({ position }) => {
           <Text style={styles.priceLabel}>Entrada</Text>
           <Text style={styles.priceValue}>{formatPrice(position.entry_price)}</Text>
         </View>
-        <Text style={[styles.arrow, { color: pnlColor }]}>{'\u2192'}</Text>
+        <Text style={styles.arrow}>{'\u2192'}</Text>
         <View style={styles.priceCol}>
           <Text style={styles.priceLabel}>Actual</Text>
-          <Text style={[styles.priceValue, { color: pnlColor }]}>{formatPrice(current)}</Text>
+          <Text style={styles.priceValue}>{formatPrice(current)}</Text>
         </View>
       </View>
 
@@ -309,6 +309,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   arrow: {
+    color: '#666',
     fontSize: 16,
     marginHorizontal: 8,
   },
