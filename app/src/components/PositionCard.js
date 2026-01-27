@@ -153,6 +153,7 @@ const PositionCard = ({ position }) => {
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTF, setSelectedTF] = useState('1h');
+  const [expanded, setExpanded] = useState(true);
 
   const isLong = position.side === 'long';
   const pnl = position.unrealized_pnl || 0;
@@ -187,27 +188,36 @@ const PositionCard = ({ position }) => {
 
   return (
     <View style={styles.card}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.symbol}>{displaySymbol}</Text>
-          <View style={[styles.sideBadge, { backgroundColor: sideColor + '30', borderColor: sideColor }]}>
-            <Text style={[styles.sideText, { color: sideColor }]}>{isLong ? 'LONG' : 'SHORT'}</Text>
-          </View>
-          {position.leverage > 1 && (
-            <View style={styles.leverageBadge}>
-              <Text style={styles.leverageText}>{position.leverage}x</Text>
+      {/* HEADER - tappable to expand/collapse */}
+      <TouchableOpacity activeOpacity={0.7} onPress={() => setExpanded(!expanded)}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.symbol}>{displaySymbol}</Text>
+            <View style={[styles.sideBadge, { backgroundColor: sideColor + '30', borderColor: sideColor }]}>
+              <Text style={[styles.sideText, { color: sideColor }]}>{isLong ? 'LONG' : 'SHORT'}</Text>
             </View>
-          )}
-        </View>
-        <View style={styles.headerRight}>
-          <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '20', borderColor: sentimentInfo.color }]}>
-            <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>{sentimentInfo.text}</Text>
+            {position.leverage > 1 && (
+              <View style={styles.leverageBadge}>
+                <Text style={styles.leverageText}>{position.leverage}x</Text>
+              </View>
+            )}
           </View>
-          {position.mode === 'bot' && <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>}
+          <View style={styles.headerRight}>
+            {!expanded && (
+              <Text style={[styles.collapsedPnl, { color: pnlColor }]}>
+                {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
+              </Text>
+            )}
+            <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '20', borderColor: sentimentInfo.color }]}>
+              <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>{sentimentInfo.text}</Text>
+            </View>
+            <Text style={styles.expandIcon}>{expanded ? '\u25B2' : '\u25BC'}</Text>
+            {position.mode === 'bot' && <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>}
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
 
+      {!expanded ? null : <>
       {/* PRECIOS + PNL */}
       <View style={styles.priceBox}>
         <View style={styles.priceRow}>
@@ -346,6 +356,7 @@ const PositionCard = ({ position }) => {
         </View>
       )}
       {showAlerts && alerts.length === 0 && <Text style={styles.noAlerts}>Sin alertas recientes</Text>}
+      </>}
     </View>
   );
 };
@@ -361,6 +372,8 @@ const styles = StyleSheet.create({
   leverageBadge: { backgroundColor: '#2a2a4a', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   leverageText: { color: '#888', fontSize: 11, fontWeight: 'bold' },
   modeIcon: { fontSize: 18 },
+  collapsedPnl: { fontSize: 13, fontWeight: 'bold' },
+  expandIcon: { color: '#555', fontSize: 10 },
   sentimentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
   sentimentText: { fontSize: 11, fontWeight: 'bold' },
   // Price
