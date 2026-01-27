@@ -66,10 +66,10 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> int:
     """
-    FastAPI dependency to extract the current user from JWT.
-    Returns the UserAccount object.
+    FastAPI dependency to extract the current user ID from JWT.
+    Returns the user ID as int.
     """
     if credentials is None:
         raise HTTPException(
@@ -91,16 +91,29 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             detail="Invalid token payload",
         )
 
-    # Fetch user from DB
+    return int(user_id)
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    FastAPI dependency to extract the current user from JWT.
+    Returns the UserAccount object with a fresh DB session.
+    """
+    user_id = get_current_user_id(credentials)
+
     from database import get_db, UserAccount
     db = get_db()
     try:
-        user = db.query(UserAccount).filter(UserAccount.id == int(user_id)).first()
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
             )
+        # Eagerly load all column attributes
+        for col in UserAccount.__table__.columns:
+            getattr(user, col.key)
+        db.expunge(user)
         return user
     finally:
         db.close()
