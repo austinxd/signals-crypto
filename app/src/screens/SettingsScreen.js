@@ -140,11 +140,18 @@ const SettingsScreen = () => {
       return;
     }
     try {
-      await updateBinanceKeys(binanceKey.trim(), binanceSecret.trim());
-      Alert.alert('Guardado', 'API keys guardadas y encriptadas');
+      const result = await updateBinanceKeys(binanceKey.trim(), binanceSecret.trim());
+      Alert.alert('Guardado', result.message || 'API keys guardadas');
       setBinanceKey('');
       setBinanceSecret('');
-      loadSettings();
+      // Reload profile to reflect changes
+      try {
+        const p = await getProfile();
+        console.log('Profile after save:', JSON.stringify(p));
+        setProfile(p);
+      } catch (e) {
+        console.log('Profile reload error:', e.message);
+      }
     } catch (err) {
       Alert.alert('Error', err.message || 'No se pudieron guardar las keys');
     }

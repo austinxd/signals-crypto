@@ -490,16 +490,22 @@ async def update_binance_keys(data: BinanceKeysUpdate, user: UserAccount = Depen
     db = get_db()
     try:
         account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        print(f"[BINANCE-KEYS] Saving keys for user {user.id}, key_len={len(data.api_key)}, secret_len={len(data.api_secret)}")
         account.set_binance_keys(data.api_key, data.api_secret)
         db.commit()
+        print(f"[BINANCE-KEYS] Committed. has_keys={account.has_binance_keys()}, encrypted_key_len={len(account.binance_api_key or '')}")
 
         # Verify keys work
         try:
             client = create_user_client(data.api_key, data.api_secret)
             client.exchange.fetch_balance()
-            return {"status": "ok", "message": "Binance keys verified and saved"}
-        except Exception:
-            return {"status": "saved", "message": "Keys saved but could not verify. Check permissions."}
+            return {"status": "ok", "message": "Keys verified and saved"}
+        except Exception as e:
+            print(f"[BINANCE-KEYS] Verify failed: {e}")
+            return {"status": "saved", "message": f"Keys saved. Verification failed: {str(e)[:100]}"}
     finally:
         db.close()
 
