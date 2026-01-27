@@ -710,33 +710,59 @@ def _compute_position_indicators(symbol: str, side: str):
                 suggestion = f"Precio {'por encima' if price_above_ema else 'por debajo'} de EMA200 - en contra de {side_label}"
                 risk_level = "medium"
 
-        # If no high/medium alert, check sentiment vs position
-        if risk_level == "low":
-            if sentiment_against:
-                # Count how many indicators go against
-                against_details = []
-                if rsi is not None and rsi > 50 and not is_long:
-                    against_details.append(f"RSI {rsi:.0f}")
-                elif rsi is not None and rsi < 50 and is_long:
-                    against_details.append(f"RSI {rsi:.0f}")
-                if macd_trend == "bullish" and not is_long:
-                    against_details.append("MACD alcista")
-                elif macd_trend == "bearish" and is_long:
-                    against_details.append("MACD bajista")
-                if price_above_ema and not is_long:
-                    against_details.append("precio sobre EMA200")
-                elif not price_above_ema and is_long:
-                    against_details.append("precio bajo EMA200")
+        # Build full list of indicators against/favor
+        against_details = []
+        favor_details = []
+        if rsi is not None:
+            if (rsi > 50 and not is_long) or (rsi < 50 and is_long):
+                against_details.append(f"RSI {rsi:.0f}")
+            else:
+                favor_details.append(f"RSI {rsi:.0f}")
+        if macd_trend == "bullish" and not is_long:
+            against_details.append("MACD alcista")
+        elif macd_trend == "bearish" and is_long:
+            against_details.append("MACD bajista")
+        else:
+            favor_details.append(f"MACD {'alcista' if macd_trend == 'bullish' else 'bajista'}")
+        if price_above_ema is not None:
+            if (price_above_ema and not is_long) or (not price_above_ema and is_long):
+                against_details.append("precio sobre EMA200" if price_above_ema else "precio bajo EMA200")
+            else:
+                favor_details.append("precio sobre EMA200" if price_above_ema else "precio bajo EMA200")
+        if vol_above:
+            if sentiment_favor:
+                favor_details.append("volumen alto")
+            elif sentiment_against:
+                against_details.append("volumen alto")
 
-                detail_str = ", ".join(against_details) if against_details else "indicadores"
-                suggestion = f"Mercado en contra de {side_label} ({detail_str}) - gestionar riesgo"
+        total_indicators = len(against_details) + len(favor_details)
+        against_count = len(against_details)
+        favor_count = len(favor_details)
+
+        # If no high-priority alert was set, generate summary suggestion
+        if risk_level == "low":
+            if against_count >= 3:
+                detail_str = ", ".join(against_details)
+                suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - considerar cerrar o ajustar SL"
+                risk_level = "high"
+            elif against_count >= 2:
+                detail_str = ", ".join(against_details)
+                suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - gestionar riesgo"
                 risk_level = "medium"
-            elif vol_above and sentiment_favor:
-                suggestion = f"Volumen alto a favor de {side_label} - tendencia fuerte, mantener"
-            elif sentiment_favor:
-                suggestion = f"Indicadores a favor de {side_label} - mantener posición"
+            elif against_count == 1:
+                detail_str = against_details[0]
+                suggestion = f"{detail_str} en contra de {side_label} - monitorear"
+                risk_level = "low"
+            elif favor_count >= 2:
+                detail_str = ", ".join(favor_details)
+                suggestion = f"{favor_count}/{total_indicators} a favor de {side_label} ({detail_str}) - mantener"
+                risk_level = "low"
             else:
                 suggestion = f"Sin señales claras - monitorear {side_label}"
+        else:
+            # High/medium alert already set; append counter context
+            if against_count > 0:
+                suggestion += f" ({against_count}/{total_indicators} en contra)"
 
     except Exception as e:
         logger.error(f"Error computing indicators for {symbol}: {e}")

@@ -48,6 +48,16 @@ const RSIBar = ({ value }) => {
   );
 };
 
+const cleanSymbol = (s) => s ? s.split(':')[0] : s;
+
+const calcLiquidationPrice = (entry, leverage, side) => {
+  if (!entry || !leverage || leverage <= 0) return null;
+  // Approximate: ignores fees/maintenance margin
+  const rate = 1 / leverage;
+  if (side === 'long') return entry * (1 - rate);
+  return entry * (1 + rate);
+};
+
 const PositionCard = ({ position }) => {
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
@@ -59,6 +69,8 @@ const PositionCard = ({ position }) => {
     : 0;
   const pnlColor = pnl >= 0 ? '#00d4aa' : '#ff4757';
   const sideColor = isLong ? '#00d4aa' : '#ff4757';
+  const displaySymbol = cleanSymbol(position.symbol);
+  const liqPrice = calcLiquidationPrice(position.entry_price, position.leverage, position.side);
 
   const ind = position.indicators || {};
   const riskColor = RISK_COLORS[position.risk_level] || '#888';
@@ -86,7 +98,7 @@ const PositionCard = ({ position }) => {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.symbol}>{position.symbol}</Text>
+          <Text style={styles.symbol}>{displaySymbol}</Text>
           <View style={[styles.sideBadge, { backgroundColor: sideColor + '30', borderColor: sideColor }]}>
             <Text style={[styles.sideText, { color: sideColor }]}>
               {isLong ? 'LONG' : 'SHORT'}
@@ -127,6 +139,14 @@ const PositionCard = ({ position }) => {
           ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
         </Text>
       </View>
+
+      {/* Liquidation price */}
+      {liqPrice != null && (
+        <View style={styles.liqRow}>
+          <Text style={styles.liqLabel}>Liq. estimada</Text>
+          <Text style={styles.liqValue}>{formatPrice(liqPrice)}</Text>
+        </View>
+      )}
 
       {/* Indicators */}
       {ind.rsi != null && (
@@ -304,6 +324,22 @@ const styles = StyleSheet.create({
   },
   pnlPercent: {
     fontSize: 14,
+  },
+  liqRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  liqLabel: {
+    color: '#666',
+    fontSize: 12,
+  },
+  liqValue: {
+    color: '#ff6b81',
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Indicators section
   indicatorsSection: {
