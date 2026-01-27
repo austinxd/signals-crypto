@@ -44,7 +44,7 @@ const PositionsScreen = ({ navigation }) => {
   );
 
   useEffect(() => {
-    const interval = setInterval(fetchPositions, 30000);
+    const interval = setInterval(fetchPositions, 15000);
     return () => clearInterval(interval);
   }, [fetchPositions]);
 
