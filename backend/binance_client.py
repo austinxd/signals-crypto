@@ -102,34 +102,56 @@ class BinanceClient:
 
     def fetch_futures_positions(self) -> List[Dict[str, Any]]:
         """Fetch open futures positions (requires authenticated client)."""
+        import logging
+        logger = logging.getLogger("uvicorn.error")
         try:
             positions = self.exchange.fetch_positions()
+            logger.info(f"[POSITIONS] Raw positions count: {len(positions)}")
+
             open_positions = []
             for pos in positions:
-                contracts = float(pos.get("contracts", 0))
-                if contracts == 0:
-                    continue
+                # Log first few for debugging
+                if len(open_positions) == 0 and positions.index(pos) < 3:
+                    logger.info(f"[POSITIONS] Sample position: contracts={pos.get('contracts')}, side={pos.get('side')}, symbol={pos.get('symbol')}, entryPrice={pos.get('entryPrice')}, info_keys={list(pos.get('info', {}).keys())[:10]}")
 
-                side = pos.get("side", "").upper()
+                contracts = float(pos.get("contracts") or 0)
+                if contracts == 0:
+                    # Also check positionAmt from info
+                    info = pos.get("info", {})
+                    position_amt = float(info.get("positionAmt", 0))
+                    if position_amt == 0:
+                        continue
+                    contracts = abs(position_amt)
+
+                side = (pos.get("side") or "").upper()
                 if side not in ("LONG", "SHORT"):
-                    # Determine from notional
-                    notional = float(pos.get("notional", 0))
-                    side = "LONG" if notional > 0 else "SHORT"
+                    notional = float(pos.get("notional") or 0)
+                    info = pos.get("info", {})
+                    position_amt = float(info.get("positionAmt", 0))
+                    side = "LONG" if (notional > 0 or position_amt > 0) else "SHORT"
+
+                entry_price = float(pos.get("entryPrice") or pos.get("info", {}).get("entryPrice", 0))
+                mark_price = float(pos.get("markPrice") or pos.get("info", {}).get("markPrice", 0))
+                unrealized_pnl = float(pos.get("unrealizedPnl") or pos.get("info", {}).get("unRealizedProfit", 0))
+                leverage = int(float(pos.get("leverage") or pos.get("info", {}).get("leverage", 1)))
+
+                logger.info(f"[POSITIONS] Open: {pos.get('symbol')} {side} contracts={contracts} entry={entry_price}")
 
                 open_positions.append({
                     "symbol": pos.get("symbol"),
                     "side": side,
-                    "entry_price": float(pos.get("entryPrice", 0)),
+                    "entry_price": entry_price,
                     "amount": abs(contracts),
-                    "leverage": int(pos.get("leverage", 1)),
-                    "unrealized_pnl": float(pos.get("unrealizedPnl", 0)),
-                    "current_price": float(pos.get("markPrice", 0)) or float(pos.get("lastPrice", 0)),
-                    "liquidation_price": float(pos.get("liquidationPrice", 0)),
+                    "leverage": leverage,
+                    "unrealized_pnl": unrealized_pnl,
+                    "current_price": mark_price,
+                    "liquidation_price": float(pos.get("liquidationPrice") or 0),
                 })
 
+            logger.info(f"[POSITIONS] Found {len(open_positions)} open positions")
             return open_positions
         except Exception as e:
-            print(f"Error fetching futures positions: {e}")
+            logger.error(f"[POSITIONS] Error fetching futures positions: {e}", exc_info=True)
             return []
 
     def modify_stop_loss(
