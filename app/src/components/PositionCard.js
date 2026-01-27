@@ -352,6 +352,15 @@ const PositionCard = ({ position }) => {
                 {ind.volume_above_average ? 'Sobre promedio' : 'Normal'}
               </Text>
             </View>
+            {ind.fibonacci && (
+              <View style={styles.indicatorRow}>
+                <Text style={styles.indicatorLabel}>Fibo</Text>
+                <Text style={[styles.indicatorValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                  {ind.fibonacci.is_uptrend ? 'Tendencia alcista \u2191' : 'Tendencia bajista \u2193'}
+                  {ind.fibonacci.closest_level_name ? ` \u2022 Cerca de ${ind.fibonacci.closest_level_name}%` : ''}
+                </Text>
+              </View>
+            )}
           </>
         ) : (
           <Text style={styles.noData}>Sin datos para {selectedTF}</Text>
