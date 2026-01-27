@@ -181,6 +181,7 @@ const PositionCard = ({ position }) => {
       {/* Suggestion */}
       {position.suggestion && (
         <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
+          <Text style={styles.suggestionTitle}>Recomendaci{'\u00F3'}n seg{'\u00FA'}n indicadores</Text>
           <View style={styles.suggestionHeader}>
             <Text style={styles.suggestionText}>{position.suggestion}</Text>
             <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '25', borderColor: sentimentInfo.color }]}>
@@ -408,6 +409,14 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
     borderLeftWidth: 3,
+  },
+  suggestionTitle: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   suggestionHeader: {
     flexDirection: 'row',
