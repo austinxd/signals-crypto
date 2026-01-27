@@ -12,11 +12,40 @@ const formatPrice = (p) => {
 };
 
 const ALERT_URGENCY = {
-  MACD_REVERSAL: { icon: '🚨', color: '#ff4757' },
-  RSI_DIVERGENCE: { icon: '🚨', color: '#ff4757' },
-  RSI_EXTREME: { icon: '⚠️', color: '#ffd93d' },
-  TRAILING_BREAKEVEN: { icon: 'ℹ️', color: '#888' },
-  TRAILING_UPDATE: { icon: 'ℹ️', color: '#888' },
+  MACD_REVERSAL: { icon: '\u{1F6A8}', color: '#ff4757' },
+  RSI_DIVERGENCE: { icon: '\u{1F6A8}', color: '#ff4757' },
+  RSI_EXTREME: { icon: '\u26A0\uFE0F', color: '#ffd93d' },
+  TRAILING_BREAKEVEN: { icon: '\u2139\uFE0F', color: '#888' },
+  TRAILING_UPDATE: { icon: '\u2139\uFE0F', color: '#888' },
+};
+
+const RISK_COLORS = {
+  low: '#00d4aa',
+  medium: '#ffd93d',
+  high: '#ff4757',
+};
+
+const SENTIMENT_LABELS = {
+  bullish: { text: 'Alcista', color: '#00d4aa' },
+  bearish: { text: 'Bajista', color: '#ff4757' },
+  neutral: { text: 'Neutral', color: '#888' },
+};
+
+const RSIBar = ({ value }) => {
+  if (value == null) return <Text style={styles.indicatorValue}>-</Text>;
+  const pct = Math.max(0, Math.min(100, value));
+  let color = '#ffd93d';
+  if (pct < 30) color = '#00d4aa';
+  else if (pct > 70) color = '#ff4757';
+
+  return (
+    <View style={styles.rsiContainer}>
+      <View style={styles.rsiBar}>
+        <View style={[styles.rsiFill, { width: `${pct}%`, backgroundColor: color }]} />
+      </View>
+      <Text style={[styles.rsiValue, { color }]}>{pct.toFixed(0)}</Text>
+    </View>
+  );
 };
 
 const PositionCard = ({ position }) => {
@@ -30,6 +59,10 @@ const PositionCard = ({ position }) => {
     : 0;
   const pnlColor = pnl >= 0 ? '#00d4aa' : '#ff4757';
   const sideColor = isLong ? '#00d4aa' : '#ff4757';
+
+  const ind = position.indicators || {};
+  const riskColor = RISK_COLORS[position.risk_level] || '#888';
+  const sentimentInfo = SENTIMENT_LABELS[position.market_sentiment] || SENTIMENT_LABELS.neutral;
 
   useEffect(() => {
     if (showAlerts && alerts.length === 0) {
@@ -66,9 +99,9 @@ const PositionCard = ({ position }) => {
           )}
         </View>
         {position.mode === 'bot' ? (
-          <Text style={styles.modeIcon}>🤖</Text>
+          <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>
         ) : (
-          <Text style={styles.modeIcon}>📋</Text>
+          <Text style={styles.modeIcon}>{'\u{1F4CB}'}</Text>
         )}
       </View>
 
@@ -78,7 +111,7 @@ const PositionCard = ({ position }) => {
           <Text style={styles.priceLabel}>Entrada</Text>
           <Text style={styles.priceValue}>{formatPrice(position.entry_price)}</Text>
         </View>
-        <Text style={[styles.arrow, { color: pnlColor }]}>{pnl >= 0 ? '→' : '→'}</Text>
+        <Text style={[styles.arrow, { color: pnlColor }]}>{'\u2192'}</Text>
         <View style={styles.priceCol}>
           <Text style={styles.priceLabel}>Actual</Text>
           <Text style={[styles.priceValue, { color: pnlColor }]}>{formatPrice(current)}</Text>
@@ -94,6 +127,49 @@ const PositionCard = ({ position }) => {
           ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
         </Text>
       </View>
+
+      {/* Indicators */}
+      {ind.rsi != null && (
+        <View style={styles.indicatorsSection}>
+          <Text style={styles.sectionTitle}>Indicadores (15m)</Text>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>RSI</Text>
+            <RSIBar value={ind.rsi} />
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>MACD</Text>
+            <Text style={[styles.indicatorValue, { color: ind.macd_trend === 'bullish' ? '#00d4aa' : '#ff4757' }]}>
+              {ind.macd_trend === 'bullish' ? 'Bullish \u2191' : 'Bearish \u2193'}
+            </Text>
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>EMA200</Text>
+            <Text style={[styles.indicatorValue, { color: ind.price_above_ema ? '#00d4aa' : '#ff4757' }]}>
+              {ind.price_above_ema ? 'Por encima \u2713' : 'Por debajo \u2717'}
+            </Text>
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>Volumen</Text>
+            <Text style={[styles.indicatorValue, { color: ind.volume_above_average ? '#ffd93d' : '#888' }]}>
+              {ind.volume_above_average ? 'Alto' : 'Normal'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Suggestion */}
+      {position.suggestion && (
+        <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
+          <View style={styles.suggestionHeader}>
+            <Text style={styles.suggestionText}>{position.suggestion}</Text>
+            <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '25', borderColor: sentimentInfo.color }]}>
+              <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>
+                {sentimentInfo.text}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* SL / TP bar */}
       {sl != null && tp != null && (
@@ -116,21 +192,21 @@ const PositionCard = ({ position }) => {
         onPress={() => setShowAlerts(!showAlerts)}
       >
         <Text style={styles.alertsToggleText}>
-          {showAlerts ? '▼ Alertas' : '▶ Alertas'}
+          {showAlerts ? '\u25BC Alertas' : '\u25B6 Alertas'}
         </Text>
       </TouchableOpacity>
 
       {showAlerts && alerts.length > 0 && (
         <View style={styles.alertsList}>
           {alerts.map((alert, i) => {
-            const urgency = ALERT_URGENCY[alert.alert_type] || { icon: 'ℹ️', color: '#888' };
+            const urgency = ALERT_URGENCY[alert.alert_type] || { icon: '\u2139\uFE0F', color: '#888' };
             return (
               <View key={alert.id || i} style={[styles.alertItem, { borderLeftColor: urgency.color }]}>
                 <Text style={styles.alertIcon}>{urgency.icon}</Text>
                 <View style={styles.alertContent}>
                   <Text style={styles.alertMessage}>{alert.message}</Text>
                   {alert.was_executed && (
-                    <Text style={styles.alertExecuted}>Ejecutado ✓</Text>
+                    <Text style={styles.alertExecuted}>Ejecutado \u2713</Text>
                   )}
                 </View>
               </View>
@@ -229,6 +305,89 @@ const styles = StyleSheet.create({
   pnlPercent: {
     fontSize: 14,
   },
+  // Indicators section
+  indicatorsSection: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  indicatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  indicatorLabel: {
+    color: '#999',
+    fontSize: 13,
+    width: 60,
+  },
+  indicatorValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rsiContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rsiBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#2a2a4a',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  rsiFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  rsiValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    width: 30,
+    textAlign: 'right',
+  },
+  // Suggestion section
+  suggestionBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+  },
+  suggestionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  suggestionText: {
+    color: '#ccc',
+    fontSize: 13,
+    flex: 1,
+  },
+  sentimentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sentimentText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  // SL/TP
   slTpSection: {
     marginBottom: 12,
   },

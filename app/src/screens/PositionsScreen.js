@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { getPositions } from '../services/api';
 import PositionCard from '../components/PositionCard';
 
@@ -15,6 +16,7 @@ const PositionsScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [totalPnl, setTotalPnl] = useState(0);
+  const [mode, setMode] = useState(null);
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -22,6 +24,7 @@ const PositionsScreen = ({ navigation }) => {
       const data = await getPositions();
       const pos = data.positions || [];
       setPositions(pos);
+      setMode(data.mode || null);
       const pnl = pos.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
       setTotalPnl(pnl);
     } catch (err) {
@@ -34,8 +37,13 @@ const PositionsScreen = ({ navigation }) => {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchPositions();
+    }, [fetchPositions])
+  );
+
   useEffect(() => {
-    fetchPositions();
     const interval = setInterval(fetchPositions, 30000);
     return () => clearInterval(interval);
   }, [fetchPositions]);
@@ -92,7 +100,7 @@ const PositionsScreen = ({ navigation }) => {
           </View>
         ) : (
           positions.map((pos) => (
-            <PositionCard key={pos.id || pos.symbol} position={pos} />
+            <PositionCard key={pos.id || pos.symbol} position={{ ...pos, mode }} />
           ))
         )}
       </ScrollView>

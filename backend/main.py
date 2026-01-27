@@ -604,36 +604,147 @@ async def update_account_settings(data: AccountSettingsUpdate, user: UserAccount
 # Position Endpoints (JWT protected)
 # ============================================================
 
+def _normalize_symbol(symbol: str) -> str:
+    """Normalize CCXT symbol like ETH/USDT:USDT to ETH/USDT."""
+    if ":" in symbol:
+        symbol = symbol.split(":")[0]
+    return symbol
+
+
+def _compute_position_indicators(symbol: str, side: str):
+    """Fetch 15m indicators for a symbol and generate suggestion."""
+    indicators_data = {
+        "rsi": None,
+        "macd_histogram": None,
+        "macd_trend": None,
+        "price_above_ema": None,
+        "volume_above_average": None,
+        "atr": None,
+        "divergence": None,
+    }
+    sentiment = "neutral"
+    risk_level = "low"
+    suggestion = "Sin señales de alerta - mantener posición"
+
+    try:
+        client = get_binance_client()
+        pair = _normalize_symbol(symbol)
+        df = client.fetch_ohlcv(pair, "15m")
+        if df is None or len(df) < 200:
+            return indicators_data, sentiment, risk_level, suggestion
+
+        df = add_all_indicators(df)
+        ind = get_latest_indicators(df)
+        if not ind:
+            return indicators_data, sentiment, risk_level, suggestion
+
+        rsi = ind.get("rsi")
+        macd_hist = ind.get("macd_histogram")
+        macd_cross_bull = ind.get("macd_crossover_bullish", False)
+        macd_cross_bear = ind.get("macd_crossover_bearish", False)
+        price_above_ema = ind.get("price_above_ema")
+        vol_above = ind.get("volume_above_average", False)
+        atr = ind.get("atr")
+        div = ind.get("divergence")
+
+        macd_trend = "bullish" if (macd_hist and macd_hist > 0) else "bearish"
+
+        divergence_type = None
+        if div:
+            if div.get("bearish_divergence"):
+                divergence_type = "bearish"
+            elif div.get("bullish_divergence"):
+                divergence_type = "bullish"
+
+        indicators_data = {
+            "rsi": round(rsi, 1) if rsi is not None else None,
+            "macd_histogram": round(macd_hist, 6) if macd_hist is not None else None,
+            "macd_trend": macd_trend,
+            "price_above_ema": price_above_ema,
+            "volume_above_average": vol_above,
+            "atr": round(atr, 2) if atr is not None else None,
+            "divergence": divergence_type,
+        }
+
+        # Determine sentiment
+        bullish_count = sum([
+            (rsi is not None and rsi > 50),
+            macd_trend == "bullish",
+            price_above_ema is True,
+        ])
+        sentiment = "bullish" if bullish_count >= 2 else ("bearish" if bullish_count == 0 else "neutral")
+
+        is_long = side == "long"
+
+        # Suggestion logic (priority order)
+        if rsi is not None and rsi > 75 and is_long:
+            suggestion = f"RSI sobrecomprado ({rsi:.0f}) - considerar tomar ganancias parciales"
+            risk_level = "high"
+        elif rsi is not None and rsi < 25 and not is_long:
+            suggestion = f"RSI sobrevendido ({rsi:.0f}) - considerar tomar ganancias parciales"
+            risk_level = "high"
+        elif (macd_cross_bear and is_long) or (macd_cross_bull and not is_long):
+            direction = "bearish" if macd_cross_bear else "bullish"
+            suggestion = f"MACD cruzando {direction} - vigilar stop loss"
+            risk_level = "high"
+        elif divergence_type:
+            against = (divergence_type == "bearish" and is_long) or (divergence_type == "bullish" and not is_long)
+            if against:
+                suggestion = "Divergencia detectada - posible reversión"
+                risk_level = "high"
+        elif price_above_ema is not None:
+            ema_against = (not price_above_ema and is_long) or (price_above_ema and not is_long)
+            if ema_against:
+                suggestion = "Precio cruzó EMA200 en contra - gestionar riesgo"
+                risk_level = "medium"
+
+        if risk_level == "low" and vol_above:
+            trend_favor = (sentiment == "bullish" and is_long) or (sentiment == "bearish" and not is_long)
+            if trend_favor:
+                suggestion = "Volumen alto a favor - tendencia fuerte, mantener"
+                risk_level = "low"
+
+    except Exception as e:
+        logger.error(f"Error computing indicators for {symbol}: {e}")
+
+    return indicators_data, sentiment, risk_level, suggestion
+
+
 @app.get("/api/positions")
 async def get_positions(user: UserAccount = Depends(get_current_user)):
     db = get_db()
     try:
         positions = DBHelper.get_open_positions(db, user.id)
+        result = []
+        for p in positions:
+            indicators, sentiment, risk_level, suggestion = _compute_position_indicators(p.symbol, p.side)
+            result.append({
+                "id": p.id,
+                "symbol": p.symbol,
+                "side": p.side,
+                "entry_price": p.entry_price,
+                "amount": p.amount,
+                "leverage": p.leverage,
+                "unrealized_pnl": p.unrealized_pnl,
+                "current_price": p.current_price,
+                "initial_stop_loss": p.initial_stop_loss,
+                "current_stop_loss": p.current_stop_loss,
+                "initial_take_profit": p.initial_take_profit,
+                "current_take_profit": p.current_take_profit,
+                "highest_price": p.highest_price,
+                "lowest_price": p.lowest_price,
+                "breakeven_reached": p.breakeven_reached,
+                "entry_atr": p.entry_atr,
+                "opened_at": p.opened_at.isoformat() if p.opened_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                "indicators": indicators,
+                "market_sentiment": sentiment,
+                "risk_level": risk_level,
+                "suggestion": suggestion,
+            })
         return {
-            "positions": [
-                {
-                    "id": p.id,
-                    "symbol": p.symbol,
-                    "side": p.side,
-                    "entry_price": p.entry_price,
-                    "amount": p.amount,
-                    "leverage": p.leverage,
-                    "unrealized_pnl": p.unrealized_pnl,
-                    "current_price": p.current_price,
-                    "initial_stop_loss": p.initial_stop_loss,
-                    "current_stop_loss": p.current_stop_loss,
-                    "initial_take_profit": p.initial_take_profit,
-                    "current_take_profit": p.current_take_profit,
-                    "highest_price": p.highest_price,
-                    "lowest_price": p.lowest_price,
-                    "breakeven_reached": p.breakeven_reached,
-                    "entry_atr": p.entry_atr,
-                    "opened_at": p.opened_at.isoformat() if p.opened_at else None,
-                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                }
-                for p in positions
-            ],
-            "total": len(positions),
+            "positions": result,
+            "total": len(result),
             "mode": user.mode.value,
             "has_binance_keys": user.has_binance_keys(),
         }
