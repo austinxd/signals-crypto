@@ -3,10 +3,13 @@ Main entry point for the Crypto Signals System.
 Provides both REST API and background signal monitoring.
 """
 import time
+import logging
 import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Set
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger("uvicorn.error")
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -241,10 +244,10 @@ def monitor_positions():
                         "push_enabled": acc.push_enabled,
                     })
                 except Exception as e:
-                    print(f"[POSITIONS] Error loading keys for account {acc.id}: {e}")
+                    logger.error(f"[POSITIONS] Error loading keys for account {acc.id}: {e}")
             db.close()
 
-            print(f"[POSITIONS] Monitoring {len(account_data)} accounts with Binance keys")
+            logger.info(f"[POSITIONS] Monitoring {len(account_data)} accounts with Binance keys")
 
             for account in account_data:
                 try:
@@ -263,7 +266,7 @@ def monitor_positions():
                     db_symbols = {(p.symbol, p.side) for p in db_positions}
                     binance_symbols = {(p["symbol"], p["side"]) for p in binance_positions}
 
-                    print(f"[POSITIONS] Account {account_id}: {len(binance_positions)} Binance positions, {len(db_positions)} DB positions")
+                    logger.info(f"[POSITIONS] Account {account_id}: {len(binance_positions)} Binance positions, {len(db_positions)} DB positions")
 
                     # Close positions no longer on Binance
                     for pos in db_positions:
@@ -346,15 +349,15 @@ def monitor_positions():
                                             )
 
                         except Exception as e:
-                            print(f"Error calculating indicators for position {pair}: {e}")
+                            logger.error(f"Error calculating indicators for position {pair}: {e}")
 
                     db.close()
 
                 except Exception as e:
-                    print(f"Error monitoring positions for user {account.id}: {e}")
+                    logger.error(f"Error monitoring positions for account {account['id']}: {e}")
 
         except Exception as e:
-            print(f"Error in position monitor loop: {e}")
+            logger.error(f"Error in position monitor loop: {e}", exc_info=True)
 
         for _ in range(POSITION_POLL_INTERVAL):
             if not monitoring_active:
@@ -367,19 +370,19 @@ def monitor_positions():
 async def lifespan(app: FastAPI):
     try:
         init_db()
-        print("Database initialized")
+        logger.info("Database initialized")
     except Exception as e:
         print(f"Database initialization failed (using JSON fallback): {e}")
 
     # Start background monitoring
     monitor_thread = threading.Thread(target=monitor_markets, daemon=True)
     monitor_thread.start()
-    print("Signal monitoring started")
+    logger.info("Signal monitoring started")
 
     # Start position monitoring
     position_thread = threading.Thread(target=monitor_positions, daemon=True)
     position_thread.start()
-    print("Position monitoring started")
+    logger.info("Position monitoring started")
 
     yield
     global monitoring_active
