@@ -56,18 +56,6 @@ const PositionsScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Posiciones</Text>
-        {positions.length > 0 && (
-          <View style={styles.summary}>
-            <Text style={styles.summaryLabel}>{positions.length} abiertas</Text>
-            <Text style={[styles.summaryPnl, { color: totalPnl >= 0 ? '#00d4aa' : '#ff4757' }]}>
-              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} USDT
-            </Text>
-          </View>
-        )}
-      </View>
-
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
@@ -79,6 +67,18 @@ const PositionsScreen = ({ navigation }) => {
           />
         }
       >
+        <View style={styles.header}>
+          <Text style={styles.title}>Posiciones</Text>
+          {positions.length > 0 && (
+            <View style={styles.summary}>
+              <Text style={styles.summaryLabel}>{positions.length} abiertas</Text>
+              <Text style={[styles.summaryPnl, { color: totalPnl >= 0 ? '#00d4aa' : '#ff4757' }]}>
+                {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} USDT
+              </Text>
+            </View>
+          )}
+        </View>
+
         {error ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>⚠️</Text>
@@ -116,10 +116,7 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: 60,
     paddingBottom: 16,
-    paddingHorizontal: 20,
-    backgroundColor: '#0f0f1a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a2e',
+    paddingHorizontal: 4,
   },
   title: {
     color: '#fff',
