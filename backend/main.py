@@ -612,45 +612,35 @@ def _normalize_symbol(symbol: str) -> str:
     return symbol
 
 
-def _compute_position_indicators(symbol: str, side: str):
-    """Fetch 15m indicators for a symbol and generate suggestion."""
-    indicators_data = {
-        "rsi": None,
-        "macd_histogram": None,
-        "macd_trend": None,
-        "price_above_ema": None,
-        "volume_above_average": None,
-        "atr": None,
-        "divergence": None,
-        "fibonacci": None,
-    }
-    sentiment = "neutral"
-    risk_level = "low"
-    suggestion = "Sin señales de alerta - mantener posición"
+POSITION_TIMEFRAMES = ["15m", "1h", "4h"]
 
+
+def _fetch_tf_indicators(client, pair: str, timeframe: str):
+    """Fetch indicators for a single timeframe. Returns dict or None."""
     try:
-        client = get_binance_client()
-        pair = _normalize_symbol(symbol)
-        df = client.fetch_ohlcv(pair, "1h")
+        df = client.fetch_ohlcv(pair, timeframe)
         if df is None or len(df) < 200:
-            return indicators_data, sentiment, risk_level, suggestion
-
+            return None
         df = add_all_indicators(df)
         ind = get_latest_indicators(df)
         if not ind:
-            return indicators_data, sentiment, risk_level, suggestion
+            return None
 
         rsi = ind.get("rsi")
         macd_hist = ind.get("macd_histogram")
-        macd_cross_bull = ind.get("macd_crossover_bullish", False)
-        macd_cross_bear = ind.get("macd_crossover_bearish", False)
+        macd_trend = "bullish" if (macd_hist and macd_hist > 0) else "bearish"
         price_above_ema = ind.get("price_above_ema")
         vol_above = ind.get("volume_above_average", False)
-        atr = ind.get("atr")
+
+        # Sentiment for this timeframe
+        bullish_count = sum([
+            (rsi is not None and rsi > 50),
+            macd_trend == "bullish",
+            price_above_ema is True,
+        ])
+        sentiment = "bullish" if bullish_count >= 2 else ("bearish" if bullish_count == 0 else "neutral")
+
         div = ind.get("divergence")
-
-        macd_trend = "bullish" if (macd_hist and macd_hist > 0) else "bearish"
-
         divergence_type = None
         if div:
             if div.get("bearish_divergence"):
@@ -658,7 +648,6 @@ def _compute_position_indicators(symbol: str, side: str):
             elif div.get("bullish_divergence"):
                 divergence_type = "bullish"
 
-        # Fibonacci data
         fib = ind.get("fibonacci")
         fib_data = None
         if fib:
@@ -676,32 +665,92 @@ def _compute_position_indicators(symbol: str, side: str):
                 "entry_quality": fib.get("entry_quality"),
             }
 
-        indicators_data = {
+        return {
             "rsi": round(rsi, 1) if rsi is not None else None,
             "macd_histogram": round(macd_hist, 6) if macd_hist is not None else None,
             "macd_trend": macd_trend,
+            "macd_crossover_bullish": ind.get("macd_crossover_bullish", False),
+            "macd_crossover_bearish": ind.get("macd_crossover_bearish", False),
             "price_above_ema": price_above_ema,
             "volume_above_average": vol_above,
-            "atr": round(atr, 2) if atr is not None else None,
+            "atr": round(ind.get("atr", 0), 2) if ind.get("atr") else None,
             "divergence": divergence_type,
             "fibonacci": fib_data,
+            "sentiment": sentiment,
         }
+    except Exception as e:
+        logger.error(f"Error fetching {timeframe} indicators for {pair}: {e}")
+        return None
 
-        # Determine sentiment
-        bullish_count = sum([
-            (rsi is not None and rsi > 50),
-            macd_trend == "bullish",
-            price_above_ema is True,
-        ])
-        sentiment = "bullish" if bullish_count >= 2 else ("bearish" if bullish_count == 0 else "neutral")
+
+def _compute_position_indicators(symbol: str, side: str):
+    """Fetch multi-timeframe indicators and generate suggestion."""
+    empty_tf = {
+        "rsi": None, "macd_histogram": None, "macd_trend": None,
+        "price_above_ema": None, "volume_above_average": None,
+        "atr": None, "divergence": None, "fibonacci": None, "sentiment": "neutral",
+    }
+    timeframes_data = {tf: empty_tf for tf in POSITION_TIMEFRAMES}
+    sentiment = "neutral"
+    risk_level = "low"
+    suggestion = "Sin señales de alerta - mantener posición"
+
+    try:
+        client = get_binance_client()
+        pair = _normalize_symbol(symbol)
+
+        for tf in POSITION_TIMEFRAMES:
+            result = _fetch_tf_indicators(client, pair, tf)
+            if result:
+                timeframes_data[tf] = result
+
+        # Use 1h as primary for suggestion logic, but consider all
+        primary = timeframes_data["1h"]
+        if primary["rsi"] is None:
+            # Fallback to 15m if 1h not available
+            primary = timeframes_data["15m"]
+
+        rsi = primary.get("rsi")
+        macd_trend = primary.get("macd_trend")
+        macd_cross_bull = primary.get("macd_crossover_bullish", False)
+        macd_cross_bear = primary.get("macd_crossover_bearish", False)
+        price_above_ema = primary.get("price_above_ema")
+        vol_above = primary.get("volume_above_average", False)
+        divergence_type = primary.get("divergence")
+
+        # Multi-timeframe sentiment: weighted vote
+        tf_sentiments = []
+        for tf in POSITION_TIMEFRAMES:
+            s = timeframes_data[tf].get("sentiment", "neutral")
+            if s != "neutral":
+                tf_sentiments.append(s)
+
+        if tf_sentiments:
+            bull_count = sum(1 for s in tf_sentiments if s == "bullish")
+            bear_count = sum(1 for s in tf_sentiments if s == "bearish")
+            if bull_count > bear_count:
+                sentiment = "bullish"
+            elif bear_count > bull_count:
+                sentiment = "bearish"
+            else:
+                sentiment = "neutral"
+        else:
+            sentiment = primary.get("sentiment", "neutral")
 
         is_long = side == "long"
-
-        # Determine if sentiment goes against position
         sentiment_against = (sentiment == "bullish" and not is_long) or (sentiment == "bearish" and is_long)
         sentiment_favor = (sentiment == "bullish" and is_long) or (sentiment == "bearish" and not is_long)
-
         side_label = "SHORT" if not is_long else "LONG"
+
+        # Count how many timeframes agree against/favor
+        tf_against = 0
+        tf_favor = 0
+        for tf in POSITION_TIMEFRAMES:
+            s = timeframes_data[tf].get("sentiment", "neutral")
+            if (s == "bullish" and not is_long) or (s == "bearish" and is_long):
+                tf_against += 1
+            elif (s == "bullish" and is_long) or (s == "bearish" and not is_long):
+                tf_favor += 1
 
         # Suggestion logic (priority order)
         if rsi is not None and rsi > 75 and is_long:
@@ -731,7 +780,7 @@ def _compute_position_indicators(symbol: str, side: str):
                 suggestion = f"Precio {'por encima' if price_above_ema else 'por debajo'} de EMA200 - en contra de {side_label}"
                 risk_level = "medium"
 
-        # Build full list of indicators against/favor
+        # Build indicator summary from 1h
         against_details = []
         favor_details = []
         if rsi is not None:
@@ -760,12 +809,26 @@ def _compute_position_indicators(symbol: str, side: str):
         against_count = len(against_details)
         favor_count = len(favor_details)
 
-        # If no high-priority alert was set, generate summary suggestion
+        # Timeframe context string
+        tf_labels = {"15m": "15m", "1h": "1h", "4h": "4h"}
+        tf_summary_parts = []
+        for tf in POSITION_TIMEFRAMES:
+            s = timeframes_data[tf].get("sentiment", "neutral")
+            label = {"bullish": "alcista", "bearish": "bajista", "neutral": "neutral"}[s]
+            tf_summary_parts.append(f"{tf_labels[tf]}:{label}")
+        tf_context = " | ".join(tf_summary_parts)
+
         if risk_level == "low":
-            if against_count >= 3:
+            if tf_against == 3:
+                suggestion = f"Todos los timeframes en contra de {side_label} ({tf_context}) - considerar cerrar"
+                risk_level = "high"
+            elif against_count >= 3:
                 detail_str = ", ".join(against_details)
                 suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - considerar cerrar o ajustar SL"
                 risk_level = "high"
+            elif tf_against >= 2:
+                suggestion = f"{tf_against}/3 timeframes en contra de {side_label} ({tf_context}) - gestionar riesgo"
+                risk_level = "medium"
             elif against_count >= 2:
                 detail_str = ", ".join(against_details)
                 suggestion = f"{against_count}/{total_indicators} en contra de {side_label} ({detail_str}) - gestionar riesgo"
@@ -774,6 +837,9 @@ def _compute_position_indicators(symbol: str, side: str):
                 detail_str = against_details[0]
                 suggestion = f"{detail_str} en contra de {side_label} - monitorear"
                 risk_level = "low"
+            elif tf_favor == 3:
+                suggestion = f"Todos los timeframes a favor de {side_label} ({tf_context}) - mantener"
+                risk_level = "low"
             elif favor_count >= 2:
                 detail_str = ", ".join(favor_details)
                 suggestion = f"{favor_count}/{total_indicators} a favor de {side_label} ({detail_str}) - mantener"
@@ -781,14 +847,13 @@ def _compute_position_indicators(symbol: str, side: str):
             else:
                 suggestion = f"Sin señales claras - monitorear {side_label}"
         else:
-            # High/medium alert already set; append counter context
-            if against_count > 0:
-                suggestion += f" ({against_count}/{total_indicators} en contra)"
+            if tf_against > 0:
+                suggestion += f" ({tf_against}/3 TF en contra)"
 
     except Exception as e:
         logger.error(f"Error computing indicators for {symbol}: {e}")
 
-    return indicators_data, sentiment, risk_level, suggestion
+    return timeframes_data, sentiment, risk_level, suggestion
 
 
 @app.get("/api/positions")
@@ -798,7 +863,7 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
         positions = DBHelper.get_open_positions(db, user.id)
         result = []
         for p in positions:
-            indicators, sentiment, risk_level, suggestion = _compute_position_indicators(p.symbol, p.side)
+            timeframes_data, sentiment, risk_level, suggestion = _compute_position_indicators(p.symbol, p.side)
             result.append({
                 "id": p.id,
                 "symbol": p.symbol,
@@ -819,7 +884,7 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "liquidation_price": p.liquidation_price,
                 "opened_at": p.opened_at.isoformat() if p.opened_at else None,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-                "indicators": indicators,
+                "timeframes": timeframes_data,
                 "market_sentiment": sentiment,
                 "risk_level": risk_level,
                 "suggestion": suggestion,
