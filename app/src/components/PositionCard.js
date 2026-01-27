@@ -307,9 +307,6 @@ const PositionCard = ({ position }) => {
         </View>
       )}
 
-      {/* MULTI-TIMEFRAME SUMMARY */}
-      <MultiTFSummary timeframes={timeframes} side={position.side} />
-
       {/* TIMEFRAME SELECTOR + INDICATORS */}
       <View style={styles.indicatorsSection}>
         <View style={styles.tfSelector}>
