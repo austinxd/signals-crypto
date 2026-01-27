@@ -118,17 +118,20 @@ def send_push_notification(
 
 
 def send_exit_notification(
-    user: UserAccount,
+    user,
     symbol: str,
     alert_type: str,
     message: str,
     was_executed: bool = False,
 ) -> Dict[str, Any]:
-    """Send exit alert push notification to a user."""
-    if not user.push_token or not user.push_enabled:
+    """Send exit alert push notification to a user (accepts ORM object or dict)."""
+    push_token = user.get("push_token") if isinstance(user, dict) else getattr(user, "push_token", None)
+    push_enabled = user.get("push_enabled", True) if isinstance(user, dict) else getattr(user, "push_enabled", True)
+
+    if not push_token or not push_enabled:
         return {"status": "skipped", "reason": "no_push_token"}
 
-    if not user.push_token.startswith("ExponentPushToken"):
+    if not push_token.startswith("ExponentPushToken"):
         return {"status": "skipped", "reason": "invalid_token"}
 
     pair_short = symbol.replace("/USDT", "")
@@ -156,7 +159,7 @@ def send_exit_notification(
                 "Content-Type": "application/json",
             },
             json=[{
-                "to": user.push_token,
+                "to": push_token,
                 "sound": "default",
                 "title": title,
                 "body": body,

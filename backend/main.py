@@ -227,21 +227,43 @@ def monitor_positions():
         try:
             db = get_db()
             accounts = DBHelper.get_accounts_with_binance_keys(db)
+            # Eagerly load all attributes and extract keys before closing session
+            account_data = []
+            for acc in accounts:
+                try:
+                    api_key, api_secret = acc.get_binance_keys()
+                    account_data.append({
+                        "id": acc.id,
+                        "mode": acc.mode,
+                        "api_key": api_key,
+                        "api_secret": api_secret,
+                        "push_token": acc.push_token,
+                        "push_enabled": acc.push_enabled,
+                    })
+                except Exception as e:
+                    print(f"[POSITIONS] Error loading keys for account {acc.id}: {e}")
             db.close()
 
-            for account in accounts:
+            print(f"[POSITIONS] Monitoring {len(account_data)} accounts with Binance keys")
+
+            for account in account_data:
                 try:
-                    api_key, api_secret = account.get_binance_keys()
+                    api_key = account["api_key"]
+                    api_secret = account["api_secret"]
                     if not api_key or not api_secret:
                         continue
 
                     user_client = create_user_client(api_key, api_secret)
                     binance_positions = user_client.fetch_futures_positions()
 
+                    account_id = account["id"]
+
                     db = get_db()
-                    db_positions = DBHelper.get_open_positions(db, account.id)
+                    db_positions = DBHelper.get_open_positions(db, account_id)
                     db_symbols = {(p.symbol, p.side) for p in db_positions}
                     binance_symbols = {(p["symbol"], p["side"]) for p in binance_positions}
+
+                    print(f"[POSITIONS] Account {account_id}: {len(binance_positions)} Binance positions, {len(db_positions)} DB positions")
 
                     # Close positions no longer on Binance
                     for pos in db_positions:
@@ -251,7 +273,7 @@ def monitor_positions():
                     # Upsert positions from Binance
                     for bp in binance_positions:
                         pos = DBHelper.upsert_position(
-                            db, account.id, bp["symbol"], bp["side"],
+                            db, account_id, bp["symbol"], bp["side"],
                             bp["entry_price"], bp["amount"], bp["leverage"],
                             bp["unrealized_pnl"], bp["current_price"],
                         )
@@ -294,7 +316,7 @@ def monitor_positions():
                                         was_executed = False
 
                                         # Bot mode: execute MOVE_SL
-                                        if (account.mode == OperationMode.BOT
+                                        if (account["mode"] == OperationMode.BOT
                                                 and es.recommended_action == "MOVE_SL"
                                                 and es.new_sl_price):
                                             result = user_client.modify_stop_loss(
@@ -309,7 +331,7 @@ def monitor_positions():
                                                     db.commit()
 
                                         alert = DBHelper.create_exit_alert(
-                                            db, pos.id, account.id, pair,
+                                            db, pos.id, account_id, pair,
                                             alert_type_map.get(es.alert_type, ExitAlertType.TRAILING_UPDATE),
                                             es.message,
                                             action_map.get(es.recommended_action),
