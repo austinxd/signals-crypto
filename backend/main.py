@@ -471,11 +471,22 @@ async def auth_refresh(data: AuthRefresh):
 
 @app.get("/api/account/profile")
 async def get_profile(user: UserAccount = Depends(get_current_user)):
+    # Show masked API key hint (last 4 chars)
+    api_key_hint = ""
+    if user.has_binance_keys():
+        try:
+            key, _ = user.get_binance_keys()
+            if key:
+                api_key_hint = f"...{key[-4:]}"
+        except Exception:
+            api_key_hint = "...????"
+
     return {
         "id": user.id,
         "email": user.email,
         "mode": user.mode.value,
         "has_binance_keys": user.has_binance_keys(),
+        "api_key_hint": api_key_hint,
         "risk_percent": user.risk_percent,
         "risk_fixed_usdt": user.risk_fixed_usdt,
         "max_leverage": user.max_leverage,
@@ -483,6 +494,36 @@ async def get_profile(user: UserAccount = Depends(get_current_user)):
         "push_enabled": user.push_enabled,
         "trading_mode": user.trading_mode.value if user.trading_mode else "balanced",
     }
+
+
+@app.post("/api/account/verify-binance")
+async def verify_binance(user: UserAccount = Depends(get_current_user)):
+    """Test Binance API connection."""
+    if not user.has_binance_keys():
+        raise HTTPException(status_code=400, detail="No API keys configured")
+    try:
+        key, secret = user.get_binance_keys()
+        client = create_user_client(key, secret)
+        balance = client.exchange.fetch_balance()
+        usdt = balance.get("USDT", {})
+        total = usdt.get("total", 0)
+        return {"status": "ok", "message": f"Connected. Balance: {total:.2f} USDT"}
+    except Exception as e:
+        return {"status": "error", "message": f"Connection failed: {str(e)[:100]}"}
+
+
+@app.delete("/api/account/binance-keys")
+async def delete_binance_keys(user: UserAccount = Depends(get_current_user)):
+    """Remove Binance API keys."""
+    db = get_db()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+        account.binance_api_key = None
+        account.binance_api_secret = None
+        db.commit()
+        return {"status": "ok", "message": "API keys removed"}
+    finally:
+        db.close()
 
 
 @app.put("/api/account/binance-keys")

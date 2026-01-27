@@ -18,6 +18,8 @@ import {
   sendTestNotification,
   getProfile,
   updateBinanceKeys,
+  verifyBinanceKeys,
+  deleteBinanceKeys,
   updateAccountSettings,
   logout,
 } from '../services/api';
@@ -222,10 +224,60 @@ const SettingsScreen = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Binance API</Text>
         {profile && profile.has_binance_keys === true ? (
-          <View style={styles.keysStatus}>
-            <Text style={styles.keysStatusIcon}>✅</Text>
-            <Text style={styles.keysStatusText}>API Keys configuradas y encriptadas</Text>
-          </View>
+          <>
+            <View style={styles.keysStatus}>
+              <Text style={styles.keysStatusIcon}>✅</Text>
+              <View>
+                <Text style={styles.keysStatusText}>API Keys configuradas</Text>
+                {profile.api_key_hint ? (
+                  <Text style={styles.keysHint}>Key: ****{profile.api_key_hint}</Text>
+                ) : null}
+              </View>
+            </View>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={styles.button}
+                onPress={async () => {
+                  try {
+                    const result = await verifyBinanceKeys();
+                    Alert.alert(
+                      result.status === 'ok' ? 'Conexión OK' : 'Error',
+                      result.message
+                    );
+                  } catch (err) {
+                    Alert.alert('Error', err.message);
+                  }
+                }}
+              >
+                <Text style={styles.buttonText}>Verificar Conexión</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#ff4757' }]}
+                onPress={() => {
+                  Alert.alert('Eliminar Keys', '¿Seguro que quieres eliminar tus API keys?', [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Eliminar',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await deleteBinanceKeys();
+                          const p = await getProfile();
+                          setProfile(p);
+                          Alert.alert('Listo', 'API keys eliminadas');
+                        } catch (err) {
+                          Alert.alert('Error', err.message);
+                        }
+                      },
+                    },
+                  ]);
+                }}
+              >
+                <Text style={styles.buttonText}>Eliminar Keys</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fieldLabel}>Reemplazar keys:</Text>
+          </>
         ) : (
           <Text style={styles.helperText}>Conecta tu cuenta de Binance Futures</Text>
         )}
@@ -506,6 +558,11 @@ const styles = StyleSheet.create({
     color: '#00d4aa',
     fontSize: 14,
     fontWeight: '600',
+  },
+  keysHint: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
   },
   modeRow: {
     flexDirection: 'row',

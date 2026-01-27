@@ -440,6 +440,14 @@ export async function updateBinanceKeys(apiKey, apiSecret) {
   });
 }
 
+export async function verifyBinanceKeys() {
+  return apiRequest('/api/account/verify-binance', { method: 'POST' });
+}
+
+export async function deleteBinanceKeys() {
+  return apiRequest('/api/account/binance-keys', { method: 'DELETE' });
+}
+
 export async function updateAccountSettings(settings) {
   return apiRequest('/api/account/settings', {
     method: 'PUT',
