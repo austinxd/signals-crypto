@@ -306,9 +306,29 @@ class CooldownTracker(Base):
     )
 
 
+def _run_migrations():
+    """Run manual ALTER TABLE migrations for columns added after initial create."""
+    from sqlalchemy import text
+    migrations = [
+        ("active_positions", "liquidation_price", "ALTER TABLE active_positions ADD COLUMN liquidation_price FLOAT NULL"),
+    ]
+    with engine.connect() as conn:
+        for table, column, sql in migrations:
+            try:
+                conn.execute(text(f"SELECT {column} FROM {table} LIMIT 1"))
+            except Exception:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                    print(f"Migration: added {table}.{column}")
+                except Exception as e:
+                    print(f"Migration warning ({table}.{column}): {e}")
+
+
 def init_db():
     """Initialize database tables."""
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
     print("Database tables created successfully")
 
 

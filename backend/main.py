@@ -863,7 +863,18 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
         positions = DBHelper.get_open_positions(db, user.id)
         result = []
         for p in positions:
-            timeframes_data, sentiment, risk_level, suggestion = _compute_position_indicators(p.symbol, p.side)
+            try:
+                timeframes_data, sentiment, risk_level, suggestion = _compute_position_indicators(p.symbol, p.side)
+            except Exception as e:
+                logger.error(f"Error computing indicators for {p.symbol}: {e}")
+                timeframes_data = {}
+                sentiment = "neutral"
+                risk_level = "low"
+                suggestion = "Error calculando indicadores"
+            try:
+                liq_price = p.liquidation_price
+            except Exception:
+                liq_price = None
             result.append({
                 "id": p.id,
                 "symbol": p.symbol,
@@ -881,7 +892,7 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "lowest_price": p.lowest_price,
                 "breakeven_reached": p.breakeven_reached,
                 "entry_atr": p.entry_atr,
-                "liquidation_price": p.liquidation_price,
+                "liquidation_price": liq_price,
                 "opened_at": p.opened_at.isoformat() if p.opened_at else None,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 "timeframes": timeframes_data,
