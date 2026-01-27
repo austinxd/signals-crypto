@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Switch,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   getApiUrl,
   setApiUrl,
@@ -45,9 +46,12 @@ const SettingsScreen = () => {
   const [riskFixedUsdt, setRiskFixedUsdt] = useState('');
   const [maxLeverage, setMaxLeverage] = useState('10');
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  // Reload settings every time the screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadSettings();
+    }, [])
+  );
 
   const loadSettings = async () => {
     try {
@@ -63,13 +67,14 @@ const SettingsScreen = () => {
       // Load profile
       try {
         const p = await getProfile();
+        console.log('Profile loaded:', JSON.stringify(p));
         setProfile(p);
         setBotMode(p.mode === 'bot');
         if (p.risk_percent != null) setRiskPercent(String(p.risk_percent));
         if (p.risk_fixed_usdt != null) setRiskFixedUsdt(String(p.risk_fixed_usdt));
         if (p.max_leverage != null) setMaxLeverage(String(p.max_leverage));
-      } catch {
-        // Not authenticated or server error
+      } catch (e) {
+        console.log('Profile load error:', e.message);
       }
     } catch (err) {
       console.error('Error loading settings:', err);
