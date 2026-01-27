@@ -310,15 +310,22 @@ const PositionCard = ({ position }) => {
       {/* TIMEFRAME SELECTOR + INDICATORS */}
       <View style={styles.indicatorsSection}>
         <View style={styles.tfSelector}>
-          {TIMEFRAMES.map((tf) => (
-            <TouchableOpacity
-              key={tf}
-              style={[styles.tfTab, selectedTF === tf && styles.tfTabActive]}
-              onPress={() => setSelectedTF(tf)}
-            >
-              <Text style={[styles.tfTabText, selectedTF === tf && styles.tfTabTextActive]}>{tf}</Text>
-            </TouchableOpacity>
-          ))}
+          {TIMEFRAMES.map((tf) => {
+            const tfData = timeframes[tf];
+            const s = tfData?.sentiment;
+            const color = s === 'bullish' ? '#00d4aa' : s === 'bearish' ? '#ff4757' : '#888';
+            const isActive = selectedTF === tf;
+            return (
+              <TouchableOpacity
+                key={tf}
+                style={[styles.tfTab, isActive && { backgroundColor: color + '20' }]}
+                onPress={() => setSelectedTF(tf)}
+              >
+                <View style={[styles.tfDotIndicator, { backgroundColor: color }]} />
+                <Text style={[styles.tfTabText, isActive && { color }]}>{tf}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {ind.rsi != null ? (
@@ -454,10 +461,9 @@ const styles = StyleSheet.create({
   // TF selector + indicators
   indicatorsSection: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10 },
   tfSelector: { flexDirection: 'row', marginBottom: 10, gap: 4 },
-  tfTab: { flex: 1, paddingVertical: 6, borderRadius: 6, backgroundColor: '#1a1a2e', alignItems: 'center' },
-  tfTabActive: { backgroundColor: '#00d4aa20' },
+  tfTab: { flex: 1, flexDirection: 'row', paddingVertical: 6, borderRadius: 6, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center', gap: 5 },
   tfTabText: { color: '#666', fontSize: 12, fontWeight: '600' },
-  tfTabTextActive: { color: '#00d4aa' },
+  tfDotIndicator: { width: 6, height: 6, borderRadius: 3 },
   sectionTitle: { color: '#888', fontSize: 11, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   indicatorRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   indicatorLabel: { color: '#999', fontSize: 13, width: 60 },
