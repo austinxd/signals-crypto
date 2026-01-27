@@ -202,6 +202,7 @@ class ActivePosition(Base):
     breakeven_reached = Column(Boolean, default=False)
 
     entry_atr = Column(Float, nullable=True)
+    liquidation_price = Column(Float, nullable=True)
     is_open = Column(Boolean, default=True)
     opened_at = Column(DateTime, default=datetime.utcnow)
     closed_at = Column(DateTime, nullable=True)
@@ -659,6 +660,7 @@ class DBHelper:
         leverage: int = 1,
         unrealized_pnl: float = 0.0,
         current_price: float = None,
+        liquidation_price: float = None,
     ) -> ActivePosition:
         """Create or update a position."""
         pos = db.query(ActivePosition).filter(
@@ -670,8 +672,10 @@ class DBHelper:
 
         if pos:
             pos.amount = amount
+            pos.leverage = leverage
             pos.unrealized_pnl = unrealized_pnl
             pos.current_price = current_price
+            pos.liquidation_price = liquidation_price
             if current_price:
                 if pos.highest_price is None or current_price > pos.highest_price:
                     pos.highest_price = current_price
@@ -690,6 +694,7 @@ class DBHelper:
                 current_price=current_price,
                 highest_price=current_price,
                 lowest_price=current_price,
+                liquidation_price=liquidation_price,
             )
             db.add(pos)
 

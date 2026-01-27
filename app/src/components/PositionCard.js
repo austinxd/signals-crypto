@@ -31,26 +31,22 @@ const SENTIMENT_LABELS = {
   neutral: { text: 'Neutral', color: '#888' },
 };
 
-const FIB_KEY_LEVELS = ['23.6', '38.2', '50.0', '61.8', '78.6'];
-const FIB_COLORS = {
-  '0.0': '#ff4757',
-  '23.6': '#ff6b81',
-  '38.2': '#ffd93d',
-  '50.0': '#ffa502',
-  '61.8': '#2ed573',
-  '78.6': '#1e90ff',
-  '100.0': '#5352ed',
-};
+const FIB_LEVELS_DISPLAY = [
+  { key: '78.6', color: '#1e90ff' },
+  { key: '61.8', color: '#2ed573' },
+  { key: '50.0', color: '#ffa502' },
+  { key: '38.2', color: '#ffd93d' },
+  { key: '23.6', color: '#ff6b81' },
+];
 
 const RSIBar = ({ value }) => {
   if (value == null) return <Text style={styles.indicatorValue}>-</Text>;
   const pct = Math.max(0, Math.min(100, value));
   let color = '#ffd93d';
-  let label = 'Neutral';
-  if (pct < 30) { color = '#00d4aa'; label = 'Sobrevendido'; }
-  else if (pct < 45) { color = '#2ed573'; label = 'Bajo'; }
-  else if (pct > 70) { color = '#ff4757'; label = 'Sobrecomprado'; }
-  else if (pct > 55) { color = '#ff6b81'; label = 'Alto'; }
+  if (pct < 30) color = '#00d4aa';
+  else if (pct > 70) color = '#ff4757';
+  else if (pct > 55) color = '#ff6b81';
+  else if (pct < 45) color = '#2ed573';
 
   return (
     <View style={styles.rsiContainer}>
@@ -62,72 +58,86 @@ const RSIBar = ({ value }) => {
   );
 };
 
-const FibonacciChart = ({ fib, currentPrice, entryPrice }) => {
+const FibonacciSection = ({ fib, currentPrice, entryPrice, side }) => {
   if (!fib || !fib.levels) return null;
 
   const levels = fib.levels;
   const high = fib.swing_high;
   const low = fib.swing_low;
-  const range = high - low;
-  if (range <= 0) return null;
-
-  // Positions as percentage from bottom
-  const priceToPercent = (p) => Math.max(0, Math.min(100, ((p - low) / range) * 100));
-
-  const currentPct = priceToPercent(currentPrice);
-  const entryPct = entryPrice ? priceToPercent(entryPrice) : null;
+  const isShort = side === 'short' || side === 'SHORT';
 
   return (
     <View style={styles.fibSection}>
-      <Text style={styles.sectionTitle}>Fibonacci (15m)</Text>
-      <View style={styles.fibChart}>
-        {/* Level lines */}
-        {FIB_KEY_LEVELS.map((name) => {
-          const price = levels[name];
+      <Text style={styles.sectionTitle}>Fibonacci (1h)</Text>
+
+      {/* Swing range */}
+      <View style={styles.fibSwingRow}>
+        <Text style={styles.fibSwingLabel}>Rango: {formatPrice(low)} - {formatPrice(high)}</Text>
+        <Text style={styles.fibSwingTrend}>{fib.is_uptrend ? 'Tendencia \u2191' : 'Tendencia \u2193'}</Text>
+      </View>
+
+      {/* Levels as horizontal bars showing where price is */}
+      <View style={styles.fibLevels}>
+        {FIB_LEVELS_DISPLAY.map(({ key, color }) => {
+          const price = levels[key];
           if (price == null) return null;
-          const pct = priceToPercent(price);
-          const color = FIB_COLORS[name] || '#555';
+          const isCurrent = currentPrice && Math.abs(currentPrice - price) / currentPrice < 0.005;
+          const isEntry = entryPrice && Math.abs(entryPrice - price) / entryPrice < 0.005;
+          const isAbove = currentPrice > price;
+
+          // For SHORT: levels below current = support (danger), above = resistance (target)
+          // For LONG: levels above current = resistance (danger), below = support
+          let relevance = '#444';
+          if (isShort) {
+            relevance = isAbove ? color : '#333';  // Above current = already passed, below = potential target
+          } else {
+            relevance = isAbove ? '#333' : color;
+          }
+
           return (
-            <View key={name} style={[styles.fibLevel, { bottom: `${pct}%` }]}>
-              <View style={[styles.fibLine, { backgroundColor: color + '60' }]} />
-              <Text style={[styles.fibLabel, { color }]}>{name}%</Text>
-              <Text style={[styles.fibPrice, { color: '#666' }]}>{formatPrice(price)}</Text>
+            <View key={key} style={styles.fibLevelRow}>
+              <Text style={[styles.fibLevelName, { color }]}>{key}%</Text>
+              <View style={styles.fibBarContainer}>
+                <View style={[styles.fibBarFill, { backgroundColor: relevance, width: '100%' }]} />
+                {isCurrent && <View style={styles.fibCurrentDot} />}
+                {isEntry && <View style={styles.fibEntryDot} />}
+              </View>
+              <Text style={[styles.fibLevelPrice, isCurrent && { color: '#fff', fontWeight: 'bold' }]}>
+                {formatPrice(price)}
+              </Text>
             </View>
           );
         })}
-
-        {/* Current price marker */}
-        <View style={[styles.fibMarker, { bottom: `${currentPct}%` }]}>
-          <View style={styles.fibMarkerDot} />
-          <Text style={styles.fibMarkerLabel}>Actual</Text>
-        </View>
-
-        {/* Entry price marker */}
-        {entryPct != null && Math.abs(entryPct - currentPct) > 3 && (
-          <View style={[styles.fibMarker, styles.fibEntryMarker, { bottom: `${entryPct}%` }]}>
-            <View style={[styles.fibMarkerDot, { backgroundColor: '#ffd93d' }]} />
-            <Text style={[styles.fibMarkerLabel, { color: '#ffd93d' }]}>Entrada</Text>
-          </View>
-        )}
       </View>
+
+      {/* Legend */}
+      <View style={styles.fibLegend}>
+        <View style={styles.fibLegendItem}>
+          <View style={[styles.fibLegendDot, { backgroundColor: '#fff' }]} />
+          <Text style={styles.fibLegendText}>Precio actual</Text>
+        </View>
+        <View style={styles.fibLegendItem}>
+          <View style={[styles.fibLegendDot, { backgroundColor: '#ffd93d' }]} />
+          <Text style={styles.fibLegendText}>Entrada</Text>
+        </View>
+      </View>
+
+      {/* Key level note */}
       {fib.at_key_level && (
-        <Text style={styles.fibNote}>En nivel clave Fib {fib.key_level_name}%</Text>
+        <View style={styles.fibNoteBox}>
+          <Text style={styles.fibNoteText}>En nivel clave Fib {fib.key_level_name}% - zona de alta reacci{'\u00F3'}n</Text>
+        </View>
       )}
       {!fib.at_key_level && fib.near_key_level && (
-        <Text style={styles.fibNote}>Cerca de Fib {fib.key_level_name}%</Text>
+        <View style={[styles.fibNoteBox, { borderLeftColor: '#ffd93d' }]}>
+          <Text style={styles.fibNoteText}>Cerca de Fib {fib.key_level_name}%</Text>
+        </View>
       )}
     </View>
   );
 };
 
 const cleanSymbol = (s) => s ? s.split(':')[0] : s;
-
-const calcLiquidationPrice = (entry, leverage, side) => {
-  if (!entry || !leverage || leverage <= 0) return null;
-  const rate = 1 / leverage;
-  if (side === 'long') return entry * (1 - rate);
-  return entry * (1 + rate);
-};
 
 const PositionCard = ({ position }) => {
   const [alerts, setAlerts] = useState([]);
@@ -141,7 +151,11 @@ const PositionCard = ({ position }) => {
   const pnlColor = pnl >= 0 ? '#00d4aa' : '#ff4757';
   const sideColor = isLong ? '#00d4aa' : '#ff4757';
   const displaySymbol = cleanSymbol(position.symbol);
-  const liqPrice = calcLiquidationPrice(position.entry_price, position.leverage, position.side);
+
+  // Use real liquidation price from Binance, fallback to estimate
+  const liqPrice = position.liquidation_price && position.liquidation_price > 0
+    ? position.liquidation_price
+    : null;
 
   const ind = position.indicators || {};
   const riskColor = RISK_COLORS[position.risk_level] || '#888';
@@ -217,18 +231,18 @@ const PositionCard = ({ position }) => {
           </View>
         </View>
 
-        {/* Liquidation + extra info */}
+        {/* Extra details */}
         <View style={styles.detailRow}>
           {liqPrice != null && (
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Liq. estimada</Text>
+              <Text style={styles.detailLabel}>Liquidaci{'\u00F3'}n</Text>
               <Text style={styles.detailValue}>{formatPrice(liqPrice)}</Text>
             </View>
           )}
-          {position.entry_atr != null && (
+          {position.leverage && (
             <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>ATR entrada</Text>
-              <Text style={styles.detailValue}>${position.entry_atr.toFixed(2)}</Text>
+              <Text style={styles.detailLabel}>Apalancamiento</Text>
+              <Text style={[styles.detailValue, { color: '#aaa' }]}>{position.leverage}x</Text>
             </View>
           )}
         </View>
@@ -252,7 +266,7 @@ const PositionCard = ({ position }) => {
       {/* ===== INDICADORES ===== */}
       {ind.rsi != null && (
         <View style={styles.indicatorsSection}>
-          <Text style={styles.sectionTitle}>Indicadores (15m)</Text>
+          <Text style={styles.sectionTitle}>Indicadores (1h)</Text>
           <View style={styles.indicatorRow}>
             <Text style={styles.indicatorLabel}>RSI</Text>
             <RSIBar value={ind.rsi} />
@@ -279,10 +293,11 @@ const PositionCard = ({ position }) => {
       )}
 
       {/* ===== FIBONACCI ===== */}
-      <FibonacciChart
+      <FibonacciSection
         fib={ind.fibonacci}
         currentPrice={current}
         entryPrice={position.entry_price}
+        side={position.side}
       />
 
       {/* ===== RECOMENDACIÓN ===== */}
@@ -564,62 +579,106 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
-  fibChart: {
-    height: 160,
-    position: 'relative',
-    marginVertical: 8,
-    marginLeft: 4,
+  fibSwingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  fibLevel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
+  fibSwingLabel: {
+    color: '#666',
+    fontSize: 11,
+  },
+  fibSwingTrend: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  fibLevels: {
+    gap: 6,
+  },
+  fibLevelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 1,
+    gap: 8,
   },
-  fibLine: {
-    flex: 1,
-    height: 1,
-  },
-  fibLabel: {
-    fontSize: 10,
+  fibLevelName: {
+    fontSize: 11,
     fontWeight: 'bold',
-    marginLeft: 6,
-    width: 36,
+    width: 38,
+    textAlign: 'right',
   },
-  fibPrice: {
-    fontSize: 9,
-    marginLeft: 2,
+  fibBarContainer: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 4,
+    overflow: 'hidden',
+    justifyContent: 'center',
   },
-  fibMarker: {
+  fibBarFill: {
+    height: '100%',
+    borderRadius: 4,
+    opacity: 0.4,
+  },
+  fibCurrentDot: {
     position: 'absolute',
-    left: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 1,
-    zIndex: 10,
-  },
-  fibEntryMarker: {
-    zIndex: 5,
-  },
-  fibMarkerDot: {
+    right: 4,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#fff',
-    marginRight: 4,
   },
-  fibMarkerLabel: {
-    color: '#fff',
+  fibEntryDot: {
+    position: 'absolute',
+    left: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ffd93d',
+  },
+  fibLevelPrice: {
+    color: '#666',
+    fontSize: 11,
+    width: 70,
+    textAlign: 'right',
+  },
+  fibLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a2e',
+  },
+  fibLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  fibLegendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  fibLegendText: {
+    color: '#666',
     fontSize: 10,
-    fontWeight: 'bold',
   },
-  fibNote: {
+  fibNoteBox: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#ffd93d15',
+    borderRadius: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: '#ffa502',
+  },
+  fibNoteText: {
     color: '#ffd93d',
     fontSize: 12,
     fontWeight: '600',
-    textAlign: 'center',
   },
   // Suggestion
   suggestionBox: {

@@ -133,7 +133,10 @@ class BinanceClient:
                 entry_price = float(pos.get("entryPrice") or pos.get("info", {}).get("entryPrice", 0))
                 mark_price = float(pos.get("markPrice") or pos.get("info", {}).get("markPrice", 0))
                 unrealized_pnl = float(pos.get("unrealizedPnl") or pos.get("info", {}).get("unRealizedProfit", 0))
-                leverage = int(float(pos.get("leverage") or pos.get("info", {}).get("leverage", 1)))
+                info = pos.get("info", {})
+                leverage_raw = pos.get("leverage") or info.get("leverage", 1)
+                leverage = int(float(leverage_raw))
+                logger.info(f"[POSITIONS] {pos.get('symbol')} leverage: ccxt={pos.get('leverage')}, info={info.get('leverage')}, resolved={leverage}")
 
                 logger.info(f"[POSITIONS] Open: {pos.get('symbol')} {side} contracts={contracts} entry={entry_price}")
 

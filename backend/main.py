@@ -279,6 +279,7 @@ def monitor_positions():
                             db, account_id, bp["symbol"], bp["side"],
                             bp["entry_price"], bp["amount"], bp["leverage"],
                             bp["unrealized_pnl"], bp["current_price"],
+                            bp.get("liquidation_price"),
                         )
 
                         # Calculate indicators for this symbol (15m)
@@ -630,7 +631,7 @@ def _compute_position_indicators(symbol: str, side: str):
     try:
         client = get_binance_client()
         pair = _normalize_symbol(symbol)
-        df = client.fetch_ohlcv(pair, "15m")
+        df = client.fetch_ohlcv(pair, "1h")
         if df is None or len(df) < 200:
             return indicators_data, sentiment, risk_level, suggestion
 
@@ -815,6 +816,7 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "lowest_price": p.lowest_price,
                 "breakeven_reached": p.breakeven_reached,
                 "entry_atr": p.entry_atr,
+                "liquidation_price": p.liquidation_price,
                 "opened_at": p.opened_at.isoformat() if p.opened_at else None,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 "indicators": indicators,
