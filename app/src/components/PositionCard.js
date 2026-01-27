@@ -132,6 +132,7 @@ const PositionCard = ({ position }) => {
 
       {/* PnL */}
       <View style={styles.pnlRow}>
+        <Text style={styles.pnlLabel}>PnL</Text>
         <Text style={[styles.pnlValue, { color: pnlColor }]}>
           {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
         </Text>
@@ -318,6 +319,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 12,
+  },
+  pnlLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginRight: 6,
   },
   pnlValue: {
     fontSize: 16,
