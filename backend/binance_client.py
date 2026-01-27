@@ -140,12 +140,19 @@ class BinanceClient:
 
                 logger.info(f"[POSITIONS] Open: {pos.get('symbol')} {side} contracts={contracts} entry={entry_price}")
 
+                notional = abs(float(pos.get("notional") or info.get("notional", 0)))
+                initial_margin = float(pos.get("initialMargin") or info.get("initialMargin") or info.get("isolatedMargin", 0))
+                if initial_margin == 0 and notional > 0 and leverage > 0:
+                    initial_margin = notional / leverage
+
                 open_positions.append({
                     "symbol": pos.get("symbol"),
                     "side": side,
                     "entry_price": entry_price,
                     "amount": abs(contracts),
                     "leverage": leverage,
+                    "notional": notional,
+                    "initial_margin": initial_margin,
                     "unrealized_pnl": unrealized_pnl,
                     "current_price": mark_price,
                     "liquidation_price": float(pos.get("liquidationPrice") or 0),

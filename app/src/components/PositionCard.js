@@ -143,6 +143,36 @@ const FibonacciSection = ({ fib, currentPrice, entryPrice, side }) => {
           <Text style={styles.fibNoteText}>Cerca de Fib {fib.key_level_name}%</Text>
         </View>
       )}
+      {/* Contextual legend */}
+      {(() => {
+        const isShort = side === 'short' || side === 'SHORT';
+        const lines = [];
+        if (fib.closest_level_name) {
+          lines.push(`Precio cerca del nivel ${fib.closest_level_name}% (${formatPrice(fib.closest_level)}).`);
+        }
+        if (isShort) {
+          lines.push('Como tu posici\u00F3n es SHORT, los niveles superiores (61.8%, 78.6%) son zonas de riesgo si el precio sube hacia ellos.');
+          if (fib.is_uptrend) {
+            lines.push('Fibonacci muestra tendencia alcista \u2014 en contra de tu SHORT. Precauci\u00F3n.');
+          } else {
+            lines.push('Fibonacci muestra tendencia bajista \u2014 a favor de tu SHORT.');
+          }
+        } else {
+          lines.push('Como tu posici\u00F3n es LONG, los niveles inferiores (23.6%, 38.2%) son zonas de soporte clave.');
+          if (fib.is_uptrend) {
+            lines.push('Fibonacci muestra tendencia alcista \u2014 a favor de tu LONG.');
+          } else {
+            lines.push('Fibonacci muestra tendencia bajista \u2014 en contra de tu LONG. Precauci\u00F3n.');
+          }
+        }
+        return (
+          <View style={styles.fibContextBox}>
+            {lines.map((line, i) => (
+              <Text key={i} style={styles.fibContextText}>{line}</Text>
+            ))}
+          </View>
+        );
+      })()}
     </View>
   );
 };
@@ -241,6 +271,18 @@ const PositionCard = ({ position }) => {
           </View>
         </View>
         <View style={styles.detailRow}>
+          {position.initial_margin > 0 && (
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Margen</Text>
+              <Text style={styles.detailValueNeutral}>${position.initial_margin.toFixed(2)}</Text>
+            </View>
+          )}
+          {position.notional > 0 && (
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Valor total</Text>
+              <Text style={styles.detailValueNeutral}>${position.notional.toFixed(2)}</Text>
+            </View>
+          )}
           {liqPrice != null && (
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Liquidaci{'\u00F3'}n</Text>
@@ -391,6 +433,7 @@ const styles = StyleSheet.create({
   detailItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   detailLabel: { color: '#555', fontSize: 11 },
   detailValue: { color: '#ff6b81', fontSize: 11, fontWeight: '600' },
+  detailValueNeutral: { color: '#ccc', fontSize: 11, fontWeight: '600' },
   // SL/TP
   slTpSection: { marginBottom: 10 },
   slTpLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
@@ -442,6 +485,8 @@ const styles = StyleSheet.create({
   fibLegendText: { color: '#666', fontSize: 10 },
   fibNoteBox: { marginTop: 8, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#ffd93d15', borderRadius: 6, borderLeftWidth: 2, borderLeftColor: '#ffa502' },
   fibNoteText: { color: '#ffd93d', fontSize: 12, fontWeight: '600' },
+  fibContextBox: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#1a1a2e' },
+  fibContextText: { color: '#999', fontSize: 12, lineHeight: 18, marginBottom: 2 },
   // Suggestion
   suggestionBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
   suggestionTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },

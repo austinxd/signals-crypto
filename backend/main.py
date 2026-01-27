@@ -875,6 +875,8 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 liq_price = p.liquidation_price
             except Exception:
                 liq_price = None
+            notional = round((p.amount or 0) * (p.entry_price or 0), 2)
+            margin = round(notional / p.leverage, 2) if p.leverage and p.leverage > 0 else notional
             result.append({
                 "id": p.id,
                 "symbol": p.symbol,
@@ -882,6 +884,8 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "entry_price": p.entry_price,
                 "amount": p.amount,
                 "leverage": p.leverage,
+                "notional": notional,
+                "initial_margin": margin,
                 "unrealized_pnl": p.unrealized_pnl,
                 "current_price": p.current_price,
                 "initial_stop_loss": p.initial_stop_loss,
