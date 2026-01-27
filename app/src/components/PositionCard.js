@@ -31,12 +31,26 @@ const SENTIMENT_LABELS = {
   neutral: { text: 'Neutral', color: '#888' },
 };
 
+const FIB_KEY_LEVELS = ['23.6', '38.2', '50.0', '61.8', '78.6'];
+const FIB_COLORS = {
+  '0.0': '#ff4757',
+  '23.6': '#ff6b81',
+  '38.2': '#ffd93d',
+  '50.0': '#ffa502',
+  '61.8': '#2ed573',
+  '78.6': '#1e90ff',
+  '100.0': '#5352ed',
+};
+
 const RSIBar = ({ value }) => {
   if (value == null) return <Text style={styles.indicatorValue}>-</Text>;
   const pct = Math.max(0, Math.min(100, value));
   let color = '#ffd93d';
-  if (pct < 30) color = '#00d4aa';
-  else if (pct > 70) color = '#ff4757';
+  let label = 'Neutral';
+  if (pct < 30) { color = '#00d4aa'; label = 'Sobrevendido'; }
+  else if (pct < 45) { color = '#2ed573'; label = 'Bajo'; }
+  else if (pct > 70) { color = '#ff4757'; label = 'Sobrecomprado'; }
+  else if (pct > 55) { color = '#ff6b81'; label = 'Alto'; }
 
   return (
     <View style={styles.rsiContainer}>
@@ -48,11 +62,68 @@ const RSIBar = ({ value }) => {
   );
 };
 
+const FibonacciChart = ({ fib, currentPrice, entryPrice }) => {
+  if (!fib || !fib.levels) return null;
+
+  const levels = fib.levels;
+  const high = fib.swing_high;
+  const low = fib.swing_low;
+  const range = high - low;
+  if (range <= 0) return null;
+
+  // Positions as percentage from bottom
+  const priceToPercent = (p) => Math.max(0, Math.min(100, ((p - low) / range) * 100));
+
+  const currentPct = priceToPercent(currentPrice);
+  const entryPct = entryPrice ? priceToPercent(entryPrice) : null;
+
+  return (
+    <View style={styles.fibSection}>
+      <Text style={styles.sectionTitle}>Fibonacci (15m)</Text>
+      <View style={styles.fibChart}>
+        {/* Level lines */}
+        {FIB_KEY_LEVELS.map((name) => {
+          const price = levels[name];
+          if (price == null) return null;
+          const pct = priceToPercent(price);
+          const color = FIB_COLORS[name] || '#555';
+          return (
+            <View key={name} style={[styles.fibLevel, { bottom: `${pct}%` }]}>
+              <View style={[styles.fibLine, { backgroundColor: color + '60' }]} />
+              <Text style={[styles.fibLabel, { color }]}>{name}%</Text>
+              <Text style={[styles.fibPrice, { color: '#666' }]}>{formatPrice(price)}</Text>
+            </View>
+          );
+        })}
+
+        {/* Current price marker */}
+        <View style={[styles.fibMarker, { bottom: `${currentPct}%` }]}>
+          <View style={styles.fibMarkerDot} />
+          <Text style={styles.fibMarkerLabel}>Actual</Text>
+        </View>
+
+        {/* Entry price marker */}
+        {entryPct != null && Math.abs(entryPct - currentPct) > 3 && (
+          <View style={[styles.fibMarker, styles.fibEntryMarker, { bottom: `${entryPct}%` }]}>
+            <View style={[styles.fibMarkerDot, { backgroundColor: '#ffd93d' }]} />
+            <Text style={[styles.fibMarkerLabel, { color: '#ffd93d' }]}>Entrada</Text>
+          </View>
+        )}
+      </View>
+      {fib.at_key_level && (
+        <Text style={styles.fibNote}>En nivel clave Fib {fib.key_level_name}%</Text>
+      )}
+      {!fib.at_key_level && fib.near_key_level && (
+        <Text style={styles.fibNote}>Cerca de Fib {fib.key_level_name}%</Text>
+      )}
+    </View>
+  );
+};
+
 const cleanSymbol = (s) => s ? s.split(':')[0] : s;
 
 const calcLiquidationPrice = (entry, leverage, side) => {
   if (!entry || !leverage || leverage <= 0) return null;
-  // Approximate: ignores fees/maintenance margin
   const rate = 1 / leverage;
   if (side === 'long') return entry * (1 - rate);
   return entry * (1 + rate);
@@ -84,7 +155,6 @@ const PositionCard = ({ position }) => {
     }
   }, [showAlerts]);
 
-  // SL/TP progress bar
   const sl = position.current_stop_loss;
   const tp = position.current_take_profit;
   const current = position.current_price;
@@ -95,7 +165,7 @@ const PositionCard = ({ position }) => {
 
   return (
     <View style={styles.card}>
-      {/* Header */}
+      {/* ===== HEADER ===== */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.symbol}>{displaySymbol}</Text>
@@ -110,90 +180,61 @@ const PositionCard = ({ position }) => {
             </View>
           )}
         </View>
-        {position.mode === 'bot' ? (
-          <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>
-        ) : (
-          <Text style={styles.modeIcon}>{'\u{1F4CB}'}</Text>
-        )}
-      </View>
-
-      {/* Prices */}
-      <View style={styles.priceRow}>
-        <View style={styles.priceCol}>
-          <Text style={styles.priceLabel}>Entrada</Text>
-          <Text style={styles.priceValue}>{formatPrice(position.entry_price)}</Text>
-        </View>
-        <Text style={styles.arrow}>{'\u2192'}</Text>
-        <View style={styles.priceCol}>
-          <Text style={styles.priceLabel}>Actual</Text>
-          <Text style={styles.priceValue}>{formatPrice(current)}</Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '20', borderColor: sentimentInfo.color }]}>
+            <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>
+              {sentimentInfo.text}
+            </Text>
+          </View>
+          {position.mode === 'bot' ? (
+            <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>
+          ) : (
+            <Text style={styles.modeIcon}>{'\u{1F4CB}'}</Text>
+          )}
         </View>
       </View>
 
-      {/* PnL */}
-      <View style={styles.pnlRow}>
-        <Text style={styles.pnlLabel}>PnL</Text>
-        <Text style={[styles.pnlValue, { color: pnlColor }]}>
-          {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
-        </Text>
-        <Text style={[styles.pnlPercent, { color: pnlColor }]}>
-          ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
-        </Text>
-      </View>
-
-      {/* Liquidation price */}
-      {liqPrice != null && (
-        <View style={styles.liqRow}>
-          <Text style={styles.liqLabel}>Liq. estimada</Text>
-          <Text style={styles.liqValue}>{formatPrice(liqPrice)}</Text>
-        </View>
-      )}
-
-      {/* Indicators */}
-      {ind.rsi != null && (
-        <View style={styles.indicatorsSection}>
-          <Text style={styles.sectionTitle}>Indicadores (15m)</Text>
-          <View style={styles.indicatorRow}>
-            <Text style={styles.indicatorLabel}>RSI</Text>
-            <RSIBar value={ind.rsi} />
+      {/* ===== PRECIOS + PNL ===== */}
+      <View style={styles.priceBox}>
+        <View style={styles.priceRow}>
+          <View style={styles.priceCol}>
+            <Text style={styles.priceLabel}>Entrada</Text>
+            <Text style={styles.priceValue}>{formatPrice(position.entry_price)}</Text>
           </View>
-          <View style={styles.indicatorRow}>
-            <Text style={styles.indicatorLabel}>MACD</Text>
-            <Text style={[styles.indicatorValue, { color: ind.macd_trend === 'bullish' ? '#00d4aa' : '#ff4757' }]}>
-              {ind.macd_trend === 'bullish' ? 'Bullish \u2191' : 'Bearish \u2193'}
+          <Text style={styles.arrow}>{'\u2192'}</Text>
+          <View style={styles.priceCol}>
+            <Text style={styles.priceLabel}>Actual</Text>
+            <Text style={styles.priceValue}>{formatPrice(current)}</Text>
+          </View>
+          <View style={[styles.pnlBox, { backgroundColor: pnlColor + '15', borderColor: pnlColor + '40' }]}>
+            <Text style={styles.pnlBoxLabel}>PnL</Text>
+            <Text style={[styles.pnlBoxValue, { color: pnlColor }]}>
+              {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
             </Text>
-          </View>
-          <View style={styles.indicatorRow}>
-            <Text style={styles.indicatorLabel}>EMA200</Text>
-            <Text style={[styles.indicatorValue, { color: ind.price_above_ema ? '#00d4aa' : '#ff4757' }]}>
-              {ind.price_above_ema ? 'Por encima \u2713' : 'Por debajo \u2717'}
-            </Text>
-          </View>
-          <View style={styles.indicatorRow}>
-            <Text style={styles.indicatorLabel}>Volumen</Text>
-            <Text style={[styles.indicatorValue, { color: ind.volume_above_average ? '#ffd93d' : '#888' }]}>
-              {ind.volume_above_average ? 'Alto' : 'Normal'}
+            <Text style={[styles.pnlBoxPercent, { color: pnlColor }]}>
+              {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
             </Text>
           </View>
         </View>
-      )}
 
-      {/* Suggestion */}
-      {position.suggestion && (
-        <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
-          <Text style={styles.suggestionTitle}>Recomendaci{'\u00F3'}n seg{'\u00FA'}n indicadores</Text>
-          <View style={styles.suggestionHeader}>
-            <Text style={styles.suggestionText}>{position.suggestion}</Text>
-            <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '25', borderColor: sentimentInfo.color }]}>
-              <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>
-                {sentimentInfo.text}
-              </Text>
+        {/* Liquidation + extra info */}
+        <View style={styles.detailRow}>
+          {liqPrice != null && (
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Liq. estimada</Text>
+              <Text style={styles.detailValue}>{formatPrice(liqPrice)}</Text>
             </View>
-          </View>
+          )}
+          {position.entry_atr != null && (
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>ATR entrada</Text>
+              <Text style={styles.detailValue}>${position.entry_atr.toFixed(2)}</Text>
+            </View>
+          )}
         </View>
-      )}
+      </View>
 
-      {/* SL / TP bar */}
+      {/* ===== SL / TP ===== */}
       {sl != null && tp != null && (
         <View style={styles.slTpSection}>
           <View style={styles.slTpLabels}>
@@ -208,7 +249,58 @@ const PositionCard = ({ position }) => {
         </View>
       )}
 
-      {/* Alerts toggle */}
+      {/* ===== INDICADORES ===== */}
+      {ind.rsi != null && (
+        <View style={styles.indicatorsSection}>
+          <Text style={styles.sectionTitle}>Indicadores (15m)</Text>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>RSI</Text>
+            <RSIBar value={ind.rsi} />
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>MACD</Text>
+            <Text style={[styles.indicatorValue, { color: ind.macd_trend === 'bullish' ? '#00d4aa' : '#ff4757' }]}>
+              {ind.macd_trend === 'bullish' ? 'Alcista \u2191' : 'Bajista \u2193'}
+            </Text>
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>EMA200</Text>
+            <Text style={[styles.indicatorValue, { color: ind.price_above_ema ? '#00d4aa' : '#ff4757' }]}>
+              {ind.price_above_ema ? 'Precio por encima \u2713' : 'Precio por debajo \u2717'}
+            </Text>
+          </View>
+          <View style={styles.indicatorRow}>
+            <Text style={styles.indicatorLabel}>Volumen</Text>
+            <Text style={[styles.indicatorValue, { color: ind.volume_above_average ? '#ffd93d' : '#888' }]}>
+              {ind.volume_above_average ? 'Por encima del promedio' : 'Normal'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ===== FIBONACCI ===== */}
+      <FibonacciChart
+        fib={ind.fibonacci}
+        currentPrice={current}
+        entryPrice={position.entry_price}
+      />
+
+      {/* ===== RECOMENDACIÓN ===== */}
+      {position.suggestion && (
+        <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
+          <View style={styles.suggestionTitleRow}>
+            <Text style={styles.suggestionTitle}>{'Recomendaci\u00F3n seg\u00FAn indicadores'}</Text>
+            <View style={[styles.riskBadge, { backgroundColor: riskColor + '25' }]}>
+              <Text style={[styles.riskBadgeText, { color: riskColor }]}>
+                {position.risk_level === 'high' ? 'Riesgo alto' : position.risk_level === 'medium' ? 'Riesgo medio' : 'Riesgo bajo'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.suggestionText}>{position.suggestion}</Text>
+        </View>
+      )}
+
+      {/* ===== ALERTAS ===== */}
       <TouchableOpacity
         style={styles.alertsToggle}
         onPress={() => setShowAlerts(!showAlerts)}
@@ -228,7 +320,7 @@ const PositionCard = ({ position }) => {
                 <View style={styles.alertContent}>
                   <Text style={styles.alertMessage}>{alert.message}</Text>
                   {alert.was_executed && (
-                    <Text style={styles.alertExecuted}>Ejecutado \u2713</Text>
+                    <Text style={styles.alertExecuted}>{'Ejecutado \u2713'}</Text>
                   )}
                 </View>
               </View>
@@ -251,6 +343,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -258,6 +351,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -289,13 +387,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   modeIcon: {
-    fontSize: 20,
+    fontSize: 18,
+  },
+  sentimentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  sentimentText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  // Price box
+  priceBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
   },
   priceCol: {
     flex: 1,
@@ -307,53 +420,95 @@ const styles = StyleSheet.create({
   },
   priceValue: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   arrow: {
-    color: '#666',
+    color: '#444',
     fontSize: 16,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
   },
-  pnlRow: {
-    flexDirection: 'row',
+  pnlBox: {
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 80,
   },
-  pnlLabel: {
+  pnlBoxLabel: {
     color: '#888',
-    fontSize: 13,
-    marginRight: 6,
-  },
-  pnlValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  pnlPercent: {
-    fontSize: 14,
-  },
-  liqRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  liqLabel: {
-    color: '#666',
-    fontSize: 12,
-  },
-  liqValue: {
-    color: '#ff6b81',
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '600',
   },
-  // Indicators section
+  pnlBoxValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  pnlBoxPercent: {
+    fontSize: 11,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+    gap: 16,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  detailLabel: {
+    color: '#555',
+    fontSize: 11,
+  },
+  detailValue: {
+    color: '#ff6b81',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // SL/TP
+  slTpSection: {
+    marginBottom: 10,
+  },
+  slTpLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  slLabel: {
+    color: '#ff4757',
+    fontSize: 11,
+  },
+  tpLabel: {
+    color: '#00d4aa',
+    fontSize: 11,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#2a2a4a',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#00d4aa',
+    borderRadius: 3,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  progressMarker: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+    marginRight: -5,
+  },
+  // Indicators
   indicatorsSection: {
     backgroundColor: '#0f0f1a',
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 10,
   },
   sectionTitle: {
@@ -402,80 +557,106 @@ const styles = StyleSheet.create({
     width: 30,
     textAlign: 'right',
   },
-  // Suggestion section
+  // Fibonacci
+  fibSection: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  fibChart: {
+    height: 160,
+    position: 'relative',
+    marginVertical: 8,
+    marginLeft: 4,
+  },
+  fibLevel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 1,
+  },
+  fibLine: {
+    flex: 1,
+    height: 1,
+  },
+  fibLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 6,
+    width: 36,
+  },
+  fibPrice: {
+    fontSize: 9,
+    marginLeft: 2,
+  },
+  fibMarker: {
+    position: 'absolute',
+    left: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 1,
+    zIndex: 10,
+  },
+  fibEntryMarker: {
+    zIndex: 5,
+  },
+  fibMarkerDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    marginRight: 4,
+  },
+  fibMarkerLabel: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  fibNote: {
+    color: '#ffd93d',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Suggestion
   suggestionBox: {
     backgroundColor: '#0f0f1a',
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     marginBottom: 10,
     borderLeftWidth: 3,
+  },
+  suggestionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   suggestionTitle: {
     color: '#888',
     fontSize: 11,
     fontWeight: '600',
-    marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  suggestionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  suggestionText: {
-    color: '#ccc',
-    fontSize: 13,
-    flex: 1,
-  },
-  sentimentBadge: {
+  riskBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  sentimentText: {
-    fontSize: 11,
+  riskBadgeText: {
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  // SL/TP
-  slTpSection: {
-    marginBottom: 12,
+  suggestionText: {
+    color: '#ddd',
+    fontSize: 13,
+    lineHeight: 18,
   },
-  slTpLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  slLabel: {
-    color: '#ff4757',
-    fontSize: 11,
-  },
-  tpLabel: {
-    color: '#00d4aa',
-    fontSize: 11,
-  },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#00d4aa',
-    borderRadius: 3,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-  },
-  progressMarker: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#fff',
-    marginRight: -5,
-  },
+  // Alerts
   alertsToggle: {
     paddingVertical: 6,
   },

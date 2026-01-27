@@ -621,6 +621,7 @@ def _compute_position_indicators(symbol: str, side: str):
         "volume_above_average": None,
         "atr": None,
         "divergence": None,
+        "fibonacci": None,
     }
     sentiment = "neutral"
     risk_level = "low"
@@ -656,6 +657,24 @@ def _compute_position_indicators(symbol: str, side: str):
             elif div.get("bullish_divergence"):
                 divergence_type = "bullish"
 
+        # Fibonacci data
+        fib = ind.get("fibonacci")
+        fib_data = None
+        if fib:
+            fib_data = {
+                "swing_high": fib["swing_high"],
+                "swing_low": fib["swing_low"],
+                "is_uptrend": fib["is_uptrend"],
+                "levels": fib["levels"],
+                "closest_level_name": fib.get("closest_level_name"),
+                "closest_level": fib.get("closest_level"),
+                "distance_percent": fib.get("distance_percent"),
+                "at_key_level": fib.get("at_key_level"),
+                "near_key_level": fib.get("near_key_level"),
+                "key_level_name": fib.get("key_level_name"),
+                "entry_quality": fib.get("entry_quality"),
+            }
+
         indicators_data = {
             "rsi": round(rsi, 1) if rsi is not None else None,
             "macd_histogram": round(macd_hist, 6) if macd_hist is not None else None,
@@ -664,6 +683,7 @@ def _compute_position_indicators(symbol: str, side: str):
             "volume_above_average": vol_above,
             "atr": round(atr, 2) if atr is not None else None,
             "divergence": divergence_type,
+            "fibonacci": fib_data,
         }
 
         # Determine sentiment
