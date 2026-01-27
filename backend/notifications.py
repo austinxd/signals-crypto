@@ -9,26 +9,27 @@ from config import EXPO_PUSH_URL
 from signals import Signal, SignalType, SignalQuality
 from database import (
     get_db, DBHelper, User, TradingMode,
-    SignalQualityDB, migrate_tokens_from_json
+    SignalQualityDB, migrate_tokens_from_json,
+    UserAccount, OperationMode,
 )
 
 
 # Quality-based emojis and labels
 QUALITY_CONFIG = {
     SignalQuality.OPTIMA: {
-        "emoji": "✅",
-        "label": "Óptima",
-        "subtitle": "Alta confluencia técnica",
+        "emoji": "OK",
+        "label": "Optima",
+        "subtitle": "Alta confluencia tecnica",
     },
     SignalQuality.BUENA: {
         "emoji": "",
         "label": "Buena",
-        "subtitle": "Señal confirmada",
+        "subtitle": "Senal confirmada",
     },
     SignalQuality.TEMPRANA: {
         "emoji": "",
         "label": "Alto Riesgo",
-        "subtitle": "Esperar más confirmación",
+        "subtitle": "Esperar mas confirmacion",
     },
 }
 
@@ -39,32 +40,14 @@ def signal_quality_to_db(quality: SignalQuality) -> SignalQualityDB:
 
 
 def format_notification(signal: Signal, reason: str = None) -> Dict[str, Any]:
-    """
-    Format a signal into a push notification payload.
-    New format with quality labels.
-
-    Args:
-        signal: Signal object
-        reason: Why notification is being sent (state change reason)
-
-    Returns:
-        Dict with notification data
-    """
-    # Get quality config
+    """Format a signal into a push notification payload."""
     quality_info = QUALITY_CONFIG.get(signal.quality, QUALITY_CONFIG[SignalQuality.TEMPRANA])
-
-    # Direction emoji
-    direction_emoji = "🟢" if signal.signal_type == SignalType.LONG else "🔴"
-
-    # Build title based on quality
     pair_short = signal.pair.replace("/USDT", "")
     title = f"{quality_info['emoji']} {pair_short} {signal.signal_type.value} - {quality_info['label']} ({signal.timeframe})"
 
-    # Calculate percentages
     tp_percent = abs((signal.take_profit - signal.entry_price) / signal.entry_price * 100)
     sl_percent = abs((signal.stop_loss - signal.entry_price) / signal.entry_price * 100)
 
-    # Build body
     lines = [
         quality_info['subtitle'],
         f"Calidad: {signal.quality.value} ({signal.score:.1f} pts)",
@@ -73,13 +56,11 @@ def format_notification(signal: Signal, reason: str = None) -> Dict[str, Any]:
         f"SL: ${signal.stop_loss:,.2f} (-{sl_percent:.1f}%)",
     ]
 
-    # Add reason for notification if quality improved
     if reason == "quality_improved":
-        lines.insert(0, "⬆️ Calidad mejorada")
+        lines.insert(0, "Calidad mejorada")
     elif reason == "side_changed":
-        lines.insert(0, "🔄 Cambio de dirección")
+        lines.insert(0, "Cambio de direccion")
 
-    # Add warnings if any
     if signal.warnings:
         lines.append(signal.warnings[0])
 
@@ -97,17 +78,7 @@ def send_push_notification(
     signal: Signal,
     reason: str = None,
 ) -> Dict[str, Any]:
-    """
-    Send push notification to multiple Expo push tokens.
-
-    Args:
-        push_tokens: List of Expo push tokens
-        signal: Signal to send
-        reason: Reason for notification
-
-    Returns:
-        Response data from Expo
-    """
+    """Send push notification to multiple Expo push tokens."""
     if not push_tokens:
         return {"status": "error", "message": "No push tokens provided"}
 
@@ -146,16 +117,63 @@ def send_push_notification(
         return {"status": "error", "message": str(e)}
 
 
+def send_exit_notification(
+    user: UserAccount,
+    symbol: str,
+    alert_type: str,
+    message: str,
+    was_executed: bool = False,
+) -> Dict[str, Any]:
+    """Send exit alert push notification to a user."""
+    if not user.push_token or not user.push_enabled:
+        return {"status": "skipped", "reason": "no_push_token"}
+
+    if not user.push_token.startswith("ExponentPushToken"):
+        return {"status": "skipped", "reason": "invalid_token"}
+
+    pair_short = symbol.replace("/USDT", "")
+
+    # Determine urgency
+    if alert_type in ("MACD_REVERSAL", "RSI_DIVERGENCE"):
+        urgency = "URGENTE"
+        title = f"URGENTE {pair_short} - {alert_type.replace('_', ' ')}"
+    elif alert_type == "RSI_EXTREME":
+        urgency = "Atencion"
+        title = f"Atencion {pair_short} - RSI Extremo"
+    else:
+        title = f"{pair_short} - Trailing Stop"
+
+    if was_executed:
+        body = f"[BOT] SL movido automaticamente.\n{message}"
+    else:
+        body = f"Recomendacion: {message}"
+
+    try:
+        response = requests.post(
+            EXPO_PUSH_URL,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json=[{
+                "to": user.push_token,
+                "sound": "default",
+                "title": title,
+                "body": body,
+                "data": {"type": "exit_alert", "symbol": symbol, "alert_type": alert_type},
+                "priority": "high",
+                "channelId": "signals",
+            }],
+            timeout=10,
+        )
+        response.raise_for_status()
+        return {"status": "success"}
+    except requests.exceptions.RequestException as e:
+        return {"status": "error", "message": str(e)}
+
+
 def send_test_notification(push_token: str) -> Dict[str, Any]:
-    """
-    Send a test notification to verify the setup.
-
-    Args:
-        push_token: Expo push token
-
-    Returns:
-        Response data
-    """
+    """Send a test notification."""
     if not push_token or not push_token.startswith("ExponentPushToken"):
         return {"status": "error", "message": "Invalid push token"}
 
@@ -169,8 +187,8 @@ def send_test_notification(push_token: str) -> Dict[str, Any]:
             json=[{
                 "to": push_token,
                 "sound": "default",
-                "title": "✅ Notificaciones Activas",
-                "body": "Las señales de trading llegarán aquí",
+                "title": "Notificaciones Activas",
+                "body": "Las senales de trading llegaran aqui",
                 "data": {"test": True},
                 "priority": "high",
                 "channelId": "signals",
@@ -184,29 +202,17 @@ def send_test_notification(push_token: str) -> Dict[str, Any]:
 
 
 class NotificationManager:
-    """
-    Manages push notifications with database integration.
-    Implements state-based alerts to avoid duplicates.
-    """
+    """Manages push notifications with database integration."""
 
     def __init__(self, use_db: bool = True):
-        """
-        Initialize notification manager.
-
-        Args:
-            use_db: Whether to use database (set False for fallback to JSON)
-        """
         self.use_db = use_db
-        self.tokens: Dict[str, Dict[str, Any]] = {}  # Fallback cache
+        self.tokens: Dict[str, Dict[str, Any]] = {}
 
         if use_db:
             try:
-                # Test database connection
                 db = get_db()
                 db.close()
                 print("NotificationManager: Using MySQL database")
-
-                # Migrate existing tokens if any
                 db = get_db()
                 migrate_tokens_from_json(db)
                 db.close()
@@ -218,7 +224,6 @@ class NotificationManager:
             self._load_tokens_json()
 
     def _load_tokens_json(self):
-        """Load tokens from JSON file (fallback)."""
         try:
             with open("tokens.json", "r") as f:
                 self.tokens = json.load(f)
@@ -229,24 +234,15 @@ class NotificationManager:
             self.tokens = {}
 
     def _save_tokens_json(self):
-        """Save tokens to JSON file (fallback)."""
         try:
             with open("tokens.json", "w") as f:
                 json.dump(self.tokens, f, indent=2)
         except Exception as e:
             print(f"Error saving tokens: {e}")
 
-    def register_token(
-        self,
-        token: str,
-        pairs: Optional[List[str]] = None,
-        timeframe: Optional[str] = None,
-        trading_mode: str = "balanced",
-    ) -> bool:
-        """Register a push token with preferences."""
+    def register_token(self, token, pairs=None, timeframe=None, trading_mode="balanced"):
         if not token or not token.startswith("ExponentPushToken"):
             return False
-
         if self.use_db:
             try:
                 db = get_db()
@@ -267,8 +263,7 @@ class NotificationManager:
             self._save_tokens_json()
             return True
 
-    def unregister_token(self, token: str) -> bool:
-        """Remove a push token."""
+    def unregister_token(self, token):
         if self.use_db:
             try:
                 db = get_db()
@@ -285,14 +280,7 @@ class NotificationManager:
                 return True
             return False
 
-    def update_preferences(
-        self,
-        token: str,
-        pairs: Optional[List[str]] = None,
-        timeframe: Optional[str] = None,
-        trading_mode: Optional[str] = None,
-    ) -> bool:
-        """Update preferences for a token."""
+    def update_preferences(self, token, pairs=None, timeframe=None, trading_mode=None):
         if self.use_db:
             try:
                 db = get_db()
@@ -319,8 +307,7 @@ class NotificationManager:
             self._save_tokens_json()
             return True
 
-    def get_user_settings(self, token: str) -> Optional[Dict[str, Any]]:
-        """Get settings for a user."""
+    def get_user_settings(self, token):
         if self.use_db:
             try:
                 db = get_db()
@@ -340,99 +327,48 @@ class NotificationManager:
         else:
             return self.tokens.get(token)
 
-    def send_signal_to_subscribers(
-        self,
-        signal: Signal,
-        pair: str,
-        timeframe: str,
-    ) -> Dict[str, Any]:
-        """
-        Send signal to subscribers with state-based duplicate prevention.
-        Only notifies on state CHANGE (new signal, quality improved, side changed).
-        """
+    def send_signal_to_subscribers(self, signal, pair, timeframe):
         quality_db = signal_quality_to_db(signal.quality)
-
         if self.use_db:
             try:
                 db = get_db()
-
-                # Check if we should notify (state change detection)
                 should_notify, reason = DBHelper.should_notify(
-                    db, pair, timeframe,
-                    signal.signal_type.value,
-                    quality_db,
-                    signal.score
+                    db, pair, timeframe, signal.signal_type.value, quality_db, signal.score
                 )
-
                 if not should_notify:
                     db.close()
-                    return {
-                        "status": "skipped",
-                        "reason": reason,
-                        "pair": pair,
-                        "timeframe": timeframe,
-                    }
+                    return {"status": "skipped", "reason": reason, "pair": pair, "timeframe": timeframe}
 
-                # Get users who should receive this signal (via subscriptions only)
-                subscribers = DBHelper.get_subscriptions_for_signal(
-                    db, pair, timeframe, signal.score
-                )
-
+                subscribers = DBHelper.get_subscriptions_for_signal(db, pair, timeframe, signal.score)
                 if not subscribers:
                     db.close()
-                    return {
-                        "status": "no_subscribers",
-                        "pair": pair,
-                        "timeframe": timeframe,
-                    }
+                    return {"status": "no_subscribers", "pair": pair, "timeframe": timeframe}
 
-                # Save signal to database
                 signal_data = {
-                    "pair": pair,
-                    "timeframe": timeframe,
-                    "side": signal.signal_type.value,
-                    "quality": quality_db,
-                    "score": signal.score,
-                    "score_details": signal.score_details,
-                    "warnings": signal.warnings,
-                    "entry_price": signal.entry_price,
-                    "take_profit": signal.take_profit,
-                    "stop_loss": signal.stop_loss,
+                    "pair": pair, "timeframe": timeframe,
+                    "side": signal.signal_type.value, "quality": quality_db,
+                    "score": signal.score, "score_details": signal.score_details,
+                    "warnings": signal.warnings, "entry_price": signal.entry_price,
+                    "take_profit": signal.take_profit, "stop_loss": signal.stop_loss,
                     "indicators": signal.to_dict().get("indicators"),
                     "funding_info": signal.to_dict().get("funding"),
                     "fibonacci_info": signal.to_dict().get("fibonacci"),
                 }
                 saved_signal = DBHelper.save_signal(db, signal_data)
-
-                # Update alert state
                 DBHelper.update_alert_state(
-                    db, pair, timeframe,
-                    signal.signal_type.value,
-                    quality_db,
-                    signal.score,
-                    saved_signal.id
+                    db, pair, timeframe, signal.signal_type.value,
+                    quality_db, signal.score, saved_signal.id
                 )
-
                 db.close()
-
-                # Send notifications
                 tokens = [s["push_token"] for s in subscribers]
                 return send_push_notification(tokens, signal, reason)
-
             except Exception as e:
                 print(f"DB error sending signal: {e}")
-                # Fallback to simple send
                 return self._send_signal_simple(signal, pair, timeframe)
         else:
             return self._send_signal_simple(signal, pair, timeframe)
 
-    def _send_signal_simple(
-        self,
-        signal: Signal,
-        pair: str,
-        timeframe: str,
-    ) -> Dict[str, Any]:
-        """Simple signal send without state tracking (fallback)."""
+    def _send_signal_simple(self, signal, pair, timeframe):
         tokens = [
             token for token, settings in self.tokens.items()
             if (
@@ -441,43 +377,24 @@ class NotificationManager:
                 and settings.get("timeframe") == timeframe
             )
         ]
-
         if not tokens:
-            return {
-                "status": "no_subscribers",
-                "pair": pair,
-                "timeframe": timeframe,
-            }
-
+            return {"status": "no_subscribers", "pair": pair, "timeframe": timeframe}
         return send_push_notification(tokens, signal)
 
-    def notify_signal_disappeared(
-        self,
-        pair: str,
-        timeframe: str,
-    ) -> Dict[str, Any]:
-        """
-        Notify subscribers that a signal has disappeared (conditions no longer met).
-        """
+    def notify_signal_disappeared(self, pair, timeframe):
         if not self.use_db:
             return {"status": "skipped", "reason": "no_db"}
-
         try:
             db = get_db()
-
-            # Check if we should notify
             should_notify, reason = DBHelper.should_notify_disappeared(db, pair, timeframe)
-
             if not should_notify:
                 db.close()
                 return {"status": "skipped", "reason": reason}
 
-            # Get the previous state to know what disappeared
             state = DBHelper.get_alert_state(db, pair, timeframe)
             previous_side = state.current_side if state else "?"
 
-            # Get subscribers for this pair/timeframe (all modes, since this is important)
-            from database import Subscription, User
+            from database import Subscription
             subs = db.query(Subscription).filter(
                 Subscription.pair == pair,
                 Subscription.timeframe == timeframe,
@@ -494,11 +411,9 @@ class NotificationManager:
                 db.close()
                 return {"status": "no_subscribers", "pair": pair, "timeframe": timeframe}
 
-            # Clear the alert state
             DBHelper.clear_alert_state(db, pair, timeframe)
             db.close()
 
-            # Send notification
             pair_short = pair.replace("/USDT", "")
             messages = []
             for token in tokens:
@@ -507,16 +422,14 @@ class NotificationManager:
                 messages.append({
                     "to": token,
                     "sound": "default",
-                    "title": f"⚪ {pair_short} - Señal cerrada ({timeframe})",
-                    "body": f"La señal {previous_side} ya no cumple las condiciones base.\nEl mercado puede estar cambiando de dirección.",
+                    "title": f"{pair_short} - Senal cerrada ({timeframe})",
+                    "body": f"La senal {previous_side} ya no cumple las condiciones base.\nEl mercado puede estar cambiando de direccion.",
                     "data": {"type": "signal_disappeared", "pair": pair, "timeframe": timeframe},
                     "priority": "high",
                     "channelId": "signals",
                 })
 
             if messages:
-                import requests
-                from config import EXPO_PUSH_URL
                 response = requests.post(
                     EXPO_PUSH_URL,
                     headers={"Accept": "application/json", "Content-Type": "application/json"},
@@ -524,15 +437,12 @@ class NotificationManager:
                     timeout=10,
                 )
                 return {"status": "notified", "reason": "signal_disappeared", "pair": pair}
-
             return {"status": "no_valid_tokens"}
-
         except Exception as e:
             print(f"Error notifying signal disappeared: {e}")
             return {"status": "error", "message": str(e)}
 
-    def get_all_subscribers(self) -> List[Dict[str, Any]]:
-        """Get all subscribers (for admin endpoint)."""
+    def get_all_subscribers(self):
         if self.use_db:
             try:
                 db = get_db()

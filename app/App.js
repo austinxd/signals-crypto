@@ -1,32 +1,35 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 
 import HomeScreen from './src/screens/HomeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import PositionsScreen from './src/screens/PositionsScreen';
+import AuthScreen from './src/screens/AuthScreen';
 import {
   getStoredPushToken,
   addNotificationListener,
   addNotificationResponseListener,
   saveNotificationToHistory,
 } from './src/services/notifications';
-import { registerPushToken, getUserPairs, getUserTimeframe } from './src/services/api';
+import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
 
-// Simple icon components
 const HomeIcon = ({ focused }) => (
   <Text style={[styles.icon, focused && styles.iconActive]}>📊</Text>
 );
-
+const PositionsIcon = ({ focused }) => (
+  <Text style={[styles.icon, focused && styles.iconActive]}>💼</Text>
+);
 const SettingsIcon = ({ focused }) => (
   <Text style={[styles.icon, focused && styles.iconActive]}>⚙️</Text>
 );
 
-// Auto-sync push token with server on app startup
 async function syncPushToken() {
   try {
     const token = await getStoredPushToken();
@@ -42,60 +45,90 @@ async function syncPushToken() {
 }
 
 export default function App() {
+  const [authed, setAuthed] = useState(null); // null = loading
 
   useEffect(() => {
-    // Auto-sync push token on startup
+    isAuthenticated().then(setAuthed);
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+
     syncPushToken();
 
-    // Set up notification listeners to save to history
     const notificationListener = addNotificationListener((notification) => {
       console.log('Notification received:', notification.request.content.title);
     });
 
     const responseListener = addNotificationResponseListener((response) => {
-      // Save notification when user taps on it
       const content = response.notification.request.content;
       saveNotificationToHistory(content);
       console.log('Notification tapped:', content.title);
     });
 
-    // Cleanup listeners on unmount
     return () => {
       notificationListener.remove();
       responseListener.remove();
     };
-  }, []);
+  }, [authed]);
+
+  if (authed === null) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0a0a14', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#00d4aa" />
+      </View>
+    );
+  }
+
+  if (!authed) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar style="light" />
+        <AuthScreen onAuthSuccess={() => setAuthed(true)} />
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" />
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: styles.tabBar,
-          tabBarActiveTintColor: '#00d4aa',
-          tabBarInactiveTintColor: '#888',
-          tabBarLabelStyle: styles.tabLabel,
-        }}
-      >
-        <Tab.Screen
-          name="Home"
-          component={HomeScreen}
-          options={{
-            tabBarLabel: 'Inicio',
-            tabBarIcon: ({ focused }) => <HomeIcon focused={focused} />,
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <StatusBar style="light" />
+        <Tab.Navigator
+          screenOptions={{
+            headerShown: false,
+            tabBarStyle: styles.tabBar,
+            tabBarActiveTintColor: '#00d4aa',
+            tabBarInactiveTintColor: '#888',
+            tabBarLabelStyle: styles.tabLabel,
           }}
-        />
-        <Tab.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{
-            tabBarLabel: 'Ajustes',
-            tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
-          }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+        >
+          <Tab.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{
+              tabBarLabel: 'Inicio',
+              tabBarIcon: ({ focused }) => <HomeIcon focused={focused} />,
+            }}
+          />
+          <Tab.Screen
+            name="Positions"
+            component={PositionsScreen}
+            options={{
+              tabBarLabel: 'Posiciones',
+              tabBarIcon: ({ focused }) => <PositionsIcon focused={focused} />,
+            }}
+          />
+          <Tab.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              tabBarLabel: 'Ajustes',
+              tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
+            }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 

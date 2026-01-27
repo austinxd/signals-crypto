@@ -62,3 +62,15 @@ POLL_INTERVAL = 300
 
 # Cooldown between signals for the same pair (seconds) - 4 hours
 SIGNAL_COOLDOWN = 4 * 60 * 60
+
+# Position monitoring interval (seconds)
+POSITION_POLL_INTERVAL = 60
+
+# Trailing stop ATR multiplier
+TRAILING_STOP_ATR_MULTIPLIER = 1.0
+
+# Encryption key for Fernet (Binance API keys)
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+
+# JWT Secret
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production-super-secret-key")

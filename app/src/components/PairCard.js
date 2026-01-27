@@ -271,7 +271,7 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
                 <View style={styles.scoreContainer}>
                   <Text style={styles.scoreLabel}>Score: {activeScore.toFixed(1)} pts</Text>
                   <View style={styles.scoreBar}>
-                    <View style={[styles.scoreFill, { width: `${Math.min((activeScore / 4) * 100, 100)}%`, backgroundColor: quality.color }]} />
+                    <View style={[styles.scoreFill, { width: `${Math.min((activeScore / 4) * 100, 100)}%`, backgroundColor: signalType === 'LONG' ? '#00d4aa' : '#ff4757' }]} />
                   </View>
                 </View>
               </>

@@ -8,12 +8,17 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import {
   getApiUrl,
   setApiUrl,
   registerPushToken,
   sendTestNotification,
+  getProfile,
+  updateBinanceKeys,
+  updateAccountSettings,
+  logout,
 } from '../services/api';
 import {
   registerForPushNotifications,
@@ -26,6 +31,19 @@ const SettingsScreen = () => {
   const [pushToken, setPushToken] = useState(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Account
+  const [profile, setProfile] = useState(null);
+
+  // Binance keys
+  const [binanceKey, setBinanceKey] = useState('');
+  const [binanceSecret, setBinanceSecret] = useState('');
+
+  // Mode & Risk
+  const [botMode, setBotMode] = useState(false);
+  const [riskPercent, setRiskPercent] = useState('2');
+  const [riskFixedUsdt, setRiskFixedUsdt] = useState('');
+  const [maxLeverage, setMaxLeverage] = useState('10');
 
   useEffect(() => {
     loadSettings();
@@ -41,6 +59,18 @@ const SettingsScreen = () => {
       const token = await getStoredPushToken();
       setPushToken(token);
       if (token) setIsRegistered(true);
+
+      // Load profile
+      try {
+        const p = await getProfile();
+        setProfile(p);
+        setBotMode(p.mode === 'bot');
+        if (p.risk_percent != null) setRiskPercent(String(p.risk_percent));
+        if (p.risk_fixed_usdt != null) setRiskFixedUsdt(String(p.risk_fixed_usdt));
+        if (p.max_leverage != null) setMaxLeverage(String(p.max_leverage));
+      } catch {
+        // Not authenticated or server error
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     } finally {
@@ -52,7 +82,7 @@ const SettingsScreen = () => {
     try {
       await setApiUrl(apiUrl);
       Alert.alert('Guardado', 'URL del servidor actualizada');
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'No se pudo guardar la URL');
     }
   };
@@ -65,11 +95,11 @@ const SettingsScreen = () => {
         setPushToken(token);
         await registerPushToken(token);
         setIsRegistered(true);
-        Alert.alert('Registrado', 'Notificaciones push activadas. Ahora agrega pares en Mercado.');
+        Alert.alert('Registrado', 'Notificaciones push activadas.');
       } else {
         Alert.alert('Error', 'No se pudo obtener el token de notificaciones');
       }
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Error registrando notificaciones');
     }
     setLoading(false);
@@ -84,28 +114,70 @@ const SettingsScreen = () => {
     try {
       await sendTestNotification(pushToken);
       Alert.alert('Enviado', 'Notificacion de prueba enviada');
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'No se pudo enviar la notificacion');
     }
     setLoading(false);
   };
 
   const handleClearHistory = async () => {
-    Alert.alert(
-      'Confirmar',
-      'Eliminar todo el historial de notificaciones?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            await clearNotificationHistory();
-            Alert.alert('Listo', 'Historial eliminado');
-          },
+    Alert.alert('Confirmar', 'Eliminar todo el historial?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          await clearNotificationHistory();
+          Alert.alert('Listo', 'Historial eliminado');
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  const handleSaveBinanceKeys = async () => {
+    if (!binanceKey.trim() || !binanceSecret.trim()) {
+      Alert.alert('Error', 'Ingresa API Key y Secret');
+      return;
+    }
+    try {
+      await updateBinanceKeys(binanceKey.trim(), binanceSecret.trim());
+      Alert.alert('Guardado', 'API keys guardadas y encriptadas');
+      setBinanceKey('');
+      setBinanceSecret('');
+      loadSettings();
+    } catch (err) {
+      Alert.alert('Error', err.message || 'No se pudieron guardar las keys');
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      await updateAccountSettings({
+        mode: botMode ? 'bot' : 'recommendations',
+        risk_percent: parseFloat(riskPercent) || 2,
+        risk_fixed_usdt: riskFixedUsdt ? parseFloat(riskFixedUsdt) : null,
+        max_leverage: parseInt(maxLeverage) || 10,
+      });
+      Alert.alert('Guardado', 'Configuración actualizada');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'No se pudo guardar');
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Cerrar Sesión', '¿Estás seguro?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cerrar Sesión',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          // Force reload - in a real app you'd use context/navigation
+          // For now the user needs to restart the app
+          Alert.alert('Sesión cerrada', 'Reinicia la app para iniciar sesión de nuevo');
+        },
+      },
+    ]);
   };
 
   if (loading) {
@@ -123,12 +195,115 @@ const SettingsScreen = () => {
         <Text style={styles.subtitle}>Binance Futures USDT-M</Text>
       </View>
 
+      {/* Account */}
+      {profile && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Cuenta</Text>
+          <Text style={styles.infoText}>{profile.email}</Text>
+          <TouchableOpacity style={styles.dangerButton} onPress={handleLogout}>
+            <Text style={styles.dangerButtonText}>Cerrar Sesión</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Binance API Keys */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Binance API</Text>
+        {profile?.has_binance_keys ? (
+          <Text style={styles.tokenText}>API Keys configuradas ✓</Text>
+        ) : (
+          <Text style={styles.helperText}>Conecta tu cuenta de Binance Futures</Text>
+        )}
+        <TextInput
+          style={styles.input}
+          placeholder="API Key"
+          placeholderTextColor="#666"
+          value={binanceKey}
+          onChangeText={setBinanceKey}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="API Secret"
+          placeholderTextColor="#666"
+          value={binanceSecret}
+          onChangeText={setBinanceSecret}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+        <TouchableOpacity style={styles.button} onPress={handleSaveBinanceKeys}>
+          <Text style={styles.buttonText}>Guardar Keys</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Operation Mode */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Modo de Operación</Text>
+        <View style={styles.modeRow}>
+          <View style={styles.modeInfo}>
+            <Text style={styles.modeLabel}>{botMode ? '🤖 Bot (Auto-SL)' : '📋 Recomendaciones'}</Text>
+            <Text style={styles.modeHint}>
+              {botMode
+                ? 'El bot moverá tu SL automáticamente'
+                : 'Solo muestra recomendaciones, no ejecuta'}
+            </Text>
+          </View>
+          <Switch
+            value={botMode}
+            onValueChange={setBotMode}
+            trackColor={{ false: '#333', true: '#00d4aa' }}
+            thumbColor="#fff"
+          />
+        </View>
+      </View>
+
+      {/* Risk Limits */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Límites de Riesgo</Text>
+
+        <Text style={styles.fieldLabel}>% del balance por operación</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="2"
+          placeholderTextColor="#666"
+          value={riskPercent}
+          onChangeText={setRiskPercent}
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.fieldLabel}>Monto fijo USDT (alternativo)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Opcional"
+          placeholderTextColor="#666"
+          value={riskFixedUsdt}
+          onChangeText={setRiskFixedUsdt}
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.fieldLabel}>Leverage máximo</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="10"
+          placeholderTextColor="#666"
+          value={maxLeverage}
+          onChangeText={setMaxLeverage}
+          keyboardType="numeric"
+        />
+
+        <TouchableOpacity style={styles.button} onPress={handleSaveSettings}>
+          <Text style={styles.buttonText}>Guardar Configuración</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Server URL */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Servidor</Text>
         <View style={styles.inputRow}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 8 }]}
             value={apiUrl}
             onChangeText={setApiUrlState}
             placeholder="http://localhost:8000"
@@ -147,38 +322,19 @@ const SettingsScreen = () => {
         {pushToken ? (
           <View>
             <Text style={styles.tokenText}>Token registrado</Text>
-            <Text style={styles.tokenValue} numberOfLines={1}>
-              {pushToken}
-            </Text>
+            <Text style={styles.tokenValue} numberOfLines={1}>{pushToken}</Text>
           </View>
         ) : (
-          <Text style={styles.helperText}>
-            Registra tu dispositivo para recibir señales
-          </Text>
+          <Text style={styles.helperText}>Registra tu dispositivo para recibir señales</Text>
         )}
         <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleRegisterPush}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>
-              {isRegistered ? 'Actualizar Registro' : 'Registrar'}
-            </Text>
+          <TouchableOpacity style={styles.button} onPress={handleRegisterPush} disabled={loading}>
+            <Text style={styles.buttonText}>{isRegistered ? 'Actualizar Registro' : 'Registrar'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.button, styles.buttonSecondary]}
-            onPress={handleTestNotification}
-            disabled={loading}
-          >
+          <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={handleTestNotification} disabled={loading}>
             <Text style={styles.buttonText}>Probar</Text>
           </TouchableOpacity>
         </View>
-        {isRegistered && (
-          <Text style={styles.hintText}>
-            Configura tus pares y notificaciones en la pestaña Mercado
-          </Text>
-        )}
       </View>
 
       {/* Data Management */}
@@ -195,9 +351,6 @@ const SettingsScreen = () => {
         <Text style={styles.infoText}>Version: 1.0.0</Text>
         <Text style={styles.infoText}>Mercado: Binance Futures USDT-M</Text>
         <Text style={styles.infoText}>Estrategia: EMA200 + RSI + MACD + Vol + Fibo</Text>
-        <Text style={styles.infoTextHint}>
-          Los pares, temporalidades y tipo de notificaciones se configuran individualmente en Mercado.
-        </Text>
       </View>
     </ScrollView>
   );
@@ -243,29 +396,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
   },
+  fieldLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 4,
+    marginTop: 8,
+  },
   helperText: {
     color: '#888',
     fontSize: 14,
     marginBottom: 12,
   },
-  hintText: {
-    color: '#00d4aa',
-    fontSize: 13,
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   input: {
-    flex: 1,
     backgroundColor: '#0f0f1a',
     borderRadius: 8,
     padding: 12,
     color: '#fff',
     fontSize: 14,
-    marginRight: 8,
+    marginBottom: 10,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   saveButton: {
     backgroundColor: '#00d4aa',
@@ -312,6 +464,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    marginTop: 8,
   },
   dangerButtonText: {
     color: '#fff',
@@ -322,11 +475,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 4,
   },
-  infoTextHint: {
-    color: '#666',
+  modeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modeInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  modeLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modeHint: {
+    color: '#888',
     fontSize: 12,
-    marginTop: 8,
-    fontStyle: 'italic',
+    marginTop: 4,
   },
 });
 

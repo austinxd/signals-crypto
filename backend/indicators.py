@@ -32,12 +32,7 @@ def calculate_macd(
     slow: int = MACD_SLOW,
     signal: int = MACD_SIGNAL,
 ) -> Dict[str, pd.Series]:
-    """
-    Calculate MACD indicator.
-
-    Returns:
-        Dict with 'macd', 'signal', and 'histogram' series
-    """
+    """Calculate MACD indicator."""
     macd = ta.trend.MACD(df["close"], window_slow=slow, window_fast=fast, window_sign=signal)
     return {
         "macd": macd.macd(),
@@ -57,67 +52,38 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional[Dict[str, Any]]:
-    """
-    Calculate Fibonacci retracement levels based on recent swing high/low.
-
-    Args:
-        df: DataFrame with OHLCV data
-        lookback: Number of candles to look back for swing points
-
-    Returns:
-        Dict with Fibonacci levels and analysis
-    """
+    """Calculate Fibonacci retracement levels based on recent swing high/low."""
     if df is None or len(df) < lookback:
         return None
 
-    # Get recent data for swing detection
     recent = df.tail(lookback)
-
-    # Find swing high and low
     swing_high = recent["high"].max()
     swing_low = recent["low"].min()
     swing_high_idx = recent["high"].idxmax()
     swing_low_idx = recent["low"].idxmin()
-
-    # Determine trend direction (is high before low = downtrend, low before high = uptrend)
     is_uptrend = swing_low_idx < swing_high_idx
-
-    # Calculate price range
     price_range = swing_high - swing_low
     if price_range == 0:
         return None
 
     current_price = df.iloc[-1]["close"]
 
-    # Fibonacci ratios
     fib_ratios = {
-        "0.0": 0.0,
-        "23.6": 0.236,
-        "38.2": 0.382,
-        "50.0": 0.5,
-        "61.8": 0.618,
-        "78.6": 0.786,
-        "100.0": 1.0,
+        "0.0": 0.0, "23.6": 0.236, "38.2": 0.382,
+        "50.0": 0.5, "61.8": 0.618, "78.6": 0.786, "100.0": 1.0,
     }
 
-    # Calculate levels based on trend direction
-    # In uptrend: measure retracement from high to low (support levels)
-    # In downtrend: measure retracement from low to high (resistance levels)
     levels = {}
     if is_uptrend:
-        # Retracement levels (pulling back from high)
         for name, ratio in fib_ratios.items():
             levels[name] = swing_high - (price_range * ratio)
     else:
-        # Retracement levels (bouncing from low)
         for name, ratio in fib_ratios.items():
             levels[name] = swing_low + (price_range * ratio)
 
-    # Find closest level to current price
     closest_level = None
     closest_distance = float("inf")
     closest_name = None
-
     for name, level in levels.items():
         distance = abs(current_price - level)
         if distance < closest_distance:
@@ -125,34 +91,29 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional
             closest_level = level
             closest_name = name
 
-    # Calculate percentage distance to closest level
     distance_percent = ((current_price - closest_level) / current_price) * 100
 
-    # Determine if price is at a good Fibonacci level (within 1% of a key level)
-    key_levels = ["38.2", "50.0", "61.8"]  # Main support/resistance levels
+    key_levels = ["38.2", "50.0", "61.8"]
     at_key_level = False
     near_key_level = False
     key_level_name = None
-
     for key in key_levels:
         level = levels[key]
         dist_pct = abs((current_price - level) / current_price) * 100
-        if dist_pct < 0.5:  # Within 0.5%
+        if dist_pct < 0.5:
             at_key_level = True
             key_level_name = key
             break
-        elif dist_pct < 1.5:  # Within 1.5%
+        elif dist_pct < 1.5:
             near_key_level = True
             key_level_name = key
 
-    # Generate recommendation
     if at_key_level:
         if is_uptrend:
-            recommendation = f"ENTRADA ÓPTIMA - En soporte Fibo {key_level_name}%"
-            entry_quality = "optimal"
+            recommendation = f"ENTRADA OPTIMA - En soporte Fibo {key_level_name}%"
         else:
-            recommendation = f"ENTRADA ÓPTIMA - En resistencia Fibo {key_level_name}%"
-            entry_quality = "optimal"
+            recommendation = f"ENTRADA OPTIMA - En resistencia Fibo {key_level_name}%"
+        entry_quality = "optimal"
     elif near_key_level:
         recommendation = f"Cerca de nivel Fibo {key_level_name}% - Buena zona"
         entry_quality = "good"
@@ -178,16 +139,63 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional
     }
 
 
+def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 20) -> Optional[Dict[str, Any]]:
+    """
+    Detect RSI divergence.
+    - Bearish divergence: price makes higher-high, RSI makes lower-high
+    - Bullish divergence: price makes lower-low, RSI makes higher-low
+    """
+    if df is None or len(df) < lookback + 5:
+        return None
+
+    recent = df.tail(lookback)
+    prices = recent["close"].values
+    rsi_vals = recent["rsi"].values if "rsi" in recent.columns else None
+
+    if rsi_vals is None or np.isnan(rsi_vals).any():
+        return None
+
+    # Find local peaks and troughs (simplified: compare halves)
+    mid = lookback // 2
+    first_half_prices = prices[:mid]
+    second_half_prices = prices[mid:]
+    first_half_rsi = rsi_vals[:mid]
+    second_half_rsi = rsi_vals[mid:]
+
+    first_price_high = np.max(first_half_prices)
+    second_price_high = np.max(second_half_prices)
+    first_rsi_high = np.max(first_half_rsi)
+    second_rsi_high = np.max(second_half_rsi)
+
+    first_price_low = np.min(first_half_prices)
+    second_price_low = np.min(second_half_prices)
+    first_rsi_low = np.min(first_half_rsi)
+    second_rsi_low = np.min(second_half_rsi)
+
+    result = {
+        "bearish_divergence": False,
+        "bullish_divergence": False,
+        "type": None,
+    }
+
+    # Bearish divergence: price higher-high + RSI lower-high
+    if second_price_high > first_price_high and second_rsi_high < first_rsi_high:
+        result["bearish_divergence"] = True
+        result["type"] = "bearish"
+
+    # Bullish divergence: price lower-low + RSI higher-low
+    if second_price_low < first_price_low and second_rsi_low > first_rsi_low:
+        result["bullish_divergence"] = True
+        result["type"] = "bullish"
+
+    if not result["bearish_divergence"] and not result["bullish_divergence"]:
+        return None
+
+    return result
+
+
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add all technical indicators to the DataFrame.
-
-    Args:
-        df: DataFrame with OHLCV data
-
-    Returns:
-        DataFrame with added indicator columns
-    """
+    """Add all technical indicators to the DataFrame."""
     df = df.copy()
 
     # EMA 200
@@ -195,7 +203,7 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     # RSI
     df["rsi"] = calculate_rsi(df, RSI_PERIOD)
-    df["rsi_ma"] = df["rsi"].rolling(window=5).mean()  # RSI moving average for crossover detection
+    df["rsi_ma"] = df["rsi"].rolling(window=5).mean()
 
     # MACD
     macd_data = calculate_macd(df)
@@ -225,25 +233,15 @@ def to_python_type(value):
 
 
 def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
-    """
-    Get the latest indicator values.
-
-    Args:
-        df: DataFrame with indicators already calculated
-
-    Returns:
-        Dict with latest values for all indicators
-    """
+    """Get the latest indicator values."""
     if df is None or len(df) < 2:
         return None
 
     latest = df.iloc[-1]
     previous = df.iloc[-2]
 
-    # Smoothed RSI detection using 3-period average to reduce noise
-    # Instead of just comparing latest vs previous, we compare:
-    # latest RSI vs average of last 3 RSI values (excluding current)
-    rsi_last_3 = df["rsi"].iloc[-4:-1].mean()  # Average of 3 candles before current
+    # Smoothed RSI detection
+    rsi_last_3 = df["rsi"].iloc[-4:-1].mean()
     rsi_smoothed_rising = latest["rsi"] > rsi_last_3
     rsi_smoothed_falling = latest["rsi"] < rsi_last_3
 
@@ -254,10 +252,10 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         "rsi": latest["rsi"],
         "rsi_previous": previous["rsi"],
         "rsi_ma": latest["rsi_ma"],
-        "rsi_avg_3": rsi_last_3,  # For debugging
+        "rsi_avg_3": rsi_last_3,
         "rsi_above_ma": latest["rsi"] > latest["rsi_ma"],
-        "rsi_rising": rsi_smoothed_rising,  # Now uses 3-period average
-        "rsi_falling": rsi_smoothed_falling,  # Now uses 3-period average
+        "rsi_rising": rsi_smoothed_rising,
+        "rsi_falling": rsi_smoothed_falling,
         "macd": latest["macd"],
         "macd_signal": latest["macd_signal"],
         "macd_previous": previous["macd"],
@@ -296,6 +294,11 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
             "entry_quality": fib_data["entry_quality"],
             "recommendation": fib_data["recommendation"],
         }
+
+    # RSI Divergence detection
+    divergence = detect_rsi_divergence(df)
+    if divergence:
+        result["divergence"] = divergence
 
     # Convert all numpy types to native Python types
     def convert_value(v):

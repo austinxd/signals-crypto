@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import {
   getMarketData,
   getSignals,
@@ -208,7 +210,8 @@ const HomeScreen = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    // Auto-refresh every 30 seconds with forceRefresh=true to bypass cache
+    const interval = setInterval(() => fetchData(true), 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -335,6 +338,25 @@ const HomeScreen = () => {
         return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
       };
 
+      // Render right swipe action (delete)
+      const renderRightActions = (progress, dragX, subId) => {
+        const scale = dragX.interpolate({
+          inputRange: [-100, 0],
+          outputRange: [1, 0.5],
+          extrapolate: 'clamp',
+        });
+        return (
+          <TouchableOpacity
+            style={styles.swipeDeleteAction}
+            onPress={() => handleRemoveSubscription(subId)}
+          >
+            <Animated.Text style={[styles.swipeDeleteText, { transform: [{ scale }] }]}>
+              🗑️
+            </Animated.Text>
+          </TouchableOpacity>
+        );
+      };
+
       return (
         <>
           {subscriptions.map((sub) => {
@@ -352,31 +374,35 @@ const HomeScreen = () => {
             const realTimeQuality = getQualityFromScore(realTimeScore);
 
             return (
-              <View key={sub.id} style={styles.subscriptionWrapper}>
-                {/* Compact header - always visible */}
-                <TouchableOpacity
-                  style={styles.subscriptionHeader}
-                  onPress={() => toggleExpanded(sub.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.subscriptionLeft}>
-                    <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
-                    <View style={styles.modeIconMini}>
-                      <SignalBars
-                        level={TRADING_MODE_LABELS[sub.trading_mode]?.level || 2}
-                        color={getModeColor(sub.trading_mode)}
-                        size={14}
-                      />
+              <Swipeable
+                key={sub.id}
+                renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, sub.id)}
+                rightThreshold={40}
+              >
+                <View style={styles.subscriptionWrapper}>
+                  {/* Compact header - always visible */}
+                  <TouchableOpacity
+                    style={styles.subscriptionHeader}
+                    onPress={() => toggleExpanded(sub.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.subscriptionLeft}>
+                      <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+                      <View style={styles.modeIconMini}>
+                        <SignalBars
+                          level={TRADING_MODE_LABELS[sub.trading_mode]?.level || 2}
+                          color={getModeColor(sub.trading_mode)}
+                          size={14}
+                        />
+                      </View>
+                      <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
+                      {price && (
+                        <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
+                      )}
+                      <View style={styles.timeframeBadgeSmall}>
+                        <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
-                    {price && (
-                      <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
-                    )}
-                    <View style={styles.timeframeBadgeSmall}>
-                      <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.subscriptionRight}>
                     <View style={styles.subscriptionBadges}>
                       {/* Signal indicator: green for LONG, red for SHORT, gray for none */}
                       {activeSignal.hasSignal ? (
@@ -398,30 +424,24 @@ const HomeScreen = () => {
                         </View>
                       )}
                     </View>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleRemoveSubscription(sub.id)}
-                    >
-                      <Text style={styles.deleteText}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                {/* Expanded content */}
-                {isExpanded && (
-                  <PairCard
-                    pair={sub.pair}
-                    data={pairData}
-                    timeframe={sub.timeframe}
-                    embedded={true}
-                    onPress={() => {
-                      setSelectedPair(sub.pair);
-                      setSelectedSubscription(sub);
-                      setModalVisible(true);
-                    }}
-                  />
-                )}
-              </View>
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <PairCard
+                      pair={sub.pair}
+                      data={pairData}
+                      timeframe={sub.timeframe}
+                      embedded={true}
+                      onPress={() => {
+                        setSelectedPair(sub.pair);
+                        setSelectedSubscription(sub);
+                        setModalVisible(true);
+                      }}
+                    />
+                  )}
+                </View>
+              </Swipeable>
             );
           })}
           <TouchableOpacity
@@ -858,13 +878,9 @@ const styles = StyleSheet.create({
   noSignalText: {
     fontSize: 12,
   },
-  subscriptionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   subscriptionBadges: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   timeframeBadgeSmall: {
@@ -872,6 +888,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
+    marginLeft: 12,
   },
   timeframeBadgeText: {
     color: '#0a0a14',
@@ -886,18 +903,16 @@ const styles = StyleSheet.create({
   modeBadgeTextSmall: {
     fontSize: 12,
   },
-  deleteButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#2a2a4a',
-    alignItems: 'center',
+  swipeDeleteAction: {
+    backgroundColor: '#ff4757',
     justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    marginBottom: 12,
+    borderRadius: 12,
   },
-  deleteText: {
-    color: '#ff4757',
-    fontSize: 12,
-    fontWeight: 'bold',
+  swipeDeleteText: {
+    fontSize: 24,
   },
   addFirstButton: {
     marginTop: 20,

@@ -2,14 +2,15 @@
 Database configuration and models using SQLAlchemy.
 """
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from enum import Enum as PyEnum
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, JSON, Enum, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, JSON, Enum, Text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from dotenv import load_dotenv
+from cryptography.fernet import Fernet
 
 load_dotenv()
 
@@ -21,6 +22,42 @@ DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# Encryption key for Binance API keys
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+_fernet = None
+
+
+def get_fernet():
+    """Get Fernet cipher for encrypting/decrypting API keys."""
+    global _fernet
+    if _fernet is None:
+        if ENCRYPTION_KEY:
+            _fernet = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
+        else:
+            # Generate a key if not set (not recommended for production)
+            key = Fernet.generate_key()
+            _fernet = Fernet(key)
+            print("WARNING: No ENCRYPTION_KEY set. Generated temporary key. API keys will not persist across restarts.")
+    return _fernet
+
+
+def encrypt_value(value: str) -> str:
+    """Encrypt a string value."""
+    if not value:
+        return ""
+    return get_fernet().encrypt(value.encode()).decode()
+
+
+def decrypt_value(value: str) -> str:
+    """Decrypt an encrypted string value."""
+    if not value:
+        return ""
+    try:
+        return get_fernet().decrypt(value.encode()).decode()
+    except Exception:
+        return ""
+
 
 # Create engine
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
@@ -39,6 +76,12 @@ class TradingMode(PyEnum):
     AGGRESSIVE = "aggressive"      # any base signal
 
 
+class OperationMode(PyEnum):
+    """User operation mode: bot vs recommendations."""
+    RECOMMENDATIONS = "recommendations"
+    BOT = "bot"
+
+
 class SignalQualityDB(PyEnum):
     """Signal quality levels."""
     TEMPRANA = "TEMPRANA"
@@ -46,22 +89,150 @@ class SignalQualityDB(PyEnum):
     OPTIMA = "OPTIMA"
 
 
+class ExitAlertType(PyEnum):
+    """Exit alert types."""
+    TRAILING_BREAKEVEN = "TRAILING_BREAKEVEN"
+    TRAILING_UPDATE = "TRAILING_UPDATE"
+    MACD_REVERSAL = "MACD_REVERSAL"
+    RSI_EXTREME = "RSI_EXTREME"
+    RSI_DIVERGENCE = "RSI_DIVERGENCE"
+
+
+class RecommendedAction(PyEnum):
+    """Recommended action for exit alerts."""
+    MOVE_SL = "MOVE_SL"
+    CLOSE_50 = "CLOSE_50%"
+    CLOSE_ALL = "CLOSE_ALL"
+
+
+# ============================================================
+# Legacy User model (kept for backward compatibility with push tokens)
+# ============================================================
 class User(Base):
-    """User/token model for push notification subscribers."""
+    """User/token model for push notification subscribers (legacy)."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     push_token = Column(String(255), unique=True, nullable=False, index=True)
-    pairs = Column(JSON, default=["BTC/USDT", "ETH/USDT"])  # Legacy - kept for compatibility
-    timeframe = Column(String(10), default="4h")  # Legacy - kept for compatibility
-    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)  # Legacy
+    pairs = Column(JSON, default=["BTC/USDT", "ETH/USDT"])
+    timeframe = Column(String(10), default="4h")
+    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    signals_cleared_at = Column(DateTime, nullable=True)  # Hide signals before this time
-    notifications_cleared_at = Column(DateTime, nullable=True)  # Hide notifications before this time
+    signals_cleared_at = Column(DateTime, nullable=True)
+    notifications_cleared_at = Column(DateTime, nullable=True)
+    # Link to UserAccount (nullable for legacy users without account)
+    account_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=True)
 
 
+# ============================================================
+# New UserAccount model
+# ============================================================
+class UserAccount(Base):
+    """Full user account with auth, Binance keys, and settings."""
+    __tablename__ = "user_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+
+    # Binance API keys (encrypted)
+    binance_api_key = Column(Text, nullable=True)
+    binance_api_secret = Column(Text, nullable=True)
+
+    # Operation mode
+    mode = Column(Enum(OperationMode), default=OperationMode.RECOMMENDATIONS)
+
+    # Risk limits
+    risk_percent = Column(Float, default=2.0)  # % of balance per trade
+    risk_fixed_usdt = Column(Float, nullable=True)  # Fixed USDT amount (alternative)
+    max_leverage = Column(Integer, default=10)
+
+    # Push notification
+    push_token = Column(String(255), nullable=True)
+    push_enabled = Column(Boolean, default=True)
+
+    # Legacy config
+    trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
+
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def set_binance_keys(self, api_key: str, api_secret: str):
+        """Encrypt and store Binance API keys."""
+        self.binance_api_key = encrypt_value(api_key)
+        self.binance_api_secret = encrypt_value(api_secret)
+
+    def get_binance_keys(self) -> tuple:
+        """Decrypt and return Binance API keys."""
+        return decrypt_value(self.binance_api_key), decrypt_value(self.binance_api_secret)
+
+    def has_binance_keys(self) -> bool:
+        """Check if user has Binance API keys configured."""
+        return bool(self.binance_api_key and self.binance_api_secret)
+
+
+# ============================================================
+# ActivePosition model
+# ============================================================
+class ActivePosition(Base):
+    """Tracks an open position from Binance Futures."""
+    __tablename__ = "active_positions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
+    symbol = Column(String(20), nullable=False)
+    side = Column(String(10), nullable=False)  # LONG or SHORT
+    entry_price = Column(Float, nullable=False)
+    amount = Column(Float, nullable=False)
+    leverage = Column(Integer, default=1)
+
+    unrealized_pnl = Column(Float, default=0.0)
+    current_price = Column(Float, nullable=True)
+
+    initial_stop_loss = Column(Float, nullable=True)
+    current_stop_loss = Column(Float, nullable=True)
+    initial_take_profit = Column(Float, nullable=True)
+    current_take_profit = Column(Float, nullable=True)
+
+    highest_price = Column(Float, nullable=True)
+    lowest_price = Column(Float, nullable=True)
+    breakeven_reached = Column(Boolean, default=False)
+
+    entry_atr = Column(Float, nullable=True)
+    is_open = Column(Boolean, default=True)
+    opened_at = Column(DateTime, default=datetime.utcnow)
+    closed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================
+# ExitAlert model
+# ============================================================
+class ExitAlert(Base):
+    """Exit alert generated by the position monitor."""
+    __tablename__ = "exit_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    position_id = Column(Integer, ForeignKey("active_positions.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
+    symbol = Column(String(20), nullable=False)
+
+    alert_type = Column(Enum(ExitAlertType), nullable=False)
+    message = Column(Text, nullable=True)
+    recommended_action = Column(Enum(RecommendedAction), nullable=True)
+
+    new_sl_price = Column(Float, nullable=True)
+    was_executed = Column(Boolean, default=False)  # True if bot mode executed the action
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+# ============================================================
+# Existing models (unchanged)
+# ============================================================
 class Subscription(Base):
     """Individual subscription for a pair/timeframe/trading_mode combination."""
     __tablename__ = "subscriptions"
@@ -86,7 +257,7 @@ class Signal(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     pair = Column(String(20), nullable=False, index=True)
     timeframe = Column(String(10), nullable=False)
-    side = Column(String(10), nullable=False)  # LONG or SHORT
+    side = Column(String(10), nullable=False)
     quality = Column(Enum(SignalQualityDB), nullable=False)
     score = Column(Float, nullable=False)
     score_details = Column(JSON)
@@ -101,23 +272,19 @@ class Signal(Base):
 
 
 class AlertState(Base):
-    """
-    Tracks the current alert state per pair/timeframe to avoid duplicate notifications.
-    Only notifies on state CHANGE (e.g., None -> TEMPRANA, TEMPRANA -> BUENA, etc.)
-    """
+    """Tracks the current alert state per pair/timeframe."""
     __tablename__ = "alert_states"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     pair = Column(String(20), nullable=False)
     timeframe = Column(String(10), nullable=False)
-    current_side = Column(String(10))  # LONG, SHORT, or None
+    current_side = Column(String(10))
     current_quality = Column(Enum(SignalQualityDB))
     current_score = Column(Float)
     last_notified_at = Column(DateTime)
     last_signal_id = Column(Integer)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Composite unique constraint
     __table_args__ = (
         {'mysql_charset': 'utf8mb4'},
     )
@@ -154,10 +321,13 @@ def get_db() -> Session:
         raise
 
 
+# ============================================================
 # Helper functions for database operations
+# ============================================================
 class DBHelper:
     """Database helper class for common operations."""
 
+    # ---- Legacy User operations ----
     @staticmethod
     def get_user_by_token(db: Session, token: str) -> Optional[User]:
         """Get user by push token."""
@@ -210,32 +380,22 @@ class DBHelper:
         timeframe: str,
         quality: SignalQualityDB,
         score: float
-    ) -> list[User]:
-        """
-        Get users who should receive this signal based on their preferences.
-        Filters by pair, timeframe, and trading mode.
-        """
+    ) -> list:
+        """Get users who should receive this signal."""
         users = db.query(User).filter(
             User.enabled == True,
             User.timeframe == timeframe,
         ).all()
 
-        # Filter by pair and trading mode
         result = []
         for user in users:
-            # Check if user monitors this pair
             if pair not in user.pairs:
                 continue
-
-            # Check trading mode threshold
             if user.trading_mode == TradingMode.CONSERVATIVE and score < 2.5:
                 continue
             elif user.trading_mode == TradingMode.BALANCED and score < 1.5:
                 continue
-            # AGGRESSIVE gets all signals
-
             result.append(user)
-
         return result
 
     @staticmethod
@@ -300,30 +460,16 @@ class DBHelper:
         new_side: str,
         new_quality: SignalQualityDB,
         new_score: float
-    ) -> tuple[bool, str]:
-        """
-        Determine if we should send notification based on state change.
-
-        ALWAYS notify (no cooldown):
-        - New signal appears (was None)
-        - Direction changes (LONG <-> SHORT)
-
-        WITH 1 hour cooldown:
-        - Quality improves (same direction)
-
-        Returns (should_notify, reason)
-        """
+    ) -> tuple:
+        """Determine if we should send notification based on state change."""
         state = DBHelper.get_alert_state(db, pair, timeframe)
 
-        # New signal - always notify
         if not state or state.current_side is None:
             return True, "new_signal"
 
-        # Side changed (LONG -> SHORT or vice versa) - ALWAYS notify immediately
         if state.current_side != new_side:
             return True, "side_changed"
 
-        # Same direction - check for quality improvement with cooldown
         quality_order = {
             SignalQualityDB.TEMPRANA: 0,
             SignalQualityDB.BUENA: 1,
@@ -333,10 +479,9 @@ class DBHelper:
         new_quality_val = quality_order.get(new_quality, -1)
 
         if new_quality_val > old_quality_val:
-            # Quality improved - apply 1 hour cooldown
             if state.last_notified_at:
                 elapsed = (datetime.utcnow() - state.last_notified_at).total_seconds()
-                if elapsed < 3600:  # 1 hour cooldown for quality improvements
+                if elapsed < 3600:
                     return False, "quality_cooldown"
             return True, "quality_improved"
 
@@ -347,21 +492,16 @@ class DBHelper:
         db: Session,
         pair: str,
         timeframe: str
-    ) -> tuple[bool, str]:
-        """
-        Check if we should notify that a signal disappeared.
-        Only notify if there was an active signal before.
-        """
+    ) -> tuple:
+        """Check if we should notify that a signal disappeared."""
         state = DBHelper.get_alert_state(db, pair, timeframe)
-
         if state and state.current_side is not None:
             return True, "signal_disappeared"
-
         return False, "no_previous_signal"
 
     @staticmethod
     def clear_alert_state(db: Session, pair: str, timeframe: str):
-        """Clear alert state (e.g., when price exits Fibo range)."""
+        """Clear alert state."""
         state = DBHelper.get_alert_state(db, pair, timeframe)
         if state:
             state.current_side = None
@@ -370,16 +510,16 @@ class DBHelper:
             db.commit()
 
     @staticmethod
-    def get_recent_signals(db: Session, limit: int = 20) -> list[Signal]:
+    def get_recent_signals(db: Session, limit: int = 20) -> list:
         """Get recent signals."""
         return db.query(Signal).order_by(Signal.created_at.desc()).limit(limit).all()
 
     @staticmethod
-    def get_all_users(db: Session) -> list[User]:
+    def get_all_users(db: Session) -> list:
         """Get all users."""
         return db.query(User).all()
 
-    # Subscription methods
+    # ---- Subscription methods ----
     @staticmethod
     def add_subscription(
         db: Session,
@@ -389,7 +529,6 @@ class DBHelper:
         trading_mode: TradingMode = TradingMode.BALANCED
     ) -> Subscription:
         """Add a new subscription for a user."""
-        # Check if already exists
         existing = db.query(Subscription).filter(
             Subscription.user_id == user_id,
             Subscription.pair == pair,
@@ -428,7 +567,7 @@ class DBHelper:
         return False
 
     @staticmethod
-    def get_user_subscriptions(db: Session, user_id: int) -> list[Subscription]:
+    def get_user_subscriptions(db: Session, user_id: int) -> list:
         """Get all subscriptions for a user."""
         return db.query(Subscription).filter(
             Subscription.user_id == user_id,
@@ -441,7 +580,7 @@ class DBHelper:
         pair: str,
         timeframe: str,
         score: float
-    ) -> list[dict]:
+    ) -> list:
         """Get users who should receive this signal based on their subscriptions."""
         subs = db.query(Subscription).filter(
             Subscription.pair == pair,
@@ -451,14 +590,11 @@ class DBHelper:
 
         result = []
         for sub in subs:
-            # Check trading mode threshold
             if sub.trading_mode == TradingMode.CONSERVATIVE and score < 2.5:
                 continue
             elif sub.trading_mode == TradingMode.BALANCED and score < 1.5:
                 continue
-            # AGGRESSIVE gets all signals
 
-            # Get user token
             user = db.query(User).filter(User.id == sub.user_id).first()
             if user and user.enabled:
                 result.append({
@@ -468,6 +604,192 @@ class DBHelper:
                 })
 
         return result
+
+    # ---- UserAccount methods ----
+    @staticmethod
+    def get_account_by_email(db: Session, email: str) -> Optional[UserAccount]:
+        """Get user account by email."""
+        return db.query(UserAccount).filter(UserAccount.email == email).first()
+
+    @staticmethod
+    def get_account_by_id(db: Session, account_id: int) -> Optional[UserAccount]:
+        """Get user account by ID."""
+        return db.query(UserAccount).filter(UserAccount.id == account_id).first()
+
+    @staticmethod
+    def create_account(db: Session, email: str, password_hash: str) -> UserAccount:
+        """Create a new user account."""
+        account = UserAccount(
+            email=email,
+            password_hash=password_hash,
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        return account
+
+    @staticmethod
+    def get_accounts_with_binance_keys(db: Session) -> list:
+        """Get all accounts that have Binance API keys configured."""
+        return db.query(UserAccount).filter(
+            UserAccount.binance_api_key.isnot(None),
+            UserAccount.binance_api_key != "",
+            UserAccount.binance_api_secret.isnot(None),
+            UserAccount.binance_api_secret != "",
+            UserAccount.enabled == True,
+        ).all()
+
+    # ---- Position methods ----
+    @staticmethod
+    def get_open_positions(db: Session, user_id: int) -> list:
+        """Get all open positions for a user."""
+        return db.query(ActivePosition).filter(
+            ActivePosition.user_id == user_id,
+            ActivePosition.is_open == True
+        ).all()
+
+    @staticmethod
+    def upsert_position(
+        db: Session,
+        user_id: int,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        amount: float,
+        leverage: int = 1,
+        unrealized_pnl: float = 0.0,
+        current_price: float = None,
+    ) -> ActivePosition:
+        """Create or update a position."""
+        pos = db.query(ActivePosition).filter(
+            ActivePosition.user_id == user_id,
+            ActivePosition.symbol == symbol,
+            ActivePosition.side == side,
+            ActivePosition.is_open == True
+        ).first()
+
+        if pos:
+            pos.amount = amount
+            pos.unrealized_pnl = unrealized_pnl
+            pos.current_price = current_price
+            if current_price:
+                if pos.highest_price is None or current_price > pos.highest_price:
+                    pos.highest_price = current_price
+                if pos.lowest_price is None or current_price < pos.lowest_price:
+                    pos.lowest_price = current_price
+            pos.updated_at = datetime.utcnow()
+        else:
+            pos = ActivePosition(
+                user_id=user_id,
+                symbol=symbol,
+                side=side,
+                entry_price=entry_price,
+                amount=amount,
+                leverage=leverage,
+                unrealized_pnl=unrealized_pnl,
+                current_price=current_price,
+                highest_price=current_price,
+                lowest_price=current_price,
+            )
+            db.add(pos)
+
+        db.commit()
+        db.refresh(pos)
+        return pos
+
+    @staticmethod
+    def close_position(db: Session, position_id: int):
+        """Mark a position as closed."""
+        pos = db.query(ActivePosition).filter(ActivePosition.id == position_id).first()
+        if pos:
+            pos.is_open = False
+            pos.closed_at = datetime.utcnow()
+            db.commit()
+
+    @staticmethod
+    def update_position_prices(
+        db: Session,
+        position_id: int,
+        current_price: float = None,
+        unrealized_pnl: float = None,
+        highest_price: float = None,
+        lowest_price: float = None,
+    ):
+        """Update position price tracking."""
+        pos = db.query(ActivePosition).filter(ActivePosition.id == position_id).first()
+        if pos:
+            if current_price is not None:
+                pos.current_price = current_price
+            if unrealized_pnl is not None:
+                pos.unrealized_pnl = unrealized_pnl
+            if highest_price is not None:
+                pos.highest_price = highest_price
+            if lowest_price is not None:
+                pos.lowest_price = lowest_price
+            pos.updated_at = datetime.utcnow()
+            db.commit()
+
+    @staticmethod
+    def update_position_sl(db: Session, position_id: int, new_sl: float):
+        """Update the stop loss for a position."""
+        pos = db.query(ActivePosition).filter(ActivePosition.id == position_id).first()
+        if pos:
+            pos.current_stop_loss = new_sl
+            pos.updated_at = datetime.utcnow()
+            db.commit()
+
+    @staticmethod
+    def create_exit_alert(
+        db: Session,
+        position_id: int,
+        user_id: int,
+        symbol: str,
+        alert_type: ExitAlertType,
+        message: str,
+        recommended_action: RecommendedAction = None,
+        new_sl_price: float = None,
+        was_executed: bool = False,
+    ) -> Optional[ExitAlert]:
+        """Create an exit alert with dedup (30 min per type+position)."""
+        # Dedup: check if same alert type for same position in last 30 min
+        cutoff = datetime.utcnow() - timedelta(minutes=30)
+        existing = db.query(ExitAlert).filter(
+            ExitAlert.position_id == position_id,
+            ExitAlert.alert_type == alert_type,
+            ExitAlert.created_at > cutoff,
+        ).first()
+
+        if existing:
+            return None  # Deduplicated
+
+        alert = ExitAlert(
+            position_id=position_id,
+            user_id=user_id,
+            symbol=symbol,
+            alert_type=alert_type,
+            message=message,
+            recommended_action=recommended_action,
+            new_sl_price=new_sl_price,
+            was_executed=was_executed,
+        )
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+        return alert
+
+    @staticmethod
+    def get_recent_exit_alerts(db: Session, user_id: int, limit: int = 50) -> list:
+        """Get recent exit alerts for a user."""
+        return db.query(ExitAlert).filter(
+            ExitAlert.user_id == user_id
+        ).order_by(ExitAlert.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def get_position_alerts(db: Session, position_id: int, limit: int = 20) -> list:
+        """Get alerts for a specific position."""
+        return db.query(ExitAlert).filter(
+            ExitAlert.position_id == position_id
+        ).order_by(ExitAlert.created_at.desc()).limit(limit).all()
 
 
 # Migration helper to import existing tokens.json

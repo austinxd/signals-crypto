@@ -5,6 +5,8 @@ const API_URL_KEY = '@api_url';
 const USER_PAIRS_KEY = '@user_pairs';
 const USER_TIMEFRAME_KEY = '@user_timeframe';
 const USER_TRADING_MODE_KEY = '@user_trading_mode';
+const JWT_TOKEN_KEY = '@jwt_token';
+const REFRESH_TOKEN_KEY = '@refresh_token';
 
 // Default API URL (change this to your server's URL)
 // Use your computer's local IP when testing on physical device
@@ -39,6 +41,49 @@ export async function setApiUrl(url) {
 }
 
 /**
+ * JWT token management
+ */
+export async function getJwtToken() {
+  try {
+    return await AsyncStorage.getItem(JWT_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function getRefreshTokenStored() {
+  try {
+    return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function setTokens(accessToken, refreshToken) {
+  try {
+    await AsyncStorage.setItem(JWT_TOKEN_KEY, accessToken);
+    if (refreshToken) {
+      await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearTokens() {
+  try {
+    await AsyncStorage.multiRemove([JWT_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+  } catch {
+    // ignore
+  }
+}
+
+export async function isAuthenticated() {
+  const token = await getJwtToken();
+  return !!token;
+}
+
+/**
  * Make API request
  */
 async function apiRequest(endpoint, options = {}) {
@@ -47,18 +92,28 @@ async function apiRequest(endpoint, options = {}) {
 
   console.log('Fetching:', url);
 
+  // Inject JWT auth header if available
+  const token = await getJwtToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   try {
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      timeout: 10000,
       ...options,
+      headers,
+      timeout: 10000,
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      const err = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      err.status = response.status;
+      throw err;
     }
 
     const data = await response.json();
@@ -331,4 +386,80 @@ export async function clearNotifications(token) {
     method: 'POST',
     body: JSON.stringify({ token }),
   });
+}
+
+// ============================================================
+// Auth endpoints
+// ============================================================
+
+export async function register(email, password) {
+  const data = await apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  await setTokens(data.access_token, data.refresh_token);
+  return data;
+}
+
+export async function login(email, password) {
+  const data = await apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  await setTokens(data.access_token, data.refresh_token);
+  return data;
+}
+
+export async function refreshAccessToken() {
+  const rt = await getRefreshTokenStored();
+  if (!rt) throw new Error('No refresh token');
+  const data = await apiRequest('/api/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: rt }),
+  });
+  await setTokens(data.access_token, data.refresh_token);
+  return data;
+}
+
+export async function logout() {
+  await clearTokens();
+}
+
+// ============================================================
+// Account endpoints
+// ============================================================
+
+export async function getProfile() {
+  return apiRequest('/api/account/profile');
+}
+
+export async function updateBinanceKeys(apiKey, apiSecret) {
+  return apiRequest('/api/account/binance-keys', {
+    method: 'PUT',
+    body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
+  });
+}
+
+export async function updateAccountSettings(settings) {
+  return apiRequest('/api/account/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
+}
+
+// ============================================================
+// Position & Exit Alert endpoints
+// ============================================================
+
+export async function getPositions() {
+  return apiRequest('/api/positions');
+}
+
+export async function getPositionAlerts(symbol) {
+  const s = symbol.replace('/', '-');
+  return apiRequest(`/api/positions/${s}/alerts`);
+}
+
+export async function getExitAlerts(limit = 50) {
+  return apiRequest(`/api/exit-alerts?limit=${limit}`);
 }

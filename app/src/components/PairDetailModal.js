@@ -87,6 +87,9 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
 
   const fundingWarning = getFundingWarning();
 
+  // Determine actual RSI direction for display
+  const rsiDirection = ind.rsi_rising ? '↑ Subiendo' : (ind.rsi_falling ? '↓ Bajando' : '→ Estable');
+
   // BASE conditions (2 required for signal)
   const longBase = {
     ema: {
@@ -97,7 +100,7 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
     rsiDirection: {
       label: 'RSI subiendo',
       met: ind.rsi_rising,
-      detail: ind.rsi_rising ? '↑ Subiendo' : '↓ Bajando',
+      detail: rsiDirection,
     },
   };
 
@@ -110,7 +113,7 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
     rsiDirection: {
       label: 'RSI bajando',
       met: ind.rsi_falling,
-      detail: ind.rsi_falling ? '↓ Bajando' : '↑ Subiendo',
+      detail: rsiDirection,
     },
   };
 
@@ -260,32 +263,9 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
     );
   };
 
-  // Get quality config from signal quality string (from backend)
-  const getQualityFromSignal = (qualityStr) => {
-    switch (qualityStr) {
-      case 'OPTIMA':
-        return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
-      case 'BUENA':
-        return { label: 'Buena', color: '#ffd93d', emoji: '' };
-      case 'TEMPRANA':
-      default:
-        return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
-    }
-  };
-
-  // Get signal info for header - use actual signal data if available
+  // Get signal info for header - always use real-time calculated data from indicators
   const getSignalInfo = () => {
-    // If we have a real signal from backend, use it
-    if (signal) {
-      const quality = getQualityFromSignal(signal.quality);
-      return {
-        type: signal.side,
-        emoji: signal.side === 'LONG' ? '🟢' : '🔴',
-        quality,
-        score: signal.score,
-      };
-    }
-    // Fallback to calculated signal
+    // Always use calculated signal from current indicators (most up-to-date)
     if (isLongSignal) {
       const quality = getQualityLabel(longScore);
       return { type: 'LONG', emoji: '🟢', quality, score: longScore };
