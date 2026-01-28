@@ -216,30 +216,37 @@ const PositionCard = ({ position }) => {
         </View>
       )}
 
-      {/* 5. ESCENARIOS DE GESTION */}
+      {/* 5. ESTADO DE LA TESIS */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ESCENARIOS</Text>
+        <Text style={styles.sectionTitle}>ESTADO DE LA TESIS</Text>
 
         {analysis.invalidation_breached && (
           <View style={styles.breachedWarning}>
             <Text style={styles.breachedIcon}>{'\u26A0'}</Text>
-            <Text style={styles.breachedText}>ESTRUCTURA INVALIDADA</Text>
+            <Text style={styles.breachedText}>TESIS INVALIDADA</Text>
           </View>
         )}
 
-        {analysis.favorable_scenario ? (
+        {analysis.thesis_status ? (
           <View style={[styles.scenarioBox, { borderLeftColor: analysis.invalidation_breached ? '#ff4757' : '#00d4aa' }]}>
             <Text style={styles.scenarioLabel}>
-              {analysis.invalidation_breached ? '\u26A0 Situaci\u00F3n actual' : '\u2713 Escenario favorable'}
+              {analysis.invalidation_breached ? 'Estado actual' : 'Tesis'}
             </Text>
-            <Text style={styles.scenarioText}>{analysis.favorable_scenario}</Text>
+            <Text style={styles.scenarioText}>{analysis.thesis_status}</Text>
           </View>
         ) : null}
 
-        {analysis.invalidation_scenario ? (
+        {analysis.invalidation_breached && analysis.recovery_condition ? (
+          <View style={[styles.scenarioBox, { borderLeftColor: '#ffd93d' }]}>
+            <Text style={styles.scenarioLabel}>Condici{'\u00F3'}n de recuperaci{'\u00F3'}n</Text>
+            <Text style={styles.scenarioText}>{analysis.recovery_condition}</Text>
+          </View>
+        ) : null}
+
+        {!analysis.invalidation_breached && analysis.invalidation_condition ? (
           <View style={[styles.scenarioBox, { borderLeftColor: '#ff4757' }]}>
-            <Text style={styles.scenarioLabel}>{'\u26A0'} Invalidaci{'\u00F3'}n</Text>
-            <Text style={styles.scenarioText}>{analysis.invalidation_scenario}</Text>
+            <Text style={styles.scenarioLabel}>Condici{'\u00F3'}n de invalidaci{'\u00F3'}n</Text>
+            <Text style={styles.scenarioText}>{analysis.invalidation_condition}</Text>
           </View>
         ) : null}
       </View>

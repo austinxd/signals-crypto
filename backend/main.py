@@ -883,28 +883,28 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
 
             if already_breached:
                 analysis["invalidation_breached"] = True
-                analysis["favorable_scenario"] = (
-                    f"La estructura ya esta comprometida. El precio ({_format_price(current_price)}) "
-                    f"ha perdido el soporte de {_format_price(invalidation_level)}. "
-                    f"Para recuperar el escenario favorable, el precio necesitaria cerrar en 4H "
-                    f"por encima de {_format_price(invalidation_level)} con fuerza."
+                analysis["thesis_status"] = (
+                    f"TESIS INVALIDADA. El precio ({_format_price(current_price)}) "
+                    f"ha roto el soporte estructural de {_format_price(invalidation_level)}. "
+                    f"Segun las reglas definidas, la idea LONG ya no es defendible."
                 )
-                analysis["invalidation_scenario"] = (
-                    f"ESTRUCTURA INVALIDADA. El precio ha cerrado por debajo de {_format_price(invalidation_level)}. "
-                    f"Segun las reglas actuales, la idea LONG esta invalidada."
+                analysis["recovery_condition"] = (
+                    f"Condicion de recuperacion: cierre en 4H por encima de {_format_price(invalidation_level)}. "
+                    f"Hasta que eso ocurra, la tesis permanece invalidada."
                 )
             else:
                 analysis["invalidation_breached"] = False
-                # Current state description
+                # Describe conditions that sustain/invalidate the thesis
                 rsi_state = f"RSI en {htf_rsi:.0f}" if htf_rsi else "RSI"
-                analysis["favorable_scenario"] = (
-                    f"Para que el LONG se fortalezca, el precio necesitaria mantenerse sobre "
-                    f"{_format_price(support_level)} con momentum alcista. "
-                    f"Mientras {rsi_state} se mantenga sobre 50 y MACD siga alcista, la presion favorece la posicion."
+                macd_state = "alcista" if htf_macd == "bullish" else ("bajista" if htf_macd == "bearish" else "neutral")
+                analysis["thesis_status"] = (
+                    f"La tesis LONG sigue siendo defendible mientras el precio permanezca sobre "
+                    f"{_format_price(support_level)}. "
+                    f"Condiciones actuales: {rsi_state}, MACD {macd_state}."
                 )
-                analysis["invalidation_scenario"] = (
-                    f"Si el precio cierra en 4H por debajo de {_format_price(invalidation_level)}, "
-                    f"la estructura alcista queda invalidada. Ese nivel es el soporte clave a vigilar."
+                analysis["invalidation_condition"] = (
+                    f"La tesis pierde validez si el precio cierra en 4H por debajo de {_format_price(invalidation_level)}. "
+                    f"Ese nivel representa el soporte estructural clave."
                 )
         else:
             # SHORT invalidation = price breaks ABOVE resistance (must be above current price)
@@ -931,28 +931,28 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
 
             if already_breached:
                 analysis["invalidation_breached"] = True
-                analysis["favorable_scenario"] = (
-                    f"La estructura ya esta comprometida. El precio ({_format_price(current_price)}) "
-                    f"ha superado la resistencia de {_format_price(invalidation_level)}. "
-                    f"Para recuperar el escenario favorable, el precio necesitaria cerrar en 4H "
-                    f"por debajo de {_format_price(invalidation_level)} con fuerza."
+                analysis["thesis_status"] = (
+                    f"TESIS INVALIDADA. El precio ({_format_price(current_price)}) "
+                    f"ha roto la resistencia estructural de {_format_price(invalidation_level)}. "
+                    f"Segun las reglas definidas, la idea SHORT ya no es defendible."
                 )
-                analysis["invalidation_scenario"] = (
-                    f"ESTRUCTURA INVALIDADA. El precio ha cerrado por encima de {_format_price(invalidation_level)}. "
-                    f"Segun las reglas actuales, la idea SHORT esta invalidada."
+                analysis["recovery_condition"] = (
+                    f"Condicion de recuperacion: cierre en 4H por debajo de {_format_price(invalidation_level)}. "
+                    f"Hasta que eso ocurra, la tesis permanece invalidada."
                 )
             else:
                 analysis["invalidation_breached"] = False
-                # Current state description
+                # Describe conditions that sustain/invalidate the thesis
                 rsi_state = f"RSI en {htf_rsi:.0f}" if htf_rsi else "RSI"
-                analysis["favorable_scenario"] = (
-                    f"Para que el SHORT se fortalezca, el precio necesitaria mantenerse bajo "
-                    f"{_format_price(resistance_level)} con momentum bajista. "
-                    f"Mientras {rsi_state} se mantenga bajo 50 y MACD siga bajista, la presion favorece la posicion."
+                macd_state = "alcista" if htf_macd == "bullish" else ("bajista" if htf_macd == "bearish" else "neutral")
+                analysis["thesis_status"] = (
+                    f"La tesis SHORT sigue siendo defendible mientras el precio permanezca bajo "
+                    f"{_format_price(resistance_level)}. "
+                    f"Condiciones actuales: {rsi_state}, MACD {macd_state}."
                 )
-                analysis["invalidation_scenario"] = (
-                    f"Si el precio cierra en 4H por encima de {_format_price(invalidation_level)}, "
-                    f"la estructura bajista queda invalidada. Ese nivel es la resistencia clave a vigilar."
+                analysis["invalidation_condition"] = (
+                    f"La tesis pierde validez si el precio cierra en 4H por encima de {_format_price(invalidation_level)}. "
+                    f"Ese nivel representa la resistencia estructural clave."
                 )
 
         # ========== 6. FACTUAL OBSERVATIONS (no recommendations) ==========
