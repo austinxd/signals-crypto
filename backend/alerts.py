@@ -308,7 +308,8 @@ def check_market_context_changes(
     current_structure = current_analysis.get("htf_structure")
     previous_structure = previous.get("htf_structure")
 
-    if current_structure == "en nivel clave" and previous_structure != "en nivel clave":
+    # Only alert when ENTERING key zone (requires previous state to exist)
+    if previous_structure and current_structure == "en nivel clave" and previous_structure != "en nivel clave":
         if not _is_on_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key):
             fibo_context = current_analysis.get("price_state", {}).get("fibo_context", "")
 
@@ -331,45 +332,49 @@ def check_market_context_changes(
                 "structure": current_structure
             })
 
-    # --- Favorable Conditions Alert (periodic reminder when conditions are good) ---
+    # --- Favorable Conditions Alert (only when ENTERING favorable/operable) ---
     direction = current_analysis.get("direction_preference")
 
-    if current_scenario in ["favorable", "operable"] and direction:
-        if not _is_on_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key):
-            # Build descriptive message
-            emoji = "🟢" if direction == "long" else "🔴"
-            direction_label = "LONG" if direction == "long" else "SHORT"
-            scenario_label = "Favorable" if current_scenario == "favorable" else "Operable"
-            bias_label = current_bias.capitalize() if current_bias else ""
+    # Only alert when transitioning INTO favorable/operable (requires previous state)
+    # previous_scenario is already defined above for scenario_changed check
+    if previous_scenario and current_scenario in ["favorable", "operable"] and direction:
+        # Only alert if we weren't already in a favorable/operable scenario
+        if previous_scenario not in ["favorable", "operable"]:
+            if not _is_on_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key):
+                # Build descriptive message
+                emoji = "🟢" if direction == "long" else "🔴"
+                direction_label = "LONG" if direction == "long" else "SHORT"
+                scenario_label = "Favorable" if current_scenario == "favorable" else "Operable"
+                bias_label = current_bias.capitalize() if current_bias else ""
 
-            title = f"{emoji} {pair_short} - Condiciones {scenario_label}"
-            body = f"Contexto {bias_label} con preferencia {direction_label}."
+                title = f"{emoji} {pair_short} - Condiciones {scenario_label}"
+                body = f"Contexto {bias_label} con preferencia {direction_label}."
 
-            # Add timing info if available
-            timing = current_analysis.get("timing", {})
-            if timing.get("has_confirmation"):
-                body += " Confirmacion en 15m."
+                # Add timing info if available
+                timing = current_analysis.get("timing", {})
+                if timing.get("has_confirmation"):
+                    body += " Confirmacion en 15m."
 
-            for token, user_id in subscribed_tokens:
-                _send_alert_notification(
-                    token, title, body, AlertType.FAVORABLE_CONDITIONS,
-                    data={
-                        "pair": pair,
-                        "timeframe": timeframe,
-                        "scenario": current_scenario,
-                        "direction": direction,
-                        "bias": current_bias,
-                    },
-                    db=db, user_id=user_id, symbol=pair
-                )
+                for token, user_id in subscribed_tokens:
+                    _send_alert_notification(
+                        token, title, body, AlertType.FAVORABLE_CONDITIONS,
+                        data={
+                            "pair": pair,
+                            "timeframe": timeframe,
+                            "scenario": current_scenario,
+                            "direction": direction,
+                            "bias": current_bias,
+                        },
+                        db=db, user_id=user_id, symbol=pair
+                    )
 
-            _set_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key)
-            alerts_triggered.append({
-                "type": AlertType.FAVORABLE_CONDITIONS.value,
-                "pair": pair, "timeframe": timeframe,
-                "scenario": current_scenario,
-                "direction": direction,
-            })
+                _set_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key)
+                alerts_triggered.append({
+                    "type": AlertType.FAVORABLE_CONDITIONS.value,
+                    "pair": pair, "timeframe": timeframe,
+                    "scenario": current_scenario,
+                    "direction": direction,
+                })
 
     # Update cache
     _market_state_cache[cache_key] = {
