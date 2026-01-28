@@ -1749,9 +1749,99 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
 
         analysis["observations"] = obs
 
+        # ========== 7. SUGGESTION + RISK ASSESSMENT ==========
+        # Generate contextual suggestion based on indicators and position
+        ltf_15m = timeframes_data.get("15m", {})
+        ltf_rsi = ltf_15m.get("rsi") or ltf.get("rsi")
+        ltf_macd = ltf_15m.get("macd_trend") or ltf.get("macd_trend")
+        ltf_div = ltf_15m.get("divergence") or ltf.get("divergence")
+        ltf_vol = ltf_15m.get("volume_above_average") or ltf.get("volume_above_average")
+
+        suggestion = None
+        risk_level = "low"
+
+        # Priority 1: RSI extremes
+        if ltf_rsi is not None:
+            if is_long and ltf_rsi > 75:
+                suggestion = f"RSI en {ltf_rsi:.0f} (sobrecompra) - considerar tomar ganancias parciales"
+                risk_level = "high"
+            elif not is_long and ltf_rsi < 25:
+                suggestion = f"RSI en {ltf_rsi:.0f} (sobreventa) - considerar tomar ganancias parciales"
+                risk_level = "high"
+            elif is_long and ltf_rsi > 70:
+                suggestion = f"RSI en {ltf_rsi:.0f} - aproximandose a sobrecompra"
+                risk_level = "medium"
+            elif not is_long and ltf_rsi < 30:
+                suggestion = f"RSI en {ltf_rsi:.0f} - aproximandose a sobreventa"
+                risk_level = "medium"
+
+        # Priority 2: MACD against position
+        if suggestion is None and ltf_macd:
+            if is_long and ltf_macd == "bearish":
+                suggestion = "MACD bajista - momentum contra posicion LONG"
+                risk_level = "high"
+            elif not is_long and ltf_macd == "bullish":
+                suggestion = "MACD alcista - momentum contra posicion SHORT"
+                risk_level = "high"
+
+        # Priority 3: Divergence against position
+        if suggestion is None and ltf_div:
+            if is_long and ltf_div == "bearish":
+                suggestion = "Divergencia bajista detectada - posible reversion"
+                risk_level = "high"
+            elif not is_long and ltf_div == "bullish":
+                suggestion = "Divergencia alcista detectada - posible reversion"
+                risk_level = "high"
+
+        # Priority 4: Price vs EMA200 conflict
+        if suggestion is None and htf_ema is not None:
+            if is_long and not htf_ema:
+                suggestion = "Precio bajo EMA200 - estructura contra posicion LONG"
+                risk_level = "medium"
+            elif not is_long and htf_ema:
+                suggestion = "Precio sobre EMA200 - estructura contra posicion SHORT"
+                risk_level = "medium"
+
+        # Priority 5: Strong trend in favor
+        if suggestion is None:
+            if ltf_vol and ltf_macd:
+                if is_long and ltf_macd == "bullish":
+                    suggestion = "Volumen alto + momentum alcista - tendencia fuerte a favor"
+                    risk_level = "low"
+                elif not is_long and ltf_macd == "bearish":
+                    suggestion = "Volumen alto + momentum bajista - tendencia fuerte a favor"
+                    risk_level = "low"
+
+        # Default: no alerts
+        if suggestion is None:
+            if analysis["coherence"] == "a_favor":
+                suggestion = "Sin senales de alerta - posicion alineada con contexto"
+                risk_level = "low"
+            elif analysis["coherence"] == "contra":
+                suggestion = "Posicion contra contexto HTF - vigilar niveles de invalidacion"
+                risk_level = "medium"
+            else:
+                suggestion = "Sin senales de alerta - mantener posicion"
+                risk_level = "low"
+
+        # Market sentiment from 15m/1h
+        if ltf_macd == "bullish" and ltf_rsi and ltf_rsi > 50:
+            market_sentiment = "bullish"
+        elif ltf_macd == "bearish" and ltf_rsi and ltf_rsi < 50:
+            market_sentiment = "bearish"
+        else:
+            market_sentiment = "neutral"
+
+        analysis["suggestion"] = suggestion
+        analysis["risk_level"] = risk_level
+        analysis["market_sentiment"] = market_sentiment
+
     except Exception as e:
         logger.error(f"Error computing position analysis for {symbol}: {e}")
         analysis["observations"] = ["Error al calcular analisis"]
+        analysis["suggestion"] = "Error al calcular sugerencia"
+        analysis["risk_level"] = "medium"
+        analysis["market_sentiment"] = "neutral"
 
     return timeframes_data, analysis
 

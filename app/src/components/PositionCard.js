@@ -26,6 +26,18 @@ const BIAS_STYLES = {
   neutral: { color: '#888' },
 };
 
+const RISK_COLORS = {
+  low: '#00d4aa',
+  medium: '#ffd93d',
+  high: '#ff4757',
+};
+
+const SENTIMENT_STYLES = {
+  bullish: { label: 'Alcista', color: '#00d4aa', icon: '\u2191' },
+  bearish: { label: 'Bajista', color: '#ff4757', icon: '\u2193' },
+  neutral: { label: 'Neutral', color: '#888', icon: '\u2022' },
+};
+
 const TIMEFRAMES = ['15m', '1h', '4h'];
 
 const cleanSymbol = (s) => s ? s.split(':')[0] : s;
@@ -195,6 +207,25 @@ const PositionCard = ({ position }) => {
           </View>
         </View>
       </View>
+
+      {/* 2.5 SUGERENCIA */}
+      {analysis.suggestion && (
+        <View style={[styles.suggestionBox, { borderLeftColor: RISK_COLORS[analysis.risk_level] || '#888' }]}>
+          <View style={styles.suggestionHeader}>
+            <Text style={styles.suggestionLabel}>SUGERENCIA</Text>
+            {analysis.market_sentiment && (
+              <View style={[styles.sentimentBadge, { backgroundColor: (SENTIMENT_STYLES[analysis.market_sentiment]?.color || '#888') + '20' }]}>
+                <Text style={[styles.sentimentText, { color: SENTIMENT_STYLES[analysis.market_sentiment]?.color || '#888' }]}>
+                  {SENTIMENT_STYLES[analysis.market_sentiment]?.icon} {SENTIMENT_STYLES[analysis.market_sentiment]?.label}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.suggestionText, { color: RISK_COLORS[analysis.risk_level] || '#ccc' }]}>
+            {analysis.suggestion}
+          </Text>
+        </View>
+      )}
 
       {/* 3. COHERENCIA TRADE vs CONTEXTO */}
       <View style={[styles.coherenceBox, { borderLeftColor: coherenceStyle.color }]}>
@@ -406,6 +437,14 @@ const styles = StyleSheet.create({
   // Coherence box
   coherenceBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
   coherenceMainText: { fontSize: 13, fontWeight: '600' },
+
+  // Suggestion box
+  suggestionBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
+  suggestionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  suggestionLabel: { color: '#666', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
+  suggestionText: { fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  sentimentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  sentimentText: { fontSize: 11, fontWeight: '600' },
 
   // Observations
   observationRow: { flexDirection: 'row', marginBottom: 4, alignItems: 'flex-start' },
