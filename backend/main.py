@@ -2205,7 +2205,7 @@ async def get_signals(
 
 
 @app.post("/api/register")
-async def register_token(data: TokenRegistration):
+async def register_token(data: TokenRegistration, user: UserAccount = Depends(get_optional_user)):
     pairs = data.pairs or DEFAULT_PAIRS
     timeframe = data.timeframe or DEFAULT_TIMEFRAME
     trading_mode = data.trading_mode or "balanced"
@@ -2219,6 +2219,21 @@ async def register_token(data: TokenRegistration):
     success = notification_manager.register_token(data.token, pairs, timeframe, trading_mode)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid push token")
+
+    # Also save push_token to user account for passive alerts
+    if user and data.token and data.token.startswith("ExponentPushToken"):
+        db = get_db()
+        try:
+            account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+            if account:
+                account.push_token = data.token
+                db.commit()
+                logger.info(f"[PUSH] Saved push token for user {user.id}")
+        except Exception as e:
+            logger.error(f"[PUSH] Error saving push token: {e}")
+        finally:
+            db.close()
+
     return {"status": "registered", "pairs": pairs, "timeframe": timeframe, "trading_mode": trading_mode}
 
 
