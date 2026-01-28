@@ -16,7 +16,7 @@ import {
   addNotificationResponseListener,
   saveNotificationToHistory,
 } from './src/services/notifications';
-import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated } from './src/services/api';
+import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated, setOnAuthFailed } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
 
@@ -49,6 +49,12 @@ export default function App() {
 
   useEffect(() => {
     isAuthenticated().then(setAuthed);
+
+    // Handle when token refresh fails - redirect to login
+    setOnAuthFailed(() => {
+      console.log('Auth failed, redirecting to login');
+      setAuthed(false);
+    });
   }, []);
 
   useEffect(() => {

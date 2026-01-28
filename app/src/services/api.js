@@ -83,10 +83,21 @@ export async function isAuthenticated() {
   return !!token;
 }
 
+// Flag to prevent multiple simultaneous refresh attempts
+let isRefreshing = false;
+let refreshPromise = null;
+
+// Callback for when auth fails completely (token can't be refreshed)
+let onAuthFailedCallback = null;
+
+export function setOnAuthFailed(callback) {
+  onAuthFailedCallback = callback;
+}
+
 /**
- * Make API request
+ * Make API request with automatic token refresh on 401
  */
-async function apiRequest(endpoint, options = {}) {
+async function apiRequest(endpoint, options = {}, isRetry = false) {
   const baseUrl = await getApiUrl();
   const url = `${baseUrl}${endpoint}`;
 
@@ -111,6 +122,37 @@ async function apiRequest(endpoint, options = {}) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+
+      // Handle 401 - try to refresh token (but not for auth endpoints)
+      if (response.status === 401 && !isRetry && !endpoint.includes('/api/auth/')) {
+        console.log('Token expired, attempting refresh...');
+
+        try {
+          // Prevent multiple simultaneous refresh attempts
+          if (!isRefreshing) {
+            isRefreshing = true;
+            refreshPromise = tryRefreshToken();
+          }
+
+          await refreshPromise;
+          isRefreshing = false;
+
+          // Retry the original request with new token
+          return apiRequest(endpoint, options, true);
+        } catch (refreshError) {
+          isRefreshing = false;
+          console.log('Token refresh failed, auth required');
+          await clearTokens();
+          if (onAuthFailedCallback) {
+            onAuthFailedCallback();
+          }
+          const err = new Error('Session expired. Please login again.');
+          err.status = 401;
+          err.authFailed = true;
+          throw err;
+        }
+      }
+
       const err = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       err.status = response.status;
       throw err;
@@ -123,6 +165,27 @@ async function apiRequest(endpoint, options = {}) {
     console.error(`API Error (${url}):`, error.message);
     throw error;
   }
+}
+
+async function tryRefreshToken() {
+  const rt = await getRefreshTokenStored();
+  if (!rt) throw new Error('No refresh token');
+
+  const baseUrl = await getApiUrl();
+  const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: rt }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Refresh failed');
+  }
+
+  const data = await response.json();
+  await setTokens(data.access_token, data.refresh_token);
+  console.log('Token refreshed successfully');
+  return data;
 }
 
 /**
