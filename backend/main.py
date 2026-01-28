@@ -77,17 +77,13 @@ class UserSettings(BaseModel):
     token: str
 
 class SubscriptionAdd(BaseModel):
-    token: str
     pair: str
-    timeframe: str
+    # timeframe and trading_mode kept for compatibility but not used
+    timeframe: Optional[str] = "4h"
     trading_mode: Optional[str] = "balanced"
 
 class SubscriptionRemove(BaseModel):
-    token: str
     subscription_id: int
-
-class SubscriptionList(BaseModel):
-    token: str
 
 class NotificationHistoryReq(BaseModel):
     token: str
@@ -672,33 +668,36 @@ async def update_account_settings(data: AccountSettingsUpdate, user: UserAccount
 # Alert Helpers
 # ============================================================
 
-def _get_subscribed_tokens_with_db(pair: str, timeframe: str):
-    """Get push tokens and user IDs for all users subscribed to a pair/timeframe.
+def _get_subscribed_tokens_with_db(pair: str, timeframe: str = None):
+    """Get push tokens and account IDs for all users subscribed to a pair.
 
-    Returns: (db_session, list of (push_token, user_id) tuples)
+    Returns: (db_session, list of (push_token, account_id) tuples)
+
+    Note: timeframe is kept for compatibility but not used (unified 4H+15m system).
     """
     if not notification_manager.use_db:
         return None, []
     try:
         db = get_db()
-        from database import User
+        from database import UserAccount
+        # Get subscriptions by pair (timeframe no longer used)
         subs = db.query(Subscription).filter(
             Subscription.pair == pair,
-            Subscription.timeframe == timeframe,
             Subscription.enabled == True
         ).all()
         tokens = []
         for sub in subs:
-            user = db.query(User).filter(User.id == sub.user_id).first()
-            if user and user.enabled and user.push_token and user.push_token.startswith("ExponentPushToken"):
-                # Find the UserAccount that links to this legacy User
-                if user.account_id:
-                    tokens.append((user.push_token, user.account_id))
+            # Get push_token directly from UserAccount
+            account = db.query(UserAccount).filter(
+                UserAccount.id == sub.account_id,
+                UserAccount.enabled == True
+            ).first()
+            if account and account.push_token and account.push_token.startswith("ExponentPushToken"):
+                tokens.append((account.push_token, account.id))
         return db, tokens
     except Exception as e:
         logger.error(f"[ALERTS] Error getting subscribed tokens: {e}")
         return None, []
-        return []
 
 
 # ============================================================
@@ -2168,15 +2167,17 @@ async def get_signals(
     if token and notification_manager.use_db:
         try:
             db = get_db()
+            # Legacy: try to find user by token, then get their linked account subscriptions
             user = DBHelper.get_user_by_token(db, token)
             if user:
                 signals_cleared_at = user.signals_cleared_at
-                subs = db.query(Subscription).filter(
-                    Subscription.user_id == user.id, Subscription.enabled == True
-                ).all()
-                for sub in subs:
-                    user_pairs.add(sub.pair)
-                    user_timeframes.add(sub.timeframe)
+                # If user has linked account, get subscriptions from there
+                if user.account_id:
+                    subs = db.query(Subscription).filter(
+                        Subscription.account_id == user.account_id, Subscription.enabled == True
+                    ).all()
+                    for sub in subs:
+                        user_pairs.add(sub.pair)
             db.close()
         except Exception as e:
             print(f"Error getting user subscriptions for signals: {e}")
@@ -2305,40 +2306,33 @@ async def get_alert_states():
 
 
 @app.post("/api/subscriptions/add")
-async def add_subscription(data: SubscriptionAdd):
+async def add_subscription(
+    data: SubscriptionAdd,
+    user: UserAccount = Depends(get_current_user)
+):
+    """Add a subscription for the authenticated user."""
     if data.pair not in AVAILABLE_PAIRS:
         raise HTTPException(status_code=400, detail=f"Invalid pair: {data.pair}")
-    if data.timeframe not in AVAILABLE_TIMEFRAMES:
-        raise HTTPException(status_code=400, detail=f"Invalid timeframe: {data.timeframe}")
-    if data.trading_mode not in TRADING_MODES:
-        raise HTTPException(status_code=400, detail=f"Invalid trading mode: {data.trading_mode}")
     try:
         db = get_db()
-        user = DBHelper.get_user_by_token(db, data.token)
-        if not user:
-            db.close()
-            raise HTTPException(status_code=404, detail="User not found. Register first.")
-        mode = TradingMode(data.trading_mode)
-        sub = DBHelper.add_subscription(db, user.id, data.pair, data.timeframe, mode)
+        sub = DBHelper.add_subscription(db, user.id, data.pair)
         db.close()
         return {
             "status": "added",
-            "subscription": {"id": sub.id, "pair": sub.pair, "timeframe": sub.timeframe, "trading_mode": sub.trading_mode.value},
+            "subscription": {"id": sub.id, "pair": sub.pair},
         }
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/subscriptions/remove")
-async def remove_subscription(data: SubscriptionRemove):
+async def remove_subscription(
+    data: SubscriptionRemove,
+    user: UserAccount = Depends(get_current_user)
+):
+    """Remove a subscription for the authenticated user."""
     try:
         db = get_db()
-        user = DBHelper.get_user_by_token(db, data.token)
-        if not user:
-            db.close()
-            raise HTTPException(status_code=404, detail="User not found")
         success = DBHelper.remove_subscription(db, data.subscription_id, user.id)
         db.close()
         if not success:
@@ -2350,24 +2344,19 @@ async def remove_subscription(data: SubscriptionRemove):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/subscriptions/list")
-async def list_subscriptions(data: SubscriptionList):
+@app.get("/api/subscriptions")
+async def list_subscriptions(user: UserAccount = Depends(get_current_user)):
+    """Get all subscriptions for the authenticated user."""
     try:
         db = get_db()
-        user = DBHelper.get_user_by_token(db, data.token)
-        if not user:
-            db.close()
-            raise HTTPException(status_code=404, detail="User not found. Register first.")
         subs = DBHelper.get_user_subscriptions(db, user.id)
         db.close()
         return {
             "subscriptions": [
-                {"id": sub.id, "pair": sub.pair, "timeframe": sub.timeframe, "trading_mode": sub.trading_mode.value}
+                {"id": sub.id, "pair": sub.pair}
                 for sub in subs
             ]
         }
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

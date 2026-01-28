@@ -44,8 +44,7 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
 
   const handleAdd = () => {
     if (selectedPair) {
-      // Use defaults: "4h" timeframe and "balanced" mode for backend compatibility
-      onAdd(selectedPair, '4h', 'balanced');
+      onAdd(selectedPair);
       onClose();
     }
   };

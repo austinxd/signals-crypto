@@ -20,7 +20,6 @@ import {
   getUnreadCount,
   markAllNotificationsRead,
 } from '../services/api';
-import { getStoredPushToken } from '../services/notifications';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
@@ -192,7 +191,6 @@ const HomeScreen = () => {
   const [marketData, setMarketData] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
-  const [pushToken, setPushToken] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedPair, setSelectedPair] = useState(null);
@@ -215,31 +213,20 @@ const HomeScreen = () => {
     });
   };
 
-  // Get push token on mount
-  useEffect(() => {
-    const loadToken = async () => {
-      const token = await getStoredPushToken();
-      setPushToken(token);
-    };
-    loadToken();
-  }, []);
-
   const fetchData = useCallback(async (forceRefresh = false) => {
     try {
       setError(null);
 
       if (activeTab === 'market') {
-        // Load subscriptions from server
+        // Load subscriptions from server (authenticated via JWT)
         let subs = [];
-        if (pushToken) {
-          try {
-            const result = await getSubscriptions(pushToken);
-            subs = result.subscriptions || [];
-            setSubscriptions(subs);
-          } catch (err) {
-            console.log('Could not fetch subscriptions, using empty list');
-            setSubscriptions([]);
-          }
+        try {
+          const result = await getSubscriptions();
+          subs = result.subscriptions || [];
+          setSubscriptions(subs);
+        } catch (err) {
+          console.log('Could not fetch subscriptions, using empty list');
+          setSubscriptions([]);
         }
 
         // Get unique pairs from subscriptions (ignore timeframe - we now show unified analysis)
@@ -275,7 +262,7 @@ const HomeScreen = () => {
       setError('Error conectando al servidor');
       console.error('Fetch error:', err);
     }
-  }, [activeTab, pushToken]);
+  }, [activeTab]);
 
   useEffect(() => {
     fetchData();
@@ -307,14 +294,9 @@ const HomeScreen = () => {
     setRefreshing(false);
   }, [fetchData]);
 
-  const handleAddSubscription = async (pair, timeframe, tradingMode) => {
-    if (!pushToken) {
-      Alert.alert('Error', 'No se ha registrado el token de notificaciones');
-      return;
-    }
-
+  const handleAddSubscription = async (pair) => {
     try {
-      await addSubscription(pushToken, pair, timeframe, tradingMode);
+      await addSubscription(pair);
       fetchData(true);
     } catch (err) {
       console.error('Error adding subscription:', err);
@@ -323,8 +305,6 @@ const HomeScreen = () => {
   };
 
   const handleRemoveSubscription = async (subscriptionId) => {
-    if (!pushToken) return;
-
     Alert.alert(
       'Eliminar suscripción',
       '¿Estás seguro de que quieres eliminar esta suscripción?',
@@ -335,7 +315,7 @@ const HomeScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeSubscription(pushToken, subscriptionId);
+              await removeSubscription(subscriptionId);
               fetchData(true);
             } catch (err) {
               console.error('Error removing subscription:', err);

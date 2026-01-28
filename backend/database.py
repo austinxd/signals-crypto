@@ -277,13 +277,15 @@ class UserNotification(Base):
 # Existing models (unchanged)
 # ============================================================
 class Subscription(Base):
-    """Individual subscription for a pair/timeframe/trading_mode combination."""
+    """Individual subscription for a pair - linked to UserAccount (email)."""
     __tablename__ = "subscriptions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
     pair = Column(String(20), nullable=False)
-    timeframe = Column(String(10), nullable=False)
+    # timeframe kept for compatibility but not used (unified 4H+15m)
+    timeframe = Column(String(10), default="4h")
+    # trading_mode kept for compatibility but not used
     trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -365,6 +367,26 @@ def _run_migrations():
                     print(f"Migration: added {table}.{column}")
                 except Exception as e:
                     print(f"Migration warning ({table}.{column}): {e}")
+
+        # Migration: rename subscriptions.user_id to account_id
+        try:
+            # Check if old column exists
+            conn.execute(text("SELECT user_id FROM subscriptions LIMIT 1"))
+            # Old column exists, rename it
+            try:
+                conn.execute(text("ALTER TABLE subscriptions CHANGE COLUMN user_id account_id INT NOT NULL"))
+                conn.commit()
+                print("Migration: renamed subscriptions.user_id to account_id")
+            except Exception as e:
+                print(f"Migration warning (subscriptions.user_id->account_id): {e}")
+        except Exception:
+            # user_id doesn't exist, check if account_id already exists
+            try:
+                conn.execute(text("SELECT account_id FROM subscriptions LIMIT 1"))
+                # account_id exists, migration already done
+            except Exception:
+                # Neither exists, table might be new - will be created with correct schema
+                pass
 
 
 def init_db():
@@ -582,31 +604,29 @@ class DBHelper:
         """Get all users."""
         return db.query(User).all()
 
-    # ---- Subscription methods ----
+    # ---- Subscription methods (by account_id) ----
     @staticmethod
     def add_subscription(
         db: Session,
-        user_id: int,
+        account_id: int,
         pair: str,
-        timeframe: str,
+        timeframe: str = "4h",
         trading_mode: TradingMode = TradingMode.BALANCED
     ) -> Subscription:
-        """Add a new subscription for a user."""
+        """Add a new subscription for a user account."""
         existing = db.query(Subscription).filter(
-            Subscription.user_id == user_id,
-            Subscription.pair == pair,
-            Subscription.timeframe == timeframe
+            Subscription.account_id == account_id,
+            Subscription.pair == pair
         ).first()
 
         if existing:
-            existing.trading_mode = trading_mode
             existing.enabled = True
             db.commit()
             db.refresh(existing)
             return existing
 
         sub = Subscription(
-            user_id=user_id,
+            account_id=account_id,
             pair=pair,
             timeframe=timeframe,
             trading_mode=trading_mode
@@ -617,11 +637,11 @@ class DBHelper:
         return sub
 
     @staticmethod
-    def remove_subscription(db: Session, subscription_id: int, user_id: int) -> bool:
-        """Remove a subscription."""
+    def remove_subscription(db: Session, subscription_id: int, account_id: int) -> bool:
+        """Remove a subscription by account."""
         sub = db.query(Subscription).filter(
             Subscription.id == subscription_id,
-            Subscription.user_id == user_id
+            Subscription.account_id == account_id
         ).first()
         if sub:
             db.delete(sub)
@@ -630,40 +650,34 @@ class DBHelper:
         return False
 
     @staticmethod
-    def get_user_subscriptions(db: Session, user_id: int) -> list:
-        """Get all subscriptions for a user."""
+    def get_user_subscriptions(db: Session, account_id: int) -> list:
+        """Get all subscriptions for a user account."""
         return db.query(Subscription).filter(
-            Subscription.user_id == user_id,
+            Subscription.account_id == account_id,
             Subscription.enabled == True
         ).all()
 
     @staticmethod
-    def get_subscriptions_for_signal(
-        db: Session,
-        pair: str,
-        timeframe: str,
-        score: float
-    ) -> list:
-        """Get users who should receive this signal based on their subscriptions."""
+    def get_subscriptions_for_pair(db: Session, pair: str) -> list:
+        """Get all accounts subscribed to a pair with their push tokens.
+
+        Returns list of dicts: {account_id, push_token, account}
+        """
         subs = db.query(Subscription).filter(
             Subscription.pair == pair,
-            Subscription.timeframe == timeframe,
             Subscription.enabled == True
         ).all()
 
         result = []
         for sub in subs:
-            if sub.trading_mode == TradingMode.CONSERVATIVE and score < 2.5:
-                continue
-            elif sub.trading_mode == TradingMode.BALANCED and score < 1.5:
-                continue
-
-            user = db.query(User).filter(User.id == sub.user_id).first()
-            if user and user.enabled:
+            account = db.query(UserAccount).filter(
+                UserAccount.id == sub.account_id
+            ).first()
+            if account and account.enabled and account.push_token:
                 result.append({
-                    "user_id": user.id,
-                    "push_token": user.push_token,
-                    "subscription": sub
+                    "account_id": account.id,
+                    "push_token": account.push_token,
+                    "account": account
                 })
 
         return result

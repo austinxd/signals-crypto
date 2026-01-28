@@ -332,41 +332,30 @@ export async function setUserTradingMode(mode) {
 }
 
 /**
- * Add a new subscription
+ * Add a new subscription (JWT authenticated)
  */
-export async function addSubscription(token, pair, timeframe, tradingMode) {
+export async function addSubscription(pair) {
   return apiRequest('/api/subscriptions/add', {
     method: 'POST',
-    body: JSON.stringify({
-      token,
-      pair,
-      timeframe,
-      trading_mode: tradingMode,
-    }),
+    body: JSON.stringify({ pair }),
   });
 }
 
 /**
- * Remove a subscription
+ * Remove a subscription (JWT authenticated)
  */
-export async function removeSubscription(token, subscriptionId) {
+export async function removeSubscription(subscriptionId) {
   return apiRequest('/api/subscriptions/remove', {
     method: 'POST',
-    body: JSON.stringify({
-      token,
-      subscription_id: subscriptionId,
-    }),
+    body: JSON.stringify({ subscription_id: subscriptionId }),
   });
 }
 
 /**
- * Get all subscriptions for the user
+ * Get all subscriptions for the user (JWT authenticated)
  */
-export async function getSubscriptions(token) {
-  return apiRequest('/api/subscriptions/list', {
-    method: 'POST',
-    body: JSON.stringify({ token }),
-  });
+export async function getSubscriptions() {
+  return apiRequest('/api/subscriptions');
 }
 
 /**
