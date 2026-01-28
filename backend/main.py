@@ -226,16 +226,8 @@ def monitor_markets():
                         except Exception as e:
                             logger.error(f"[ALERTS] Error checking context alerts: {e}")
 
-                    signal = detect_signal(pair, indicators, funding_data)
-                    if signal:
-                        signal.timeframe = timeframe
-                        result = notification_manager.send_signal_to_subscribers(signal, pair, timeframe)
-                        if result.get("status") not in ["skipped", "no_subscribers"]:
-                            print(f"Signal: {signal.signal_type.value} {pair} ({timeframe}) - {signal.quality.value}")
-                    else:
-                        result = notification_manager.notify_signal_disappeared(pair, timeframe)
-                        if result.get("status") == "notified":
-                            print(f"Signal disappeared: {pair} ({timeframe})")
+                    # Signal detection disabled - now using passive alerts only
+                    # The app no longer pushes trading signals, only context/state changes
 
                 except Exception as e:
                     print(f"Error monitoring {pair} ({timeframe}): {e}")
