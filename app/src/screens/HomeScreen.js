@@ -12,24 +12,145 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import {
-  getMarketData,
   getUnifiedMarketData,
-  getSignals,
   getSubscriptions,
   addSubscription,
   removeSubscription,
-  getPairData,
-  getNotificationHistoryFromServer,
-  clearSignals,
-  clearNotifications,
+  getNotifications,
   getUnreadCount,
+  markAllNotificationsRead,
 } from '../services/api';
 import { getStoredPushToken } from '../services/notifications';
-import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
 import NotificationsModal from '../components/NotificationsModal';
+
+// Alert type styles for AlertCard
+const ALERT_STYLES = {
+  htf_bias_changed: { icon: '📊', color: '#ffd93d', label: 'Sesgo HTF' },
+  scenario_changed: { icon: '🎯', color: '#00d4aa', label: 'Escenario' },
+  volatility_changed: { icon: '📈', color: '#ff9f43', label: 'Volatilidad' },
+  price_at_key_zone: { icon: '🔑', color: '#00d4aa', label: 'Zona Clave' },
+  coherence_changed: { icon: '⚠️', color: '#ffd93d', label: 'Coherencia' },
+  thesis_invalidated: { icon: '🚨', color: '#ff4757', label: 'Tesis Invalidada' },
+  htf_momentum_changed: { icon: '💫', color: '#ff9f43', label: 'Momentum HTF' },
+  multiple_against_context: { icon: '⚡', color: '#ff4757', label: 'Riesgo' },
+  high_risk_exposure: { icon: '🔥', color: '#ff4757', label: 'Alto Riesgo' },
+};
+
+const formatTimeAgo = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffMins < 1) return 'Ahora';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+};
+
+// AlertCard component for displaying notifications
+const AlertCard = ({ notification }) => {
+  const style = ALERT_STYLES[notification.type] || { icon: '📣', color: '#888', label: 'Alerta' };
+  const symbolShort = notification.symbol?.replace('/USDT', '').replace(':USDT', '');
+
+  return (
+    <View style={[alertStyles.card, !notification.is_read && alertStyles.cardUnread]}>
+      <View style={[alertStyles.iconContainer, { backgroundColor: style.color + '20' }]}>
+        <Text style={alertStyles.icon}>{style.icon}</Text>
+      </View>
+      <View style={alertStyles.content}>
+        <View style={alertStyles.header}>
+          <Text style={alertStyles.title} numberOfLines={1}>{notification.title}</Text>
+          <Text style={alertStyles.time}>{formatTimeAgo(notification.created_at)}</Text>
+        </View>
+        <Text style={alertStyles.message} numberOfLines={2}>{notification.message}</Text>
+        {symbolShort && (
+          <View style={[alertStyles.symbolBadge, { borderColor: style.color }]}>
+            <Text style={[alertStyles.symbolText, { color: style.color }]}>{symbolShort}</Text>
+          </View>
+        )}
+      </View>
+      {!notification.is_read && <View style={[alertStyles.unreadDot, { backgroundColor: style.color }]} />}
+    </View>
+  );
+};
+
+const alertStyles = {
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  cardUnread: {
+    backgroundColor: '#1e1e35',
+    borderLeftWidth: 3,
+    borderLeftColor: '#00d4aa',
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  icon: {
+    fontSize: 18,
+  },
+  content: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  time: {
+    color: '#666',
+    fontSize: 11,
+  },
+  message: {
+    color: '#999',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  symbolBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 8,
+  },
+  symbolText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 8,
+    marginTop: 6,
+  },
+};
 
 // Signal bars component (like iOS WiFi indicator)
 const SignalBars = ({ level, color = '#fff', size = 12 }) => {
@@ -108,8 +229,6 @@ const formatPrice = (p) => {
 const HomeScreen = () => {
   const [activeTab, setActiveTab] = useState('market');
   const [marketData, setMarketData] = useState({});
-  const [signals, setSignals] = useState([]);  // For signals list (filtered by user)
-  const [badgeSignals, setBadgeSignals] = useState([]);  // For badges (current market state)
   const [notifications, setNotifications] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [pushToken, setPushToken] = useState(null);
@@ -180,28 +299,16 @@ const HomeScreen = () => {
           setMarketData({});
         }
         setLastUpdate(new Date());
-
-        // Load signals for badges (current market state, no user filter)
-        const badgeData = await getSignals(50, null, null);
-        setBadgeSignals(badgeData.signals || []);
-      } else if (activeTab === 'signals') {
-        // Get signals filtered by user's subscriptions and cleared date
-        const data = await getSignals(20, null, pushToken);
-        setSignals(data.signals || []);
-        // Also update badge signals
-        const badgeData = await getSignals(50, null, null);
-        setBadgeSignals(badgeData.signals || []);
-      } else {
-        // Get notification history from server
-        if (pushToken) {
-          const data = await getNotificationHistoryFromServer(pushToken);
+      } else if (activeTab === 'alerts') {
+        // Get alerts from the new notifications system
+        try {
+          const data = await getNotifications(100);
           setNotifications(data.notifications || []);
-        } else {
+          setUnreadNotifications(data.unread_count || 0);
+        } catch (err) {
+          console.log('Could not fetch alerts:', err);
           setNotifications([]);
         }
-        // Also update badge signals
-        const badgeData = await getSignals(50, null, null);
-        setBadgeSignals(badgeData.signals || []);
       }
     } catch (err) {
       setError('Error conectando al servidor');
@@ -435,60 +542,13 @@ const HomeScreen = () => {
       );
     }
 
-    if (activeTab === 'signals') {
-      if (signals.length === 0) {
-        return (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📊</Text>
-            <Text style={styles.emptyText}>No hay señales recientes</Text>
-            <Text style={styles.emptyHint}>Las señales aparecerán cuando se detecten oportunidades</Text>
-          </View>
-        );
-      }
-      return (
-        <>
-          <TouchableOpacity
-            style={styles.clearButtonTop}
-            onPress={() => {
-              Alert.alert(
-                'Limpiar Señales',
-                '¿Estás seguro de que quieres limpiar todas las señales?',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'Limpiar',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        if (pushToken) {
-                          await clearSignals(pushToken);
-                        }
-                        setSignals([]);
-                      } catch (e) {
-                        console.error('Error clearing signals:', e);
-                        setSignals([]); // Clear locally even if server fails
-                      }
-                    }
-                  },
-                ]
-              );
-            }}
-          >
-            <Text style={styles.clearButtonText}>🗑️ Limpiar señales</Text>
-          </TouchableOpacity>
-          {signals.map((signal, index) => (
-            <SignalCard key={`${signal.timestamp}-${index}`} signal={signal} />
-          ))}
-        </>
-      );
-    }
-
+    // Alerts tab (activeTab === 'alerts')
     if (notifications.length === 0) {
       return (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🔔</Text>
-          <Text style={styles.emptyText}>No hay notificaciones</Text>
-          <Text style={styles.emptyHint}>Las notificaciones push aparecerán aquí</Text>
+          <Text style={styles.emptyText}>Sin alertas</Text>
+          <Text style={styles.emptyHint}>Las alertas de cambios en contexto, posiciones y riesgo apareceran aqui</Text>
         </View>
       );
     }
@@ -497,48 +557,21 @@ const HomeScreen = () => {
       <>
         <TouchableOpacity
           style={styles.clearButtonTop}
-          onPress={() => {
-            Alert.alert(
-              'Limpiar Historial',
-              '¿Estás seguro de que quieres limpiar todo el historial de notificaciones?',
-              [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                  text: 'Limpiar',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      if (pushToken) {
-                        await clearNotifications(pushToken);
-                      }
-                      setNotifications([]);
-                    } catch (e) {
-                      console.error('Error clearing notifications:', e);
-                      setNotifications([]); // Clear locally even if server fails
-                    }
-                  }
-                },
-              ]
-            );
+          onPress={async () => {
+            try {
+              await markAllNotificationsRead();
+              setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+              setUnreadNotifications(0);
+            } catch (e) {
+              console.error('Error marking all read:', e);
+            }
           }}
         >
-          <Text style={styles.clearButtonText}>🗑️ Limpiar historial</Text>
+          <Text style={styles.clearButtonText}>✓ Marcar todas como leidas</Text>
         </TouchableOpacity>
-        {notifications.map((notif) => {
-          // Transform notification to signal format for SignalCard
-          const signalData = {
-            pair: notif.pair,
-            side: notif.side,
-            timeframe: notif.timeframe,
-            quality: notif.quality,
-            score: notif.score,
-            entry: notif.entry_price,
-            takeProfit: notif.take_profit,
-            stopLoss: notif.stop_loss,
-            timestamp: notif.receivedAt,
-          };
-          return <SignalCard key={notif.id} signal={signalData} />;
-        })}
+        {notifications.map((notif) => (
+          <AlertCard key={notif.id} notification={notif} />
+        ))}
       </>
     );
   };
@@ -553,7 +586,7 @@ const HomeScreen = () => {
               <Text style={styles.logoIconText}>📈</Text>
             </View>
             <View>
-              <Text style={styles.title}>Señales Crypto</Text>
+              <Text style={styles.title}>Crypto Criterios</Text>
               <TouchableOpacity
                 style={styles.subtitleLink}
                 onPress={() => Linking.openURL('https://www.instagram.com/austin.app')}
@@ -596,8 +629,7 @@ const HomeScreen = () => {
       <View style={styles.tabs}>
         {[
           { key: 'market', label: 'Mercado', icon: '📊' },
-          { key: 'signals', label: 'Señales', icon: '🎯' },
-          { key: 'history', label: 'Historial', icon: '📜' },
+          { key: 'alerts', label: 'Alertas', icon: '🔔' },
         ].map((tab) => (
           <TouchableOpacity
             key={tab.key}
