@@ -18,6 +18,7 @@ const NOTIFICATION_STYLES = {
   scenario_changed: { icon: '🎯', color: '#00d4aa', label: 'Escenario' },
   volatility_changed: { icon: '📈', color: '#ff9f43', label: 'Volatilidad' },
   price_at_key_zone: { icon: '🔑', color: '#00d4aa', label: 'Zona Clave' },
+  favorable_conditions: { icon: '✨', color: '#00d4aa', label: 'Oportunidad' },
   // Position alerts
   coherence_changed: { icon: '⚠️', color: '#ffd93d', label: 'Coherencia' },
   thesis_invalidated: { icon: '🚨', color: '#ff4757', label: 'Tesis Invalidada' },
@@ -33,6 +34,8 @@ const NOTIFICATION_STYLES = {
   // Signal alerts
   new_signal: { icon: '🔔', color: '#00d4aa', label: 'Signal' },
   signal_improved: { icon: '⬆️', color: '#00d4aa', label: 'Signal' },
+  signal_long: { icon: '🟢', color: '#00d4aa', label: 'LONG' },
+  signal_short: { icon: '🔴', color: '#ff4757', label: 'SHORT' },
 };
 
 const formatTimeAgo = (dateString) => {
