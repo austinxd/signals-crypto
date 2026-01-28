@@ -11,31 +11,22 @@ const formatPrice = (p) => {
   return `$${p.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
-const ALERT_URGENCY = {
-  MACD_REVERSAL: { icon: '\u{1F6A8}', color: '#ff4757' },
-  RSI_DIVERGENCE: { icon: '\u{1F6A8}', color: '#ff4757' },
-  RSI_EXTREME: { icon: '\u26A0\uFE0F', color: '#ffd93d' },
-  TRAILING_BREAKEVEN: { icon: '\u2139\uFE0F', color: '#888' },
-  TRAILING_UPDATE: { icon: '\u2139\uFE0F', color: '#888' },
+const COHERENCE_STYLES = {
+  a_favor: { label: 'A favor', color: '#00d4aa', icon: '\u2713' },
+  contra: { label: 'Contra contexto', color: '#ff4757', icon: '\u26A0' },
+  neutral: { label: 'Neutral', color: '#888', icon: '\u2022' },
 };
 
-const RISK_COLORS = { low: '#00d4aa', medium: '#ffd93d', high: '#ff4757' };
-
-const SENTIMENT_LABELS = {
-  bullish: { text: 'Alcista', color: '#00d4aa' },
-  bearish: { text: 'Bajista', color: '#ff4757' },
-  neutral: { text: 'Neutral', color: '#888' },
+const BIAS_STYLES = {
+  alcista: { color: '#00d4aa' },
+  bajista: { color: '#ff4757' },
+  rango: { color: '#ffd93d' },
+  neutral: { color: '#888' },
 };
 
 const TIMEFRAMES = ['15m', '1h', '4h'];
 
-const FIB_LEVELS_DISPLAY = [
-  { key: '78.6', color: '#1e90ff' },
-  { key: '61.8', color: '#2ed573' },
-  { key: '50.0', color: '#ffa502' },
-  { key: '38.2', color: '#ffd93d' },
-  { key: '23.6', color: '#ff6b81' },
-];
+const cleanSymbol = (s) => s ? s.split(':')[0] : s;
 
 const RSIBar = ({ value }) => {
   if (value == null) return <Text style={styles.indicatorValue}>-</Text>;
@@ -55,137 +46,14 @@ const RSIBar = ({ value }) => {
   );
 };
 
-const SentimentDot = ({ sentiment }) => {
-  const info = SENTIMENT_LABELS[sentiment] || SENTIMENT_LABELS.neutral;
-  return <View style={[styles.tfDot, { backgroundColor: info.color }]} />;
-};
-
-const MultiTFSummary = ({ timeframes, side }) => {
-  if (!timeframes) return null;
-  const isShort = side === 'short' || side === 'SHORT';
-  return (
-    <View style={styles.tfSummary}>
-      {TIMEFRAMES.map((tf) => {
-        const data = timeframes[tf];
-        if (!data || !data.sentiment) return null;
-        const s = data.sentiment;
-        const info = SENTIMENT_LABELS[s] || SENTIMENT_LABELS.neutral;
-        const against = (s === 'bullish' && isShort) || (s === 'bearish' && !isShort);
-        const favor = (s === 'bullish' && !isShort) || (s === 'bearish' && isShort);
-        return (
-          <View key={tf} style={[styles.tfChip, { borderColor: info.color + '60', backgroundColor: info.color + '10' }]}>
-            <Text style={styles.tfChipLabel}>{tf}</Text>
-            <Text style={[styles.tfChipValue, { color: info.color }]}>{info.text}</Text>
-            {against && <Text style={styles.tfChipIcon}>{'\u26A0'}</Text>}
-            {favor && <Text style={styles.tfChipIcon}>{'\u2713'}</Text>}
-          </View>
-        );
-      })}
-    </View>
-  );
-};
-
-const FibonacciSection = ({ fib, currentPrice, entryPrice, side }) => {
-  if (!fib || !fib.levels) return null;
-  const levels = fib.levels;
-  const high = fib.swing_high;
-  const low = fib.swing_low;
-  const isShort = side === 'short' || side === 'SHORT';
-
-  return (
-    <View style={styles.fibSection}>
-      <View style={styles.fibSwingRow}>
-        <Text style={styles.fibSwingLabel}>Rango: {formatPrice(low)} - {formatPrice(high)}</Text>
-        <Text style={styles.fibSwingTrend}>{fib.is_uptrend ? 'Tendencia \u2191' : 'Tendencia \u2193'}</Text>
-      </View>
-      <View style={styles.fibLevels}>
-        {FIB_LEVELS_DISPLAY.map(({ key, color }) => {
-          const price = levels[key];
-          if (price == null) return null;
-          const isCurrent = currentPrice && Math.abs(currentPrice - price) / currentPrice < 0.005;
-          const isEntry = entryPrice && Math.abs(entryPrice - price) / entryPrice < 0.005;
-          const isAbove = currentPrice > price;
-          let relevance = '#444';
-          if (isShort) { relevance = isAbove ? color : '#333'; }
-          else { relevance = isAbove ? '#333' : color; }
-          return (
-            <View key={key} style={styles.fibLevelRow}>
-              <Text style={[styles.fibLevelName, { color }]}>{key}%</Text>
-              <View style={styles.fibBarContainer}>
-                <View style={[styles.fibBarFill, { backgroundColor: relevance, width: '100%' }]} />
-                {isCurrent && <View style={styles.fibCurrentDot} />}
-                {isEntry && <View style={styles.fibEntryDot} />}
-              </View>
-              <Text style={[styles.fibLevelPrice, isCurrent && { color: '#fff', fontWeight: 'bold' }]}>
-                {formatPrice(price)}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-      <View style={styles.fibLegend}>
-        <View style={styles.fibLegendItem}>
-          <View style={[styles.fibLegendDot, { backgroundColor: '#fff' }]} />
-          <Text style={styles.fibLegendText}>Actual</Text>
-        </View>
-        <View style={styles.fibLegendItem}>
-          <View style={[styles.fibLegendDot, { backgroundColor: '#ffd93d' }]} />
-          <Text style={styles.fibLegendText}>Entrada</Text>
-        </View>
-      </View>
-      {fib.at_key_level && (
-        <View style={styles.fibNoteBox}>
-          <Text style={styles.fibNoteText}>En nivel clave Fib {fib.key_level_name}%</Text>
-        </View>
-      )}
-      {!fib.at_key_level && fib.near_key_level && (
-        <View style={[styles.fibNoteBox, { borderLeftColor: '#ffd93d' }]}>
-          <Text style={styles.fibNoteText}>Cerca de Fib {fib.key_level_name}%</Text>
-        </View>
-      )}
-      {/* Contextual legend */}
-      {(() => {
-        const isShort = side === 'short' || side === 'SHORT';
-        const lines = [];
-        if (fib.closest_level_name) {
-          lines.push(`Precio cerca del nivel ${fib.closest_level_name}% (${formatPrice(fib.closest_level)}).`);
-        }
-        if (isShort) {
-          lines.push('Como tu posici\u00F3n es SHORT, los niveles superiores (61.8%, 78.6%) son zonas de riesgo si el precio sube hacia ellos.');
-          if (fib.is_uptrend) {
-            lines.push('Fibonacci muestra tendencia alcista \u2014 en contra de tu SHORT. Precauci\u00F3n.');
-          } else {
-            lines.push('Fibonacci muestra tendencia bajista \u2014 a favor de tu SHORT.');
-          }
-        } else {
-          lines.push('Como tu posici\u00F3n es LONG, los niveles inferiores (23.6%, 38.2%) son zonas de soporte clave.');
-          if (fib.is_uptrend) {
-            lines.push('Fibonacci muestra tendencia alcista \u2014 a favor de tu LONG.');
-          } else {
-            lines.push('Fibonacci muestra tendencia bajista \u2014 en contra de tu LONG. Precauci\u00F3n.');
-          }
-        }
-        return (
-          <View style={styles.fibContextBox}>
-            {lines.map((line, i) => (
-              <Text key={i} style={styles.fibContextText}>{line}</Text>
-            ))}
-          </View>
-        );
-      })()}
-    </View>
-  );
-};
-
-const cleanSymbol = (s) => s ? s.split(':')[0] : s;
-
 const PositionCard = ({ position }) => {
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [selectedTF, setSelectedTF] = useState('1h');
+  const [selectedTF, setSelectedTF] = useState('4h');
   const [expanded, setExpanded] = useState(true);
+  const [showIndicators, setShowIndicators] = useState(false);
 
-  const isLong = position.side === 'long';
+  const isLong = position.side?.toUpperCase() === 'LONG';
   const pnl = position.unrealized_pnl || 0;
   const pnlPercent = position.entry_price
     ? ((position.current_price - position.entry_price) / position.entry_price * 100 * (isLong ? 1 : -1))
@@ -194,11 +62,14 @@ const PositionCard = ({ position }) => {
   const sideColor = isLong ? '#00d4aa' : '#ff4757';
   const displaySymbol = cleanSymbol(position.symbol);
   const liqPrice = position.liquidation_price && position.liquidation_price > 0 ? position.liquidation_price : null;
+  const current = position.current_price;
+
+  const analysis = position.analysis || {};
+  const coherenceStyle = COHERENCE_STYLES[analysis.coherence] || COHERENCE_STYLES.neutral;
+  const biasStyle = BIAS_STYLES[analysis.htf_bias] || BIAS_STYLES.neutral;
 
   const timeframes = position.timeframes || {};
   const ind = timeframes[selectedTF] || {};
-  const riskColor = RISK_COLORS[position.risk_level] || '#888';
-  const sentimentInfo = SENTIMENT_LABELS[position.market_sentiment] || SENTIMENT_LABELS.neutral;
 
   useEffect(() => {
     if (showAlerts && alerts.length === 0) {
@@ -208,17 +79,20 @@ const PositionCard = ({ position }) => {
     }
   }, [showAlerts]);
 
-  const sl = position.current_stop_loss;
-  const tp = position.current_take_profit;
-  const current = position.current_price;
-  let progress = 0.5;
-  if (sl != null && tp != null && tp !== sl) {
-    progress = Math.max(0, Math.min(1, (current - sl) / (tp - sl)));
-  }
+  // Distance to liquidation
+  const liqDistance = liqPrice && current
+    ? ((Math.abs(current - liqPrice) / current) * 100).toFixed(1)
+    : null;
+
+  // Distance to invalidation
+  const invLevel = analysis.invalidation_level;
+  const invDistance = invLevel && current
+    ? ((Math.abs(current - invLevel) / current) * 100).toFixed(1)
+    : null;
 
   return (
     <View style={styles.card}>
-      {/* HEADER - tappable to expand/collapse */}
+      {/* HEADER */}
       <TouchableOpacity activeOpacity={0.7} onPress={() => setExpanded(!expanded)}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -235,21 +109,22 @@ const PositionCard = ({ position }) => {
           <View style={styles.headerRight}>
             {!expanded && (
               <Text style={[styles.collapsedPnl, { color: pnlColor }]}>
-                {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} USDT
+                {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
               </Text>
             )}
-            <View style={[styles.sentimentBadge, { backgroundColor: sentimentInfo.color + '20', borderColor: sentimentInfo.color }]}>
-              <Text style={[styles.sentimentText, { color: sentimentInfo.color }]}>{sentimentInfo.text}</Text>
+            <View style={[styles.coherenceBadge, { backgroundColor: coherenceStyle.color + '20', borderColor: coherenceStyle.color }]}>
+              <Text style={styles.coherenceIcon}>{coherenceStyle.icon}</Text>
+              <Text style={[styles.coherenceText, { color: coherenceStyle.color }]}>{coherenceStyle.label}</Text>
             </View>
             <Text style={styles.expandIcon}>{expanded ? '\u25B2' : '\u25BC'}</Text>
-            {position.mode === 'bot' && <Text style={styles.modeIcon}>{'\u{1F916}'}</Text>}
           </View>
         </View>
       </TouchableOpacity>
 
       {!expanded ? null : <>
-      {/* PRECIOS + PNL */}
-      <View style={styles.priceBox}>
+
+      {/* 1. ESTADO FACTUAL */}
+      <View style={styles.section}>
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
             <Text style={styles.priceLabel}>Entrada</Text>
@@ -270,6 +145,7 @@ const PositionCard = ({ position }) => {
             </Text>
           </View>
         </View>
+
         <View style={styles.detailRow}>
           {position.initial_margin > 0 && (
             <View style={styles.detailItem}>
@@ -277,121 +153,165 @@ const PositionCard = ({ position }) => {
               <Text style={styles.detailValueNeutral}>${position.initial_margin.toFixed(2)}</Text>
             </View>
           )}
-          {position.notional > 0 && (
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Valor total</Text>
-              <Text style={styles.detailValueNeutral}>${position.notional.toFixed(2)}</Text>
-            </View>
-          )}
           {liqPrice != null && (
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Liquidaci{'\u00F3'}n</Text>
-              <Text style={styles.detailValue}>{formatPrice(liqPrice)}</Text>
+              <Text style={styles.detailValueDanger}>{formatPrice(liqPrice)} ({liqDistance}%)</Text>
+            </View>
+          )}
+          {invLevel != null && (
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Invalidaci{'\u00F3'}n</Text>
+              <Text style={styles.detailValueWarning}>{formatPrice(invLevel)} ({invDistance}%)</Text>
             </View>
           )}
         </View>
       </View>
 
-      {/* SL / TP */}
-      {sl != null && tp != null && (
-        <View style={styles.slTpSection}>
-          <View style={styles.slTpLabels}>
-            <Text style={styles.slLabel}>SL {formatPrice(sl)}</Text>
-            <Text style={styles.tpLabel}>TP {formatPrice(tp)}</Text>
+      {/* 2. CONTEXTO HTF */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>CONTEXTO DE MERCADO (4H)</Text>
+        <View style={styles.contextRow}>
+          <View style={styles.contextItem}>
+            <Text style={styles.contextLabel}>Sesgo HTF</Text>
+            <Text style={[styles.contextValue, { color: biasStyle.color }]}>
+              {(analysis.htf_bias || 'neutral').toUpperCase()}
+            </Text>
           </View>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${progress * 100}%` }]}>
-              <View style={styles.progressMarker} />
-            </View>
+          <View style={styles.contextItem}>
+            <Text style={styles.contextLabel}>Estructura</Text>
+            <Text style={styles.contextValue}>{analysis.htf_structure || '-'}</Text>
+          </View>
+          <View style={styles.contextItem}>
+            <Text style={styles.contextLabel}>Momentum LTF</Text>
+            <Text style={[styles.contextValue, { color: BIAS_STYLES[analysis.ltf_momentum]?.color || '#888' }]}>
+              {(analysis.ltf_momentum || 'neutral').toUpperCase()}
+            </Text>
           </View>
         </View>
-      )}
-
-      {/* TIMEFRAME SELECTOR + INDICATORS */}
-      <View style={styles.indicatorsSection}>
-        <View style={styles.tfSelector}>
-          {TIMEFRAMES.map((tf) => {
-            const tfData = timeframes[tf];
-            const s = tfData?.sentiment;
-            const color = s === 'bullish' ? '#00d4aa' : s === 'bearish' ? '#ff4757' : '#888';
-            const isActive = selectedTF === tf;
-            return (
-              <TouchableOpacity
-                key={tf}
-                style={[styles.tfTab, isActive && { backgroundColor: color + '20' }]}
-                onPress={() => setSelectedTF(tf)}
-              >
-                <View style={[styles.tfDotIndicator, { backgroundColor: color }]} />
-                <Text style={[styles.tfTabText, isActive && { color }]}>{tf}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {ind.rsi != null ? (
-          <>
-            <View style={styles.indicatorRow}>
-              <Text style={styles.indicatorLabel}>RSI</Text>
-              <RSIBar value={ind.rsi} />
-            </View>
-            <View style={styles.indicatorRow}>
-              <Text style={styles.indicatorLabel}>MACD</Text>
-              <Text style={[styles.indicatorValue, { color: ind.macd_trend === 'bullish' ? '#00d4aa' : '#ff4757' }]}>
-                {ind.macd_trend === 'bullish' ? 'Alcista \u2191' : 'Bajista \u2193'}
-              </Text>
-            </View>
-            <View style={styles.indicatorRow}>
-              <Text style={styles.indicatorLabel}>EMA200</Text>
-              <Text style={[styles.indicatorValue, { color: ind.price_above_ema ? '#00d4aa' : '#ff4757' }]}>
-                {ind.price_above_ema ? 'Por encima \u2713' : 'Por debajo \u2717'}
-              </Text>
-            </View>
-            <View style={styles.indicatorRow}>
-              <Text style={styles.indicatorLabel}>Volumen</Text>
-              <Text style={[styles.indicatorValue, { color: ind.volume_above_average ? '#ffd93d' : '#888' }]}>
-                {ind.volume_above_average ? 'Sobre promedio' : 'Normal'}
-              </Text>
-            </View>
-            {ind.fibonacci && (
-              <View style={styles.indicatorRow}>
-                <Text style={styles.indicatorLabel}>Fibo</Text>
-                <Text style={[styles.indicatorValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
-                  {ind.fibonacci.is_uptrend ? 'Tendencia alcista \u2191' : 'Tendencia bajista \u2193'}
-                  {ind.fibonacci.closest_level_name ? ` \u2022 Cerca de ${ind.fibonacci.closest_level_name}%` : ''}
-                </Text>
-              </View>
-            )}
-          </>
-        ) : (
-          <Text style={styles.noData}>Sin datos para {selectedTF}</Text>
-        )}
       </View>
 
-      {/* FIBONACCI for selected TF */}
-      {ind.fibonacci && (
-        <View style={styles.fibWrapper}>
-          <Text style={styles.sectionTitle}>Fibonacci ({selectedTF})</Text>
-          <FibonacciSection fib={ind.fibonacci} currentPrice={current} entryPrice={position.entry_price} side={position.side} />
+      {/* 3. COHERENCIA TRADE vs CONTEXTO */}
+      <View style={[styles.coherenceBox, { borderLeftColor: coherenceStyle.color }]}>
+        <Text style={[styles.coherenceMainText, { color: coherenceStyle.color }]}>
+          {analysis.coherence_text || 'Sin datos de coherencia'}
+        </Text>
+      </View>
+
+      {/* 4. OBSERVACIONES FACTUALES */}
+      {analysis.observations && analysis.observations.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>OBSERVACIONES</Text>
+          {analysis.observations.map((obs, i) => (
+            <View key={i} style={styles.observationRow}>
+              <Text style={styles.observationBullet}>{'\u2022'}</Text>
+              <Text style={styles.observationText}>{obs}</Text>
+            </View>
+          ))}
         </View>
       )}
 
-      {/* RECOMENDACIÓN */}
-      {position.suggestion && (
-        <View style={[styles.suggestionBox, { borderLeftColor: riskColor }]}>
-          <View style={styles.suggestionTitleRow}>
-            <Text style={styles.suggestionTitle}>{`An\u00E1lisis de tu ${isLong ? 'LONG' : 'SHORT'}`}</Text>
-            <View style={[styles.riskBadge, { backgroundColor: riskColor + '25' }]}>
-              <Text style={[styles.riskBadgeText, { color: riskColor }]}>
-                {position.risk_level === 'high' ? 'Riesgo alto' : position.risk_level === 'medium' ? 'Riesgo medio' : 'Riesgo bajo'}
-              </Text>
-            </View>
+      {/* 5. ESCENARIOS DE GESTION */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ESCENARIOS</Text>
+
+        {analysis.favorable_scenario ? (
+          <View style={[styles.scenarioBox, { borderLeftColor: '#00d4aa' }]}>
+            <Text style={styles.scenarioLabel}>{'\u2713'} Escenario favorable</Text>
+            <Text style={styles.scenarioText}>{analysis.favorable_scenario}</Text>
           </View>
-          {position.suggestion.split('\n').map((line, i) => (
-            <View key={i} style={styles.suggestionLine}>
-              <Text style={styles.suggestionBullet}>{'\u2022'}</Text>
-              <Text style={styles.suggestionLineText}>{line}</Text>
-            </View>
-          ))}
+        ) : null}
+
+        {analysis.invalidation_scenario ? (
+          <View style={[styles.scenarioBox, { borderLeftColor: '#ff4757' }]}>
+            <Text style={styles.scenarioLabel}>{'\u26A0'} Invalidaci{'\u00F3'}n</Text>
+            <Text style={styles.scenarioText}>{analysis.invalidation_scenario}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* 6. NIVELES CLAVE */}
+      {analysis.key_levels && analysis.key_levels.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>NIVELES CLAVE</Text>
+          <View style={styles.levelsRow}>
+            {analysis.key_levels.map((level, i) => (
+              <View key={i} style={styles.levelChip}>
+                <Text style={styles.levelName}>{level.name}</Text>
+                <Text style={styles.levelPrice}>{formatPrice(level.price)}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* 7. INDICADORES POR TIMEFRAME (colapsable) */}
+      <TouchableOpacity onPress={() => setShowIndicators(!showIndicators)}>
+        <View style={styles.toggleRow}>
+          <Text style={styles.toggleText}>
+            {showIndicators ? '\u25BC' : '\u25B6'} Indicadores t{'\u00E9'}cnicos
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      {showIndicators && (
+        <View style={styles.indicatorsSection}>
+          <View style={styles.tfSelector}>
+            {TIMEFRAMES.map((tf) => {
+              const tfData = timeframes[tf];
+              const s = tfData?.sentiment;
+              const color = s === 'bullish' ? '#00d4aa' : s === 'bearish' ? '#ff4757' : '#888';
+              const isActive = selectedTF === tf;
+              return (
+                <TouchableOpacity
+                  key={tf}
+                  style={[styles.tfTab, isActive && { backgroundColor: color + '20' }]}
+                  onPress={() => setSelectedTF(tf)}
+                >
+                  <View style={[styles.tfDotIndicator, { backgroundColor: color }]} />
+                  <Text style={[styles.tfTabText, isActive && { color }]}>{tf}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {ind.rsi != null ? (
+            <>
+              <View style={styles.indicatorRow}>
+                <Text style={styles.indicatorLabel}>RSI</Text>
+                <RSIBar value={ind.rsi} />
+              </View>
+              <View style={styles.indicatorRow}>
+                <Text style={styles.indicatorLabel}>MACD</Text>
+                <Text style={[styles.indicatorValue, { color: ind.macd_trend === 'bullish' ? '#00d4aa' : '#ff4757' }]}>
+                  {ind.macd_trend === 'bullish' ? 'Alcista \u2191' : 'Bajista \u2193'}
+                </Text>
+              </View>
+              <View style={styles.indicatorRow}>
+                <Text style={styles.indicatorLabel}>EMA200</Text>
+                <Text style={[styles.indicatorValue, { color: ind.price_above_ema ? '#00d4aa' : '#ff4757' }]}>
+                  {ind.price_above_ema ? 'Por encima' : 'Por debajo'}
+                </Text>
+              </View>
+              <View style={styles.indicatorRow}>
+                <Text style={styles.indicatorLabel}>Volumen</Text>
+                <Text style={[styles.indicatorValue, { color: ind.volume_above_average ? '#ffd93d' : '#888' }]}>
+                  {ind.volume_above_average ? 'Sobre promedio' : 'Normal'}
+                </Text>
+              </View>
+              {ind.fibonacci && (
+                <View style={styles.indicatorRow}>
+                  <Text style={styles.indicatorLabel}>Fibo</Text>
+                  <Text style={[styles.indicatorValue, { color: ind.fibonacci.is_uptrend ? '#00d4aa' : '#ff4757' }]}>
+                    {ind.fibonacci.is_uptrend ? 'Tendencia \u2191' : 'Tendencia \u2193'}
+                    {ind.fibonacci.closest_level_name ? ` \u2022 ${ind.fibonacci.closest_level_name}%` : ''}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.noData}>Sin datos para {selectedTF}</Text>
+          )}
         </View>
       )}
 
@@ -401,21 +321,15 @@ const PositionCard = ({ position }) => {
       </TouchableOpacity>
       {showAlerts && alerts.length > 0 && (
         <View style={styles.alertsList}>
-          {alerts.map((alert, i) => {
-            const urgency = ALERT_URGENCY[alert.alert_type] || { icon: '\u2139\uFE0F', color: '#888' };
-            return (
-              <View key={alert.id || i} style={[styles.alertItem, { borderLeftColor: urgency.color }]}>
-                <Text style={styles.alertIcon}>{urgency.icon}</Text>
-                <View style={styles.alertContent}>
-                  <Text style={styles.alertMessage}>{alert.message}</Text>
-                  {alert.was_executed && <Text style={styles.alertExecuted}>{'Ejecutado \u2713'}</Text>}
-                </View>
-              </View>
-            );
-          })}
+          {alerts.map((alert, i) => (
+            <View key={alert.id || i} style={styles.alertItem}>
+              <Text style={styles.alertMessage}>{alert.message}</Text>
+            </View>
+          ))}
         </View>
       )}
       {showAlerts && alerts.length === 0 && <Text style={styles.noAlerts}>Sin alertas recientes</Text>}
+
       </>}
     </View>
   );
@@ -423,6 +337,8 @@ const PositionCard = ({ position }) => {
 
 const styles = StyleSheet.create({
   card: { backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, marginBottom: 12 },
+
+  // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -431,13 +347,17 @@ const styles = StyleSheet.create({
   sideText: { fontSize: 12, fontWeight: 'bold' },
   leverageBadge: { backgroundColor: '#2a2a4a', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   leverageText: { color: '#888', fontSize: 11, fontWeight: 'bold' },
-  modeIcon: { fontSize: 18 },
   collapsedPnl: { fontSize: 13, fontWeight: 'bold' },
   expandIcon: { color: '#555', fontSize: 10 },
-  sentimentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
-  sentimentText: { fontSize: 11, fontWeight: 'bold' },
-  // Price
-  priceBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10 },
+  coherenceBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, gap: 4 },
+  coherenceIcon: { fontSize: 10 },
+  coherenceText: { fontSize: 10, fontWeight: 'bold' },
+
+  // Sections
+  section: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10 },
+  sectionTitle: { color: '#666', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
+
+  // Price row
   priceRow: { flexDirection: 'row', alignItems: 'center' },
   priceCol: { flex: 1 },
   priceLabel: { color: '#666', fontSize: 11, marginBottom: 2 },
@@ -447,33 +367,51 @@ const styles = StyleSheet.create({
   pnlBoxLabel: { color: '#888', fontSize: 10, fontWeight: '600' },
   pnlBoxValue: { fontSize: 14, fontWeight: 'bold' },
   pnlBoxPercent: { fontSize: 11 },
-  detailRow: { flexDirection: 'row', marginTop: 8, gap: 16 },
+
+  // Detail row
+  detailRow: { flexDirection: 'row', marginTop: 10, gap: 16, flexWrap: 'wrap' },
   detailItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   detailLabel: { color: '#555', fontSize: 11 },
-  detailValue: { color: '#ff6b81', fontSize: 11, fontWeight: '600' },
   detailValueNeutral: { color: '#ccc', fontSize: 11, fontWeight: '600' },
-  // SL/TP
-  slTpSection: { marginBottom: 10 },
-  slTpLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  slLabel: { color: '#ff4757', fontSize: 11 },
-  tpLabel: { color: '#00d4aa', fontSize: 11 },
-  progressBar: { height: 6, backgroundColor: '#2a2a4a', borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#00d4aa', borderRadius: 3, justifyContent: 'center', alignItems: 'flex-end' },
-  progressMarker: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#fff', marginRight: -5 },
-  // Multi-TF summary
-  tfSummary: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginBottom: 10 },
-  tfChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 8, borderWidth: 1 },
-  tfChipLabel: { color: '#888', fontSize: 11, fontWeight: 'bold' },
-  tfChipValue: { fontSize: 11, fontWeight: '600' },
-  tfChipIcon: { fontSize: 10 },
-  tfDot: { width: 6, height: 6, borderRadius: 3 },
-  // TF selector + indicators
+  detailValueDanger: { color: '#ff4757', fontSize: 11, fontWeight: '600' },
+  detailValueWarning: { color: '#ffd93d', fontSize: 11, fontWeight: '600' },
+
+  // Context
+  contextRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  contextItem: { alignItems: 'center', flex: 1 },
+  contextLabel: { color: '#666', fontSize: 10, marginBottom: 4 },
+  contextValue: { color: '#fff', fontSize: 12, fontWeight: '600' },
+
+  // Coherence box
+  coherenceBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
+  coherenceMainText: { fontSize: 13, fontWeight: '600' },
+
+  // Observations
+  observationRow: { flexDirection: 'row', marginBottom: 4, alignItems: 'flex-start' },
+  observationBullet: { color: '#666', fontSize: 12, marginRight: 6, marginTop: 1 },
+  observationText: { color: '#aaa', fontSize: 12, flex: 1, lineHeight: 18 },
+
+  // Scenarios
+  scenarioBox: { backgroundColor: '#0a0a14', borderRadius: 8, padding: 10, marginBottom: 8, borderLeftWidth: 3 },
+  scenarioLabel: { color: '#888', fontSize: 10, fontWeight: '700', marginBottom: 4 },
+  scenarioText: { color: '#ccc', fontSize: 12, lineHeight: 18 },
+
+  // Levels
+  levelsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  levelChip: { backgroundColor: '#1a1a2e', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignItems: 'center' },
+  levelName: { color: '#888', fontSize: 10 },
+  levelPrice: { color: '#fff', fontSize: 12, fontWeight: '600' },
+
+  // Toggle
+  toggleRow: { paddingVertical: 8 },
+  toggleText: { color: '#888', fontSize: 13 },
+
+  // Indicators
   indicatorsSection: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10 },
   tfSelector: { flexDirection: 'row', marginBottom: 10, gap: 4 },
   tfTab: { flex: 1, flexDirection: 'row', paddingVertical: 6, borderRadius: 6, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center', gap: 5 },
   tfTabText: { color: '#666', fontSize: 12, fontWeight: '600' },
   tfDotIndicator: { width: 6, height: 6, borderRadius: 3 },
-  sectionTitle: { color: '#888', fontSize: 11, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   indicatorRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   indicatorLabel: { color: '#999', fontSize: 13, width: 60 },
   indicatorValue: { fontSize: 13, fontWeight: '600' },
@@ -482,47 +420,13 @@ const styles = StyleSheet.create({
   rsiBar: { flex: 1, height: 6, backgroundColor: '#2a2a4a', borderRadius: 3, overflow: 'hidden' },
   rsiFill: { height: '100%', borderRadius: 3 },
   rsiValue: { fontSize: 13, fontWeight: 'bold', width: 30, textAlign: 'right' },
-  // Fibonacci
-  fibWrapper: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10 },
-  fibSection: {},
-  fibSwingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  fibSwingLabel: { color: '#666', fontSize: 11 },
-  fibSwingTrend: { color: '#888', fontSize: 11, fontWeight: '600' },
-  fibLevels: { gap: 6 },
-  fibLevelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  fibLevelName: { fontSize: 11, fontWeight: 'bold', width: 38, textAlign: 'right' },
-  fibBarContainer: { flex: 1, height: 8, backgroundColor: '#1a1a2e', borderRadius: 4, overflow: 'hidden', justifyContent: 'center' },
-  fibBarFill: { height: '100%', borderRadius: 4, opacity: 0.4 },
-  fibCurrentDot: { position: 'absolute', right: 4, width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
-  fibEntryDot: { position: 'absolute', left: 4, width: 8, height: 8, borderRadius: 4, backgroundColor: '#ffd93d' },
-  fibLevelPrice: { color: '#666', fontSize: 11, width: 70, textAlign: 'right' },
-  fibLegend: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#1a1a2e' },
-  fibLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  fibLegendDot: { width: 6, height: 6, borderRadius: 3 },
-  fibLegendText: { color: '#666', fontSize: 10 },
-  fibNoteBox: { marginTop: 8, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#ffd93d15', borderRadius: 6, borderLeftWidth: 2, borderLeftColor: '#ffa502' },
-  fibNoteText: { color: '#ffd93d', fontSize: 12, fontWeight: '600' },
-  fibContextBox: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#1a1a2e' },
-  fibContextText: { color: '#999', fontSize: 12, lineHeight: 18, marginBottom: 2 },
-  // Suggestion
-  suggestionBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
-  suggestionTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  suggestionTitle: { color: '#888', fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  riskBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  riskBadgeText: { fontSize: 10, fontWeight: 'bold' },
-  suggestionText: { color: '#ddd', fontSize: 13, lineHeight: 18 },
-  suggestionLine: { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-start' },
-  suggestionBullet: { color: '#888', fontSize: 13, marginRight: 6, marginTop: 1 },
-  suggestionLineText: { color: '#ddd', fontSize: 13, lineHeight: 18, flex: 1 },
+
   // Alerts
   alertsToggle: { paddingVertical: 6 },
   alertsToggleText: { color: '#888', fontSize: 13 },
   alertsList: { marginTop: 8 },
-  alertItem: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#0f0f1a', borderRadius: 8, padding: 10, marginBottom: 6, borderLeftWidth: 3 },
-  alertIcon: { fontSize: 14, marginRight: 8, marginTop: 1 },
-  alertContent: { flex: 1 },
+  alertItem: { backgroundColor: '#0f0f1a', borderRadius: 8, padding: 10, marginBottom: 6 },
   alertMessage: { color: '#ccc', fontSize: 13 },
-  alertExecuted: { color: '#00d4aa', fontSize: 11, marginTop: 4, fontWeight: '600' },
   noAlerts: { color: '#555', fontSize: 13, textAlign: 'center', paddingVertical: 8 },
 });
 
