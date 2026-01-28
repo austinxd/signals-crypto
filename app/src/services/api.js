@@ -157,6 +157,17 @@ export async function getPairData(pair, timeframe = null) {
 }
 
 /**
+ * Get unified market data (4H context + 15m timing) per pair
+ */
+export async function getUnifiedMarketData(pairs = null, refresh = false) {
+  let url = `/api/market-unified?refresh=${refresh}`;
+  if (pairs && pairs.length > 0) {
+    url += `&pairs=${encodeURIComponent(pairs.join(','))}`;
+  }
+  return apiRequest(url);
+}
+
+/**
  * Get recent signals (filtered by user subscriptions if token provided)
  */
 export async function getSignals(limit = 20, timeframe = null, token = null) {

@@ -17,7 +17,14 @@ const BIAS_STYLES = {
   neutral: { label: 'Neutral', color: '#888', icon: '−' },
 };
 
-const PairCard = ({ pair, data, onPress, embedded = false }) => {
+// LTF momentum styles
+const MOMENTUM_STYLES = {
+  alcista: { label: 'Alcista', color: '#00d4aa', icon: '↑' },
+  bajista: { label: 'Bajista', color: '#ff4757', icon: '↓' },
+  neutral: { label: 'Neutral', color: '#888', icon: '−' },
+};
+
+const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) => {
   const cardStyle = embedded ? styles.cardEmbedded : styles.card;
 
   if (!data) {
@@ -29,7 +36,7 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
     );
   }
 
-  const { price, indicators, funding, analysis } = data;
+  const { price, analysis, htf_indicators, ltf_indicators, funding } = data;
 
   const formatPrice = (p) => {
     if (p == null) return '$0.00';
@@ -55,9 +62,14 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
   const scenario = analysis?.scenario || 'espera';
   const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
 
-  // Get HTF bias styles
-  const htfBias = analysis?.htf_bias || 'neutral';
+  // Get context (4H) styles
+  const htfBias = analysis?.context?.htf_bias || 'neutral';
   const biasStyle = BIAS_STYLES[htfBias] || BIAS_STYLES.neutral;
+
+  // Get timing (15m) styles
+  const ltfMomentum = analysis?.timing?.ltf_momentum || 'neutral';
+  const momentumStyle = MOMENTUM_STYLES[ltfMomentum] || MOMENTUM_STYLES.neutral;
+  const hasConfirmation = analysis?.timing?.has_confirmation || false;
 
   // Direction preference
   const directionPref = analysis?.direction_preference;
@@ -77,7 +89,7 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
 
       {analysis ? (
         <>
-          {/* LAYER 3: Scenario Classification Badge (top priority) */}
+          {/* SCENARIO + UNIFIED READING (top priority) */}
           <View style={[styles.scenarioBadge, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
             <View style={styles.scenarioHeader}>
               <Text style={[styles.scenarioLabel, { color: scenarioStyle.color }]}>
@@ -96,52 +108,94 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
                 </View>
               )}
             </View>
+            {/* Unified Reading - the main interpretation */}
+            {analysis.unified_reading && (
+              <Text style={styles.unifiedReading}>{analysis.unified_reading}</Text>
+            )}
             <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
           </View>
 
-          {/* LAYER 1: HTF Context */}
-          <View style={styles.htfContext}>
-            <Text style={styles.sectionTitle}>Contexto HTF</Text>
-            <View style={styles.htfRow}>
-              <View style={styles.htfItem}>
-                <Text style={styles.htfLabel}>Sesgo</Text>
-                <View style={[styles.htfValueBadge, { borderColor: biasStyle.color }]}>
-                  <Text style={[styles.htfValue, { color: biasStyle.color }]}>
-                    {biasStyle.icon} {biasStyle.label}
+          {/* TWO-LAYER ANALYSIS: Context (4H) + Timing (15m) */}
+          <View style={styles.layersContainer}>
+            {/* CONTEXT LAYER (4H) */}
+            <View style={styles.layerBox}>
+              <View style={styles.layerHeader}>
+                <Text style={styles.layerTitle}>CONTEXTO</Text>
+                <View style={styles.tfBadge}>
+                  <Text style={styles.tfBadgeText}>4H</Text>
+                </View>
+              </View>
+              <View style={styles.layerContent}>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>Sesgo</Text>
+                  <View style={[styles.valueBadge, { borderColor: biasStyle.color }]}>
+                    <Text style={[styles.valueText, { color: biasStyle.color }]}>
+                      {biasStyle.icon} {biasStyle.label}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>Estructura</Text>
+                  <Text style={styles.valueTextPlain}>
+                    {analysis.context?.htf_structure?.replace(/_/g, ' ') || 'Sin datos'}
+                  </Text>
+                </View>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>Volatilidad</Text>
+                  <Text style={[styles.valueTextPlain, {
+                    color: analysis.context?.volatility_state === 'alta' ? '#ff4757' :
+                           analysis.context?.volatility_state === 'baja' ? '#ffd93d' : '#888'
+                  }]}>
+                    {analysis.context?.volatility_state?.charAt(0).toUpperCase() +
+                     analysis.context?.volatility_state?.slice(1) || 'Normal'}
                   </Text>
                 </View>
               </View>
-              <View style={styles.htfItem}>
-                <Text style={styles.htfLabel}>Estructura</Text>
-                <Text style={styles.htfValueText}>
-                  {analysis.htf_structure?.replace(/_/g, ' ') || 'Sin datos'}
-                </Text>
+            </View>
+
+            {/* TIMING LAYER (15m) */}
+            <View style={styles.layerBox}>
+              <View style={styles.layerHeader}>
+                <Text style={styles.layerTitle}>TIMING</Text>
+                <View style={[styles.tfBadge, { backgroundColor: '#ff9f4320', borderColor: '#ff9f43' }]}>
+                  <Text style={[styles.tfBadgeText, { color: '#ff9f43' }]}>15m</Text>
+                </View>
               </View>
-              <View style={styles.htfItem}>
-                <Text style={styles.htfLabel}>Volatilidad</Text>
-                <Text style={[styles.htfValueText, {
-                  color: analysis.volatility_state === 'alta' ? '#ff4757' :
-                         analysis.volatility_state === 'baja' ? '#ffd93d' : '#888'
-                }]}>
-                  {analysis.volatility_state?.charAt(0).toUpperCase() + analysis.volatility_state?.slice(1)}
-                </Text>
+              <View style={styles.layerContent}>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>Momentum</Text>
+                  <View style={[styles.valueBadge, { borderColor: momentumStyle.color }]}>
+                    <Text style={[styles.valueText, { color: momentumStyle.color }]}>
+                      {momentumStyle.icon} {momentumStyle.label}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>RSI</Text>
+                  <Text style={[styles.valueTextPlain, {
+                    color: analysis.timing?.rsi_zone === 'sobrecompra' ? '#ff4757' :
+                           analysis.timing?.rsi_zone === 'sobrevendido' ? '#00d4aa' : '#888'
+                  }]}>
+                    {analysis.timing?.rsi_zone?.charAt(0).toUpperCase() +
+                     analysis.timing?.rsi_zone?.slice(1) || 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.layerItem}>
+                  <Text style={styles.layerLabel}>Confirmacion</Text>
+                  <Text style={[styles.valueTextPlain, {
+                    color: hasConfirmation ? '#00d4aa' : '#666'
+                  }]}>
+                    {hasConfirmation ? 'Si' : 'No'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
-
-          {/* LAYER 2: Price Interpretation */}
-          {analysis.price_interpretation && (
-            <View style={styles.priceInterpretation}>
-              <Text style={styles.interpretationText}>
-                {analysis.price_interpretation}
-              </Text>
-            </View>
-          )}
 
           {/* Observations */}
           {analysis.observations && analysis.observations.length > 0 && (
             <View style={styles.observations}>
-              {analysis.observations.map((obs, idx) => (
+              {analysis.observations.slice(0, 4).map((obs, idx) => (
                 <View key={idx} style={styles.observationItem}>
                   <Text style={styles.observationBullet}>•</Text>
                   <Text style={styles.observationText}>{obs}</Text>
@@ -151,85 +205,62 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
           )}
 
           {/* Funding Rate */}
-          {funding && (
+          {analysis.funding && (
             <View style={styles.fundingRow}>
               <Text style={styles.fundingLabel}>Funding</Text>
               <Text style={[styles.fundingValue, {
-                color: funding.funding_rate_percent > 0.01 ? '#ff4757' :
-                       funding.funding_rate_percent < -0.01 ? '#00d4aa' : '#888'
+                color: analysis.funding.rate_percent > 0.01 ? '#ff4757' :
+                       analysis.funding.rate_percent < -0.01 ? '#00d4aa' : '#888'
               }]}>
-                {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
+                {analysis.funding.rate_percent >= 0 ? '+' : ''}{analysis.funding.rate_percent?.toFixed(4)}%
               </Text>
             </View>
           )}
 
-          {/* Key Fibonacci Levels */}
-          {indicators?.fibonacci?.levels && (() => {
-            const levels = indicators.fibonacci.levels;
-            const currentPrice = price;
-            const levelEntries = Object.entries(levels)
-              .map(([name, p]) => ({ name, price: parseFloat(p) }))
-              .sort((a, b) => a.price - b.price);
-
-            const supports = levelEntries.filter(l => l.price < currentPrice);
-            const resistances = levelEntries.filter(l => l.price > currentPrice);
-            const nearestSupport = supports.length > 0 ? supports[supports.length - 1] : null;
-            const nearestResistance = resistances.length > 0 ? resistances[0] : null;
-
-            return (
-              <View style={styles.levelsContainer}>
-                <Text style={styles.levelsTitle}>Niveles Clave</Text>
-                <View style={styles.levelsRow}>
-                  {nearestResistance && (
-                    <View style={styles.levelItem}>
-                      <Text style={styles.levelLabel}>Resistencia {nearestResistance.name}%</Text>
-                      <Text style={[styles.levelPrice, { color: '#ff4757' }]}>
-                        {formatPriceShort(nearestResistance.price)}
-                      </Text>
-                    </View>
-                  )}
-                  {nearestSupport && (
-                    <View style={styles.levelItem}>
-                      <Text style={styles.levelLabel}>Soporte {nearestSupport.name}%</Text>
-                      <Text style={[styles.levelPrice, { color: '#00d4aa' }]}>
-                        {formatPriceShort(nearestSupport.price)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+          {/* Key Levels */}
+          {analysis.key_levels && analysis.key_levels.length > 0 && (
+            <View style={styles.levelsContainer}>
+              <Text style={styles.levelsTitle}>Niveles Clave</Text>
+              <View style={styles.levelsRow}>
+                {analysis.key_levels.slice(0, 3).map((level, idx) => (
+                  <View key={idx} style={styles.levelItem}>
+                    <Text style={styles.levelLabel}>{level.name}</Text>
+                    <Text style={styles.levelPrice}>{formatPriceShort(level.price)}</Text>
+                  </View>
+                ))}
               </View>
-            );
-          })()}
+            </View>
+          )}
 
-          {/* Raw Indicators (collapsed style) */}
+          {/* Raw Indicators */}
           <View style={styles.indicatorsRow}>
-            {indicators?.rsi != null && (
+            {htf_indicators?.rsi != null && (
               <View style={styles.indicatorChip}>
-                <Text style={styles.indicatorChipLabel}>RSI</Text>
+                <Text style={styles.indicatorChipLabel}>RSI 4H</Text>
                 <Text style={[styles.indicatorChipValue, {
-                  color: indicators.rsi > 70 ? '#ff4757' : indicators.rsi < 30 ? '#00d4aa' : '#fff'
+                  color: htf_indicators.rsi > 70 ? '#ff4757' : htf_indicators.rsi < 30 ? '#00d4aa' : '#fff'
                 }]}>
-                  {indicators.rsi.toFixed(0)}
+                  {htf_indicators.rsi.toFixed(0)}
                 </Text>
               </View>
             )}
-            {indicators?.macd_histogram != null && (
+            {ltf_indicators?.rsi != null && (
               <View style={styles.indicatorChip}>
-                <Text style={styles.indicatorChipLabel}>MACD</Text>
+                <Text style={styles.indicatorChipLabel}>RSI 15m</Text>
                 <Text style={[styles.indicatorChipValue, {
-                  color: indicators.macd_histogram > 0 ? '#00d4aa' : '#ff4757'
+                  color: ltf_indicators.rsi > 70 ? '#ff4757' : ltf_indicators.rsi < 30 ? '#00d4aa' : '#fff'
                 }]}>
-                  {indicators.macd_histogram > 0 ? '+' : ''}{indicators.macd_histogram.toFixed(2)}
+                  {ltf_indicators.rsi.toFixed(0)}
                 </Text>
               </View>
             )}
-            {indicators?.volume_ratio != null && (
+            {ltf_indicators?.volume_ratio != null && (
               <View style={styles.indicatorChip}>
                 <Text style={styles.indicatorChipLabel}>Vol</Text>
                 <Text style={[styles.indicatorChipValue, {
-                  color: indicators.volume_ratio > 1.5 ? '#00d4aa' : '#888'
+                  color: ltf_indicators.volume_ratio > 1.5 ? '#00d4aa' : '#888'
                 }]}>
-                  {indicators.volume_ratio.toFixed(1)}x
+                  {ltf_indicators.volume_ratio.toFixed(1)}x
                 </Text>
               </View>
             )}
@@ -284,7 +315,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Scenario Badge (Layer 3 - top priority)
+  // Scenario Badge
   scenarioBadge: {
     borderRadius: 10,
     borderWidth: 1,
@@ -302,9 +333,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
   },
-  scenarioReason: {
-    color: '#aaa',
+  unifiedReading: {
+    color: '#ccc',
     fontSize: 13,
+    marginBottom: 6,
+    lineHeight: 18,
+  },
+  scenarioReason: {
+    color: '#888',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   directionBadge: {
     paddingHorizontal: 10,
@@ -317,62 +355,69 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // HTF Context (Layer 1)
-  htfContext: {
+  // Two-Layer Analysis Container
+  layersContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  layerBox: {
+    flex: 1,
     backgroundColor: '#151525',
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
+    padding: 10,
   },
-  sectionTitle: {
-    color: '#666',
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  htfRow: {
+  layerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  htfItem: {
-    flex: 1,
     alignItems: 'center',
+    marginBottom: 8,
   },
-  htfLabel: {
+  layerTitle: {
     color: '#666',
     fontSize: 10,
-    marginBottom: 4,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
-  htfValueBadge: {
+  tfBadge: {
+    backgroundColor: '#00d4aa20',
     borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderColor: '#00d4aa',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  htfValue: {
-    fontSize: 12,
+  tfBadgeText: {
+    color: '#00d4aa',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  layerContent: {
+    gap: 6,
+  },
+  layerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  layerLabel: {
+    color: '#666',
+    fontSize: 10,
+  },
+  valueBadge: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  valueText: {
+    fontSize: 10,
     fontWeight: '600',
   },
-  htfValueText: {
+  valueTextPlain: {
     color: '#aaa',
-    fontSize: 12,
+    fontSize: 10,
     textTransform: 'capitalize',
-  },
-
-  // Price Interpretation (Layer 2)
-  priceInterpretation: {
-    backgroundColor: '#1a1a30',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
-  },
-  interpretationText: {
-    color: '#ccc',
-    fontSize: 13,
-    fontStyle: 'italic',
   },
 
   // Observations
@@ -438,6 +483,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   levelPrice: {
+    color: '#aaa',
     fontSize: 13,
     fontWeight: '600',
   },

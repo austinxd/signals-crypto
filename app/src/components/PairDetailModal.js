@@ -56,8 +56,19 @@ const TRADING_MODE_CONFIG = {
   aggressive: { label: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las señales' },
 };
 
+// LTF momentum styles
+const MOMENTUM_STYLES = {
+  alcista: { label: 'Alcista', color: '#00d4aa', icon: '↑' },
+  bajista: { label: 'Bajista', color: '#ff4757', icon: '↓' },
+  neutral: { label: 'Neutral', color: '#888', icon: '−' },
+};
+
 const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
-  if (!data || !data.indicators) {
+  // Handle both unified data structure and legacy structure
+  const hasUnifiedData = data?.htf_indicators || data?.ltf_indicators;
+  const hasLegacyData = data?.indicators;
+
+  if (!data || (!hasUnifiedData && !hasLegacyData)) {
     return (
       <Modal visible={visible} animationType="slide" transparent>
         <View style={styles.overlay}>
@@ -73,16 +84,24 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
     );
   }
 
-  const ind = data.indicators;
+  // Use unified data if available, otherwise fall back to legacy
+  const htfInd = data.htf_indicators || {};
+  const ltfInd = data.ltf_indicators || {};
+  const ind = data.indicators || ltfInd; // Legacy fallback
   const funding = data.funding;
   const analysis = data.analysis;
 
   // Get scenario and bias styles
   const scenario = analysis?.scenario || 'espera';
   const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
-  const htfBias = analysis?.htf_bias || 'neutral';
+  // Support both unified (context.htf_bias) and legacy (htf_bias) structures
+  const htfBias = analysis?.context?.htf_bias || analysis?.htf_bias || 'neutral';
   const biasStyle = BIAS_STYLES[htfBias] || BIAS_STYLES.neutral;
   const directionPref = analysis?.direction_preference;
+  // Get timing layer data
+  const ltfMomentum = analysis?.timing?.ltf_momentum || 'neutral';
+  const momentumStyle = MOMENTUM_STYLES[ltfMomentum] || MOMENTUM_STYLES.neutral;
+  const hasConfirmation = analysis?.timing?.has_confirmation || false;
 
   // Funding helpers
   const getFundingWarning = () => {
@@ -295,7 +314,7 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
             <Text style={styles.title}>{pair}</Text>
             <Text style={styles.price}>${ind.price?.toLocaleString()}</Text>
             <View style={styles.headerBadges}>
-              <Text style={styles.timeframe}>{data.timeframe}</Text>
+              <Text style={styles.timeframe}>4H + 15m</Text>
               <View style={[styles.signalBadge, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
                 <Text style={[styles.signalBadgeText, { color: scenarioStyle.color }]}>
                   {scenarioStyle.label.toUpperCase()}
@@ -306,10 +325,10 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {/* 3-Layer Analysis Summary */}
+            {/* Unified Analysis Summary */}
             {analysis && (
               <View style={styles.analysisSection}>
-                {/* Scenario Classification */}
+                {/* Scenario Classification with Unified Reading */}
                 <View style={[styles.scenarioBox, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
                   <View style={styles.scenarioBoxHeader}>
                     <Text style={[styles.scenarioBoxLabel, { color: scenarioStyle.color }]}>
@@ -328,44 +347,90 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
                       </View>
                     )}
                   </View>
+                  {/* Unified Reading - main interpretation */}
+                  {analysis.unified_reading && (
+                    <Text style={styles.unifiedReadingText}>{analysis.unified_reading}</Text>
+                  )}
                   <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
                 </View>
 
-                {/* HTF Context Row */}
-                <View style={styles.htfContextRow}>
-                  <View style={styles.htfContextItem}>
-                    <Text style={styles.htfContextLabel}>Sesgo HTF</Text>
-                    <View style={[styles.htfBiasBadge, { borderColor: biasStyle.color }]}>
-                      <Text style={[styles.htfBiasText, { color: biasStyle.color }]}>
-                        {biasStyle.icon} {biasStyle.label}
-                      </Text>
+                {/* Two-Layer Analysis: Context (4H) + Timing (15m) */}
+                <View style={styles.twoLayerContainer}>
+                  {/* Context Layer (4H) */}
+                  <View style={styles.layerBox}>
+                    <View style={styles.layerBoxHeader}>
+                      <Text style={styles.layerBoxTitle}>CONTEXTO</Text>
+                      <View style={styles.tfBadge}>
+                        <Text style={styles.tfBadgeText}>4H</Text>
+                      </View>
+                    </View>
+                    <View style={styles.layerBoxContent}>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>Sesgo</Text>
+                        <View style={[styles.htfBiasBadge, { borderColor: biasStyle.color }]}>
+                          <Text style={[styles.htfBiasText, { color: biasStyle.color }]}>
+                            {biasStyle.icon} {biasStyle.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>Estructura</Text>
+                        <Text style={styles.layerRowValue}>
+                          {(analysis.context?.htf_structure || analysis.htf_structure)?.replace(/_/g, ' ') || 'Sin datos'}
+                        </Text>
+                      </View>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>Volatilidad</Text>
+                        <Text style={[styles.layerRowValue, {
+                          color: (analysis.context?.volatility_state || analysis.volatility_state) === 'alta' ? '#ff4757' :
+                                 (analysis.context?.volatility_state || analysis.volatility_state) === 'baja' ? '#ffd93d' : '#888'
+                        }]}>
+                          {((analysis.context?.volatility_state || analysis.volatility_state) || 'normal').charAt(0).toUpperCase() +
+                           ((analysis.context?.volatility_state || analysis.volatility_state) || 'normal').slice(1)}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                  <View style={styles.htfContextItem}>
-                    <Text style={styles.htfContextLabel}>Estructura</Text>
-                    <Text style={styles.htfContextValue}>
-                      {analysis.htf_structure?.replace(/_/g, ' ') || 'Sin datos'}
-                    </Text>
-                  </View>
-                  <View style={styles.htfContextItem}>
-                    <Text style={styles.htfContextLabel}>Volatilidad</Text>
-                    <Text style={[styles.htfContextValue, {
-                      color: analysis.volatility_state === 'alta' ? '#ff4757' :
-                             analysis.volatility_state === 'baja' ? '#ffd93d' : '#888'
-                    }]}>
-                      {analysis.volatility_state?.charAt(0).toUpperCase() + analysis.volatility_state?.slice(1)}
-                    </Text>
+
+                  {/* Timing Layer (15m) */}
+                  <View style={styles.layerBox}>
+                    <View style={styles.layerBoxHeader}>
+                      <Text style={styles.layerBoxTitle}>TIMING</Text>
+                      <View style={[styles.tfBadge, { backgroundColor: '#ff9f4320', borderColor: '#ff9f43' }]}>
+                        <Text style={[styles.tfBadgeText, { color: '#ff9f43' }]}>15m</Text>
+                      </View>
+                    </View>
+                    <View style={styles.layerBoxContent}>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>Momentum</Text>
+                        <View style={[styles.htfBiasBadge, { borderColor: momentumStyle.color }]}>
+                          <Text style={[styles.htfBiasText, { color: momentumStyle.color }]}>
+                            {momentumStyle.icon} {momentumStyle.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>RSI</Text>
+                        <Text style={[styles.layerRowValue, {
+                          color: analysis.timing?.rsi_zone === 'sobrecompra' ? '#ff4757' :
+                                 analysis.timing?.rsi_zone === 'sobrevendido' ? '#00d4aa' : '#888'
+                        }]}>
+                          {(analysis.timing?.rsi_zone || 'N/A').charAt(0).toUpperCase() +
+                           (analysis.timing?.rsi_zone || 'N/A').slice(1)}
+                        </Text>
+                      </View>
+                      <View style={styles.layerRow}>
+                        <Text style={styles.layerRowLabel}>Confirmacion</Text>
+                        <Text style={[styles.layerRowValue, {
+                          color: hasConfirmation ? '#00d4aa' : '#666',
+                          fontWeight: hasConfirmation ? '600' : 'normal'
+                        }]}>
+                          {hasConfirmation ? 'Si' : 'No'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                 </View>
-
-                {/* Price Interpretation */}
-                {analysis.price_interpretation && (
-                  <View style={styles.priceInterpBox}>
-                    <Text style={styles.priceInterpText}>
-                      {analysis.price_interpretation}
-                    </Text>
-                  </View>
-                )}
 
                 {/* Observations */}
                 {analysis.observations && analysis.observations.length > 0 && (
@@ -542,47 +607,64 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
               </View>
             )}
 
-            {/* Raw Indicators */}
+            {/* Raw Indicators - Show both 4H and 15m */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Indicadores</Text>
               <View style={styles.indicatorGrid}>
+                {/* 4H Indicators */}
                 <View style={styles.indicatorItem}>
-                  <Text style={styles.indicatorLabel}>EMA 200</Text>
-                  <Text style={styles.indicatorValue}>${ind.ema_200?.toFixed(2)}</Text>
-                </View>
-                <View style={styles.indicatorItem}>
-                  <Text style={styles.indicatorLabel}>RSI (14)</Text>
+                  <Text style={styles.indicatorLabel}>RSI 4H</Text>
                   <Text style={[
                     styles.indicatorValue,
-                    ind.rsi < 40 ? styles.oversold : ind.rsi > 60 ? styles.overbought : null
+                    htfInd.rsi < 30 ? styles.oversold : htfInd.rsi > 70 ? styles.overbought : null
                   ]}>
-                    {ind.rsi?.toFixed(1)}
+                    {htfInd.rsi?.toFixed(1) || 'N/A'}
                   </Text>
                 </View>
                 <View style={styles.indicatorItem}>
-                  <Text style={styles.indicatorLabel}>MACD</Text>
-                  <Text style={styles.indicatorValue}>{ind.macd_line?.toFixed(4)}</Text>
-                </View>
-                <View style={styles.indicatorItem}>
-                  <Text style={styles.indicatorLabel}>MACD Signal</Text>
-                  <Text style={styles.indicatorValue}>{ind.macd_signal?.toFixed(4)}</Text>
-                </View>
-                <View style={styles.indicatorItem}>
-                  <Text style={styles.indicatorLabel}>Histograma</Text>
+                  <Text style={styles.indicatorLabel}>MACD 4H</Text>
                   <Text style={[
                     styles.indicatorValue,
-                    ind.macd_histogram > 0 ? styles.positive : styles.negative
+                    htfInd.macd_histogram > 0 ? styles.positive : styles.negative
                   ]}>
-                    {ind.macd_histogram?.toFixed(4)}
+                    {htfInd.macd_histogram?.toFixed(4) || 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.indicatorItem}>
+                  <Text style={styles.indicatorLabel}>EMA200 4H</Text>
+                  <Text style={[
+                    styles.indicatorValue,
+                    htfInd.price_above_ema ? styles.positive : styles.negative
+                  ]}>
+                    {htfInd.price_above_ema === true ? 'Sobre' : htfInd.price_above_ema === false ? 'Bajo' : 'N/A'}
+                  </Text>
+                </View>
+                {/* 15m Indicators */}
+                <View style={styles.indicatorItem}>
+                  <Text style={styles.indicatorLabel}>RSI 15m</Text>
+                  <Text style={[
+                    styles.indicatorValue,
+                    ltfInd.rsi < 30 ? styles.oversold : ltfInd.rsi > 70 ? styles.overbought : null
+                  ]}>
+                    {ltfInd.rsi?.toFixed(1) || 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.indicatorItem}>
+                  <Text style={styles.indicatorLabel}>MACD 15m</Text>
+                  <Text style={[
+                    styles.indicatorValue,
+                    ltfInd.macd_histogram > 0 ? styles.positive : styles.negative
+                  ]}>
+                    {ltfInd.macd_histogram?.toFixed(4) || 'N/A'}
                   </Text>
                 </View>
                 <View style={styles.indicatorItem}>
                   <Text style={styles.indicatorLabel}>Vol. Ratio</Text>
                   <Text style={[
                     styles.indicatorValue,
-                    ind.volume_above_average ? styles.positive : null
+                    ltfInd.volume_ratio > 1.5 ? styles.positive : null
                   ]}>
-                    {ind.volume_ratio?.toFixed(2)}x
+                    {ltfInd.volume_ratio?.toFixed(2) || 'N/A'}x
                   </Text>
                 </View>
               </View>
@@ -686,6 +768,65 @@ const styles = StyleSheet.create({
   scenarioReason: {
     color: '#aaa',
     fontSize: 14,
+  },
+  unifiedReadingText: {
+    color: '#ccc',
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  twoLayerContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  layerBox: {
+    flex: 1,
+    backgroundColor: '#151525',
+    borderRadius: 10,
+    padding: 12,
+  },
+  layerBoxHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  layerBoxTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  tfBadge: {
+    backgroundColor: '#00d4aa20',
+    borderWidth: 1,
+    borderColor: '#00d4aa',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  tfBadgeText: {
+    color: '#00d4aa',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  layerBoxContent: {
+    gap: 8,
+  },
+  layerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  layerRowLabel: {
+    color: '#666',
+    fontSize: 12,
+  },
+  layerRowValue: {
+    color: '#aaa',
+    fontSize: 12,
+    textTransform: 'capitalize',
   },
   directionBadge: {
     paddingHorizontal: 12,

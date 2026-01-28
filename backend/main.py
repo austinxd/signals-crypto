@@ -796,6 +796,342 @@ def _format_price(p):
     return f"${p:,.0f}"
 
 
+def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicators: dict, funding: dict = None) -> dict:
+    """
+    Compute unified pair analysis combining 4H (context) and 15m (timing).
+
+    4H = CONTEXTO: Define si hay que mirar el par (sesgo, estructura, volatilidad)
+    15m = TIMING: Define cuándo hay confirmación (momentum, crossovers)
+
+    Returns unified analysis with:
+    - context: 4H analysis (htf_bias, structure, volatility)
+    - timing: 15m analysis (momentum state, confirmation signals)
+    - unified_reading: Combined interpretation
+    - direction_preference: Only if 4H allows and 15m confirms
+    """
+    analysis = {
+        # Context Layer (4H)
+        "context": {
+            "htf_bias": "neutral",  # alcista / bajista / mixto / neutral
+            "htf_structure": "sin_datos",  # tendencia / retroceso / consolidacion / extension
+            "volatility_state": "normal",  # alta / normal / baja
+            "ema_position": None,  # sobre / bajo
+            "macd_momentum": None,  # alcista / bajista
+        },
+
+        # Timing Layer (15m)
+        "timing": {
+            "ltf_momentum": "neutral",  # alcista / bajista / neutral
+            "rsi_zone": None,  # sobrecompra / sobrevendido / alcista / bajista / neutral
+            "macd_state": None,  # alcista / bajista / cruce_alcista / cruce_bajista
+            "volume_state": None,  # alto / normal / bajo
+            "has_confirmation": False,  # True if LTF confirms HTF direction
+        },
+
+        # Unified Reading
+        "scenario": "espera",  # favorable / operable / alto_riesgo / espera
+        "scenario_reason": "",
+        "unified_reading": "",  # Main interpretation combining both TFs
+        "direction_preference": None,  # long / short / None
+
+        # Supporting data
+        "observations": [],
+        "key_levels": [],
+        "funding": None,
+    }
+
+    if not htf_indicators and not ltf_indicators:
+        analysis["scenario_reason"] = "Sin datos disponibles"
+        analysis["unified_reading"] = "Esperando datos de mercado..."
+        return analysis
+
+    # ========== CONTEXT LAYER (4H) ==========
+    if htf_indicators:
+        htf_price = htf_indicators.get("price")
+        htf_rsi = htf_indicators.get("rsi")
+        htf_macd_hist = htf_indicators.get("macd_histogram")
+        htf_macd_bullish = htf_indicators.get("macd_crossover_bullish")
+        htf_macd_bearish = htf_indicators.get("macd_crossover_bearish")
+        htf_price_above_ema = htf_indicators.get("price_above_ema")
+        htf_atr = htf_indicators.get("atr")
+        htf_fib = htf_indicators.get("fibonacci")
+        htf_divergence = htf_indicators.get("divergence")
+
+        # EMA200 position (structure)
+        ema_bias = None
+        if htf_price_above_ema is True:
+            ema_bias = "alcista"
+            analysis["context"]["ema_position"] = "sobre"
+        elif htf_price_above_ema is False:
+            ema_bias = "bajista"
+            analysis["context"]["ema_position"] = "bajo"
+
+        # MACD momentum
+        macd_bias = None
+        if htf_macd_hist is not None:
+            if htf_macd_hist > 0:
+                macd_bias = "alcista"
+                analysis["context"]["macd_momentum"] = "alcista"
+            else:
+                macd_bias = "bajista"
+                analysis["context"]["macd_momentum"] = "bajista"
+
+        # HTF bias requires EMA + MACD agreement
+        if ema_bias and macd_bias:
+            if ema_bias == macd_bias:
+                analysis["context"]["htf_bias"] = ema_bias
+            else:
+                analysis["context"]["htf_bias"] = "mixto"
+        elif ema_bias:
+            analysis["context"]["htf_bias"] = ema_bias
+        elif macd_bias:
+            analysis["context"]["htf_bias"] = macd_bias
+
+        # Structure from Fibonacci
+        if htf_fib:
+            is_uptrend = htf_fib.get("is_uptrend", False)
+            dist = htf_fib.get("distance_percent", 0)
+            at_level = htf_fib.get("at_key_level", False)
+            near_level = htf_fib.get("near_key_level", False)
+
+            if at_level or near_level:
+                analysis["context"]["htf_structure"] = "en nivel clave"
+            elif abs(dist) < 3:
+                analysis["context"]["htf_structure"] = "consolidacion"
+            elif (is_uptrend and dist > 0) or (not is_uptrend and dist < 0):
+                analysis["context"]["htf_structure"] = "extension"
+            else:
+                analysis["context"]["htf_structure"] = "retroceso"
+
+            # Key levels
+            if htf_fib.get("levels"):
+                levels = htf_fib["levels"]
+                for name in ["38.2", "50.0", "61.8"]:
+                    if name in levels:
+                        analysis["key_levels"].append({
+                            "name": f"Fibo {name}%",
+                            "price": levels[name]
+                        })
+
+        # Volatility
+        if htf_atr and htf_price:
+            atr_pct = (htf_atr / htf_price) * 100
+            if atr_pct > 3:
+                analysis["context"]["volatility_state"] = "alta"
+            elif atr_pct < 1:
+                analysis["context"]["volatility_state"] = "baja"
+
+    # ========== TIMING LAYER (15m) ==========
+    if ltf_indicators:
+        ltf_rsi = ltf_indicators.get("rsi")
+        ltf_macd_hist = ltf_indicators.get("macd_histogram")
+        ltf_macd_bullish = ltf_indicators.get("macd_crossover_bullish")
+        ltf_macd_bearish = ltf_indicators.get("macd_crossover_bearish")
+        ltf_volume_above = ltf_indicators.get("volume_above_average")
+        ltf_volume_ratio = ltf_indicators.get("volume_ratio", 1)
+
+        # RSI zone
+        if ltf_rsi is not None:
+            if ltf_rsi > 70:
+                analysis["timing"]["rsi_zone"] = "sobrecompra"
+            elif ltf_rsi < 30:
+                analysis["timing"]["rsi_zone"] = "sobrevendido"
+            elif ltf_rsi > 55:
+                analysis["timing"]["rsi_zone"] = "alcista"
+            elif ltf_rsi < 45:
+                analysis["timing"]["rsi_zone"] = "bajista"
+            else:
+                analysis["timing"]["rsi_zone"] = "neutral"
+
+        # MACD state
+        if ltf_macd_bullish:
+            analysis["timing"]["macd_state"] = "cruce_alcista"
+        elif ltf_macd_bearish:
+            analysis["timing"]["macd_state"] = "cruce_bajista"
+        elif ltf_macd_hist is not None:
+            analysis["timing"]["macd_state"] = "alcista" if ltf_macd_hist > 0 else "bajista"
+
+        # LTF momentum (combined RSI + MACD)
+        ltf_bullish_count = sum([
+            ltf_rsi is not None and ltf_rsi > 50,
+            ltf_macd_hist is not None and ltf_macd_hist > 0,
+        ])
+        if ltf_bullish_count == 2:
+            analysis["timing"]["ltf_momentum"] = "alcista"
+        elif ltf_bullish_count == 0:
+            analysis["timing"]["ltf_momentum"] = "bajista"
+        else:
+            analysis["timing"]["ltf_momentum"] = "neutral"
+
+        # Volume state
+        if ltf_volume_ratio is not None:
+            if ltf_volume_ratio > 1.5:
+                analysis["timing"]["volume_state"] = "alto"
+            elif ltf_volume_ratio < 0.7:
+                analysis["timing"]["volume_state"] = "bajo"
+            else:
+                analysis["timing"]["volume_state"] = "normal"
+
+        # Check if LTF confirms HTF direction
+        htf_bias = analysis["context"]["htf_bias"]
+        ltf_mom = analysis["timing"]["ltf_momentum"]
+        macd_state = analysis["timing"]["macd_state"]
+
+        if htf_bias == "alcista" and (ltf_mom == "alcista" or macd_state == "cruce_alcista"):
+            analysis["timing"]["has_confirmation"] = True
+        elif htf_bias == "bajista" and (ltf_mom == "bajista" or macd_state == "cruce_bajista"):
+            analysis["timing"]["has_confirmation"] = True
+
+    # ========== SCENARIO CLASSIFICATION ==========
+    htf_bias = analysis["context"]["htf_bias"]
+    htf_structure = analysis["context"]["htf_structure"]
+    volatility = analysis["context"]["volatility_state"]
+    ltf_momentum = analysis["timing"]["ltf_momentum"]
+    has_confirmation = analysis["timing"]["has_confirmation"]
+    rsi_zone = analysis["timing"]["rsi_zone"]
+    macd_state = analysis["timing"]["macd_state"]
+
+    risk_factors = 0
+    favorable_factors = 0
+
+    # Risk factors
+    if htf_bias == "mixto":
+        risk_factors += 2
+    if rsi_zone in ["sobrecompra", "sobrevendido"]:
+        risk_factors += 1
+    if htf_indicators and htf_indicators.get("divergence"):
+        risk_factors += 2
+    if volatility == "alta":
+        risk_factors += 1
+
+    # Favorable factors
+    if htf_bias in ["alcista", "bajista"]:
+        favorable_factors += 2
+    if htf_structure in ["retroceso", "en nivel clave"]:
+        favorable_factors += 1
+    if has_confirmation:
+        favorable_factors += 2
+    if macd_state and "cruce" in macd_state:
+        favorable_factors += 1
+
+    # Funding consideration
+    if funding:
+        analysis["funding"] = {
+            "rate_percent": funding.get("funding_rate_percent"),
+            "sentiment": funding.get("sentiment"),
+        }
+        sentiment = funding.get("sentiment", "")
+        if htf_bias == "alcista" and sentiment == "too_many_shorts":
+            favorable_factors += 1
+        elif htf_bias == "bajista" and sentiment == "too_many_longs":
+            favorable_factors += 1
+        elif sentiment in ["too_many_longs", "too_many_shorts"]:
+            risk_factors += 1
+
+    # Determine scenario
+    if risk_factors >= 3:
+        analysis["scenario"] = "alto_riesgo"
+        analysis["scenario_reason"] = "Multiples senales conflictivas o extremas"
+    elif htf_bias in ["neutral", "mixto"]:
+        analysis["scenario"] = "espera"
+        analysis["scenario_reason"] = "4H sin sesgo direccional claro"
+    elif favorable_factors >= 4 and risk_factors <= 1:
+        analysis["scenario"] = "favorable"
+        analysis["scenario_reason"] = f"Contexto 4H {htf_bias} con confirmacion 15m"
+    elif favorable_factors >= 2:
+        analysis["scenario"] = "operable"
+        if has_confirmation:
+            analysis["scenario_reason"] = f"Contexto 4H {htf_bias}, timing 15m confirmando"
+        else:
+            analysis["scenario_reason"] = f"Contexto 4H {htf_bias}, esperando confirmacion 15m"
+    else:
+        analysis["scenario"] = "espera"
+        analysis["scenario_reason"] = "Esperando alineacion de contexto y timing"
+
+    # Direction preference (only if 4H allows)
+    if analysis["scenario"] in ["favorable", "operable"]:
+        if htf_bias == "alcista" and rsi_zone not in ["sobrecompra"]:
+            analysis["direction_preference"] = "long"
+        elif htf_bias == "bajista" and rsi_zone not in ["sobrevendido"]:
+            analysis["direction_preference"] = "short"
+
+    # ========== UNIFIED READING ==========
+    reading_parts = []
+
+    # Context summary
+    if htf_bias == "alcista":
+        reading_parts.append("4H alcista (precio sobre EMA200, MACD positivo)")
+    elif htf_bias == "bajista":
+        reading_parts.append("4H bajista (precio bajo EMA200, MACD negativo)")
+    elif htf_bias == "mixto":
+        reading_parts.append("4H mixto (estructura y momentum en conflicto)")
+    else:
+        reading_parts.append("4H sin sesgo claro")
+
+    # Timing summary
+    if has_confirmation:
+        reading_parts.append(f"15m confirma direccion con momentum {ltf_momentum}")
+    elif ltf_momentum != "neutral":
+        if htf_bias in ["alcista", "bajista"] and ltf_momentum != htf_bias:
+            reading_parts.append(f"15m en contra ({ltf_momentum}), sin confirmacion")
+        else:
+            reading_parts.append(f"15m {ltf_momentum}, esperando cruce MACD")
+    else:
+        reading_parts.append("15m neutral, sin confirmacion de timing")
+
+    analysis["unified_reading"] = ". ".join(reading_parts)
+
+    # ========== OBSERVATIONS ==========
+    obs = []
+
+    # HTF observations
+    if analysis["context"]["ema_position"]:
+        zone = analysis["context"]["ema_position"]
+        obs.append(f"Precio {zone} EMA200 en 4H")
+
+    if analysis["context"]["macd_momentum"]:
+        obs.append(f"MACD 4H {analysis['context']['macd_momentum']}")
+
+    if htf_structure != "sin_datos":
+        obs.append(f"Estructura 4H: {htf_structure}")
+
+    if volatility != "normal":
+        obs.append(f"Volatilidad {volatility}")
+
+    # LTF observations
+    if ltf_indicators:
+        ltf_rsi = ltf_indicators.get("rsi")
+        if ltf_rsi is not None:
+            if rsi_zone in ["sobrecompra", "sobrevendido"]:
+                obs.append(f"RSI 15m en {ltf_rsi:.0f} ({rsi_zone})")
+            else:
+                obs.append(f"RSI 15m en {ltf_rsi:.0f}")
+
+        if macd_state and "cruce" in macd_state:
+            direction = "alcista" if "alcista" in macd_state else "bajista"
+            obs.append(f"MACD 15m cruzando {direction}")
+
+        if analysis["timing"]["volume_state"] == "alto":
+            obs.append("Volumen elevado en 15m")
+
+    # Divergence
+    if htf_indicators and htf_indicators.get("divergence"):
+        obs.append(f"Divergencia detectada en 4H")
+
+    # Funding
+    if funding:
+        rate = funding.get("funding_rate_percent", 0)
+        sentiment = funding.get("sentiment", "balanced")
+        if sentiment == "too_many_longs":
+            obs.append(f"Funding {rate:.4f}% (exceso longs)")
+        elif sentiment == "too_many_shorts":
+            obs.append(f"Funding {rate:.4f}% (exceso shorts)")
+
+    analysis["observations"] = obs
+
+    return analysis
+
+
 def _compute_market_analysis(pair: str, indicators: dict, funding: dict = None) -> dict:
     """
     Compute 3-layer market analysis for the Mercado tab.
@@ -1609,6 +1945,116 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
     return {
         "timeframe": timeframe, "pairs": data,
         "active_pairs": list(active_pairs),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/market-unified")
+async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = False):
+    """
+    Get unified market analysis per pair (4H context + 15m timing).
+
+    Each pair returns:
+    - context: 4H analysis (htf_bias, structure, volatility)
+    - timing: 15m analysis (momentum, confirmation)
+    - unified_reading: Combined interpretation
+    - scenario: favorable/operable/alto_riesgo/espera
+    - direction_preference: long/short/null
+
+    Query params:
+    - pairs: comma-separated list of pairs (e.g., "BTC/USDT,ETH/USDT")
+    - refresh: force refresh from exchange
+    """
+    global active_pairs
+
+    # Determine which pairs to fetch
+    if pairs:
+        requested_pairs = [p.strip().upper() for p in pairs.split(",")]
+    else:
+        requested_pairs = list(get_all_monitored_pairs())
+
+    client = get_binance_client()
+    result = {}
+
+    for pair in requested_pairs:
+        try:
+            # Fetch 4H data (context)
+            htf_indicators = None
+            if refresh or "4h" not in market_data or pair not in market_data.get("4h", {}):
+                df_4h = client.fetch_ohlcv(pair, "4h")
+                if df_4h is not None and len(df_4h) >= 200:
+                    df_4h = add_all_indicators(df_4h)
+                    htf_indicators = get_latest_indicators(df_4h)
+            else:
+                cached = market_data.get("4h", {}).get(pair, {})
+                htf_indicators = cached.get("indicators")
+
+            # Fetch 15m data (timing)
+            ltf_indicators = None
+            if refresh or "15m" not in market_data or pair not in market_data.get("15m", {}):
+                df_15m = client.fetch_ohlcv(pair, "15m")
+                if df_15m is not None and len(df_15m) >= 200:
+                    df_15m = add_all_indicators(df_15m)
+                    ltf_indicators = get_latest_indicators(df_15m)
+            else:
+                cached = market_data.get("15m", {}).get(pair, {})
+                ltf_indicators = cached.get("indicators")
+
+            # Fetch funding rate
+            funding_data = client.get_funding_rate(pair)
+
+            # Get current price (prefer 15m for most recent)
+            current_price = None
+            if ltf_indicators:
+                current_price = ltf_indicators.get("price")
+            elif htf_indicators:
+                current_price = htf_indicators.get("price")
+
+            # Compute unified analysis
+            analysis = _compute_unified_pair_analysis(pair, htf_indicators, ltf_indicators, funding_data)
+
+            result[pair] = {
+                "pair": pair,
+                "price": current_price,
+                "analysis": analysis,
+                "htf_indicators": {
+                    "rsi": htf_indicators.get("rsi") if htf_indicators else None,
+                    "macd_histogram": htf_indicators.get("macd_histogram") if htf_indicators else None,
+                    "price_above_ema": htf_indicators.get("price_above_ema") if htf_indicators else None,
+                    "atr": htf_indicators.get("atr") if htf_indicators else None,
+                } if htf_indicators else None,
+                "ltf_indicators": {
+                    "rsi": ltf_indicators.get("rsi") if ltf_indicators else None,
+                    "macd_histogram": ltf_indicators.get("macd_histogram") if ltf_indicators else None,
+                    "macd_crossover_bullish": ltf_indicators.get("macd_crossover_bullish") if ltf_indicators else None,
+                    "macd_crossover_bearish": ltf_indicators.get("macd_crossover_bearish") if ltf_indicators else None,
+                    "volume_ratio": ltf_indicators.get("volume_ratio") if ltf_indicators else None,
+                } if ltf_indicators else None,
+                "funding": funding_data,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Error fetching unified data for {pair}: {e}")
+            result[pair] = {
+                "pair": pair,
+                "price": None,
+                "analysis": {
+                    "scenario": "espera",
+                    "scenario_reason": f"Error: {str(e)[:50]}",
+                    "unified_reading": "Error al obtener datos",
+                    "context": {},
+                    "timing": {},
+                    "observations": [],
+                    "key_levels": [],
+                },
+                "error": str(e),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+    return {
+        "pairs": result,
+        "total": len(result),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

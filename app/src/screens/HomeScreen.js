@@ -13,6 +13,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import {
   getMarketData,
+  getUnifiedMarketData,
   getSignals,
   getSubscriptions,
   addSubscription,
@@ -157,27 +158,23 @@ const HomeScreen = () => {
           }
         }
 
-        // Get unique timeframes from subscriptions
-        const uniqueTimeframes = [...new Set(subs.map(s => s.timeframe))];
-        if (uniqueTimeframes.length === 0) {
-          uniqueTimeframes.push('4h'); // Default
-        }
+        // Get unique pairs from subscriptions (ignore timeframe - we now show unified analysis)
+        const uniquePairs = [...new Set(subs.map(s => s.pair))];
 
-        // Fetch market data for each timeframe and combine
-        const combinedData = {};
-        for (const tf of uniqueTimeframes) {
+        // Fetch unified market data (4H + 15m combined) for all pairs
+        if (uniquePairs.length > 0) {
           try {
-            const data = await getMarketData(tf, forceRefresh);
-            const pairs = data.pairs || {};
-            // Key by pair_timeframe to distinguish same pair in different timeframes
-            for (const [pair, pairData] of Object.entries(pairs)) {
-              combinedData[`${pair}_${tf}`] = { ...pairData, timeframe: tf };
-            }
+            const data = await getUnifiedMarketData(uniquePairs, forceRefresh);
+            const unifiedPairs = data.pairs || {};
+            // Key by pair only (not timeframe)
+            setMarketData(unifiedPairs);
           } catch (err) {
-            console.log(`Could not fetch data for ${tf}:`, err);
+            console.log('Could not fetch unified market data:', err);
+            setMarketData({});
           }
+        } else {
+          setMarketData({});
         }
-        setMarketData(combinedData);
         setLastUpdate(new Date());
 
         // Load signals for badges (current market state, no user filter)
@@ -318,11 +315,16 @@ const HomeScreen = () => {
         );
       };
 
+      // Get unique pairs from subscriptions
+      const uniquePairs = [...new Set(subscriptions.map(s => s.pair))];
+
       return (
         <>
-          {subscriptions.map((sub) => {
-            const isExpanded = expandedSubs[sub.id] !== false; // Default expanded
-            const pairData = marketData[`${sub.pair}_${sub.timeframe}`];
+          {uniquePairs.map((pair) => {
+            // Find the first subscription for this pair (for trading mode display)
+            const sub = subscriptions.find(s => s.pair === pair);
+            const isExpanded = expandedSubs[pair] !== false; // Default expanded, key by pair
+            const pairData = marketData[pair];
             const price = pairData?.price;
             const analysis = pairData?.analysis;
 
@@ -331,34 +333,38 @@ const HomeScreen = () => {
             const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
             const directionPref = analysis?.direction_preference;
 
+            // Get HTF bias for display
+            const htfBias = analysis?.context?.htf_bias || 'neutral';
+
             return (
               <Swipeable
-                key={sub.id}
-                renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, sub.id)}
+                key={pair}
+                renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, sub?.id)}
                 rightThreshold={40}
               >
                 <View style={styles.subscriptionWrapper}>
                   {/* Compact header - always visible */}
                   <TouchableOpacity
                     style={styles.subscriptionHeader}
-                    onPress={() => toggleExpanded(sub.id)}
+                    onPress={() => toggleExpanded(pair)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.subscriptionLeft}>
                       <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
                       <View style={styles.modeIconMini}>
                         <SignalBars
-                          level={TRADING_MODE_LABELS[sub.trading_mode]?.level || 2}
-                          color={getModeColor(sub.trading_mode)}
+                          level={TRADING_MODE_LABELS[sub?.trading_mode]?.level || 2}
+                          color={getModeColor(sub?.trading_mode)}
                           size={14}
                         />
                       </View>
-                      <Text style={styles.subscriptionPairName}>{sub.pair.replace('/USDT', '')}</Text>
+                      <Text style={styles.subscriptionPairName}>{pair.replace('/USDT', '')}</Text>
                       {price && (
                         <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
                       )}
-                      <View style={styles.timeframeBadgeSmall}>
-                        <Text style={styles.timeframeBadgeText}>{sub.timeframe}</Text>
+                      {/* Show 4H+15m badge instead of single timeframe */}
+                      <View style={styles.unifiedBadge}>
+                        <Text style={styles.unifiedBadgeText}>4H+15m</Text>
                       </View>
                     </View>
                     <View style={styles.subscriptionBadges}>
@@ -382,12 +388,12 @@ const HomeScreen = () => {
                   {/* Expanded content */}
                   {isExpanded && (
                     <PairCard
-                      pair={sub.pair}
+                      pair={pair}
                       data={pairData}
-                      timeframe={sub.timeframe}
+                      unified={true}
                       embedded={true}
                       onPress={() => {
-                        setSelectedPair(sub.pair);
+                        setSelectedPair(pair);
                         setSelectedSubscription(sub);
                         setModalVisible(true);
                       }}
@@ -539,7 +545,7 @@ const HomeScreen = () => {
           {subscriptions.length > 0 && activeTab === 'market' && (
             <View style={styles.headerRight}>
               <View style={styles.countBadge}>
-                <Text style={styles.countText}>{subscriptions.length} pares</Text>
+                <Text style={styles.countText}>{[...new Set(subscriptions.map(s => s.pair))].length} pares</Text>
               </View>
             </View>
           )}
@@ -845,6 +851,20 @@ const styles = StyleSheet.create({
   timeframeBadgeText: {
     color: '#0a0a14',
     fontSize: 11,
+    fontWeight: 'bold',
+  },
+  unifiedBadge: {
+    backgroundColor: '#2a2a5a',
+    borderWidth: 1,
+    borderColor: '#00d4aa',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginLeft: 12,
+  },
+  unifiedBadgeText: {
+    color: '#00d4aa',
+    fontSize: 10,
     fontWeight: 'bold',
   },
   modeBadgeSmall: {
