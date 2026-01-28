@@ -15,11 +15,13 @@ const COHERENCE_STYLES = {
   a_favor: { label: 'A favor', color: '#00d4aa', icon: '\u2713' },
   contra: { label: 'Contra contexto', color: '#ff4757', icon: '\u26A0' },
   neutral: { label: 'Neutral', color: '#888', icon: '\u2022' },
+  invalidated: { label: 'INVALIDADO', color: '#ff4757', icon: '\u2717' },
 };
 
 const BIAS_STYLES = {
   alcista: { color: '#00d4aa' },
   bajista: { color: '#ff4757' },
+  mixto: { color: '#ffd93d' },
   rango: { color: '#ffd93d' },
   neutral: { color: '#888' },
 };
@@ -65,7 +67,10 @@ const PositionCard = ({ position }) => {
   const current = position.current_price;
 
   const analysis = position.analysis || {};
-  const coherenceStyle = COHERENCE_STYLES[analysis.coherence] || COHERENCE_STYLES.neutral;
+  const isInvalidated = analysis.invalidation_breached === true;
+  const coherenceStyle = isInvalidated
+    ? COHERENCE_STYLES.invalidated
+    : (COHERENCE_STYLES[analysis.coherence] || COHERENCE_STYLES.neutral);
   const biasStyle = BIAS_STYLES[analysis.htf_bias] || BIAS_STYLES.neutral;
 
   const timeframes = position.timeframes || {};
@@ -215,9 +220,18 @@ const PositionCard = ({ position }) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ESCENARIOS</Text>
 
+        {analysis.invalidation_breached && (
+          <View style={styles.breachedWarning}>
+            <Text style={styles.breachedIcon}>{'\u26A0'}</Text>
+            <Text style={styles.breachedText}>ESTRUCTURA INVALIDADA</Text>
+          </View>
+        )}
+
         {analysis.favorable_scenario ? (
-          <View style={[styles.scenarioBox, { borderLeftColor: '#00d4aa' }]}>
-            <Text style={styles.scenarioLabel}>{'\u2713'} Escenario favorable</Text>
+          <View style={[styles.scenarioBox, { borderLeftColor: analysis.invalidation_breached ? '#ff4757' : '#00d4aa' }]}>
+            <Text style={styles.scenarioLabel}>
+              {analysis.invalidation_breached ? '\u26A0 Situaci\u00F3n actual' : '\u2713 Escenario favorable'}
+            </Text>
             <Text style={styles.scenarioText}>{analysis.favorable_scenario}</Text>
           </View>
         ) : null}
@@ -392,6 +406,9 @@ const styles = StyleSheet.create({
   observationText: { color: '#aaa', fontSize: 12, flex: 1, lineHeight: 18 },
 
   // Scenarios
+  breachedWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff475720', borderRadius: 8, padding: 10, marginBottom: 10, gap: 8 },
+  breachedIcon: { fontSize: 16 },
+  breachedText: { color: '#ff4757', fontSize: 12, fontWeight: 'bold', letterSpacing: 1 },
   scenarioBox: { backgroundColor: '#0a0a14', borderRadius: 8, padding: 10, marginBottom: 8, borderLeftWidth: 3 },
   scenarioLabel: { color: '#888', fontSize: 10, fontWeight: '700', marginBottom: 4 },
   scenarioText: { color: '#ccc', fontSize: 12, lineHeight: 18 },

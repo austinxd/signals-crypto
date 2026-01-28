@@ -713,7 +713,7 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
     timeframes_data = {tf: dict(empty_tf) for tf in POSITION_TIMEFRAMES}
 
     analysis = {
-        "htf_bias": "neutral",  # alcista / bajista / rango
+        "htf_bias": "neutral",  # alcista / bajista / mixto / neutral
         "htf_structure": "indecision",  # tendencia / retroceso / extension / indecision
         "ltf_momentum": "neutral",  # alcista / bajista / neutral
         "coherence": "neutral",  # a_favor / contra / neutral
@@ -721,6 +721,7 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
         "favorable_scenario": "",
         "invalidation_scenario": "",
         "invalidation_level": None,
+        "invalidation_breached": False,
         "key_levels": [],
         "observations": [],  # Factual observations without recommendations
     }
@@ -746,28 +747,36 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
         htf_atr = htf.get("atr")
 
         # Determine HTF bias
-        bullish_signals = 0
-        bearish_signals = 0
+        # EMA200 = estructura principal, MACD = momentum
+        # Solo hay sesgo claro si ambos coinciden
+        ema_bias = None
         if htf_ema is True:
-            bullish_signals += 1
+            ema_bias = "alcista"
         elif htf_ema is False:
-            bearish_signals += 1
-        if htf_macd == "bullish":
-            bullish_signals += 1
-        elif htf_macd == "bearish":
-            bearish_signals += 1
-        if htf_rsi is not None:
-            if htf_rsi > 55:
-                bullish_signals += 1
-            elif htf_rsi < 45:
-                bearish_signals += 1
+            ema_bias = "bajista"
 
-        if bullish_signals >= 2:
-            analysis["htf_bias"] = "alcista"
-        elif bearish_signals >= 2:
-            analysis["htf_bias"] = "bajista"
+        macd_bias = None
+        if htf_macd == "bullish":
+            macd_bias = "alcista"
+        elif htf_macd == "bearish":
+            macd_bias = "bajista"
+
+        # Sesgo HTF: EMA y MACD deben coincidir para sesgo claro
+        if ema_bias and macd_bias and ema_bias == macd_bias:
+            analysis["htf_bias"] = ema_bias
+        elif ema_bias and macd_bias and ema_bias != macd_bias:
+            # Conflicto: EMA dice una cosa, MACD otra = rango/mixto
+            analysis["htf_bias"] = "mixto"
+        elif ema_bias:
+            analysis["htf_bias"] = ema_bias
+        elif macd_bias:
+            analysis["htf_bias"] = macd_bias
         else:
-            analysis["htf_bias"] = "rango"
+            analysis["htf_bias"] = "neutral"
+
+        # Store individual components for observations
+        analysis["_ema_bias"] = ema_bias
+        analysis["_macd_bias"] = macd_bias
 
         # Determine structure
         if htf_fib:
@@ -799,23 +808,33 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
 
         # ========== 3. COHERENCE: TRADE vs CONTEXT ==========
         htf_bias = analysis["htf_bias"]
+        ema_bias = analysis.get("_ema_bias")
+        macd_bias = analysis.get("_macd_bias")
+
         if htf_bias == "alcista":
             if is_long:
                 analysis["coherence"] = "a_favor"
-                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF alcista - trade a favor del contexto"
+                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF alcista (precio sobre EMA200, MACD alcista) - trade a favor del contexto"
             else:
                 analysis["coherence"] = "contra"
-                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF alcista - trade CONTRA contexto"
+                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF alcista (precio sobre EMA200, MACD alcista) - trade CONTRA contexto"
         elif htf_bias == "bajista":
             if not is_long:
                 analysis["coherence"] = "a_favor"
-                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF bajista - trade a favor del contexto"
+                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF bajista (precio bajo EMA200, MACD bajista) - trade a favor del contexto"
             else:
                 analysis["coherence"] = "contra"
-                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF bajista - trade CONTRA contexto"
+                analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF bajista (precio bajo EMA200, MACD bajista) - trade CONTRA contexto"
+        elif htf_bias == "mixto":
+            # Conflicto entre EMA y MACD
+            ema_txt = f"precio {'sobre' if ema_bias == 'alcista' else 'bajo'} EMA200" if ema_bias else ""
+            macd_txt = f"MACD {macd_bias}" if macd_bias else ""
+            conflict_txt = f"{ema_txt}, {macd_txt}".strip(", ")
+            analysis["coherence"] = "neutral"
+            analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF mixto ({conflict_txt}) - estructura y momentum en conflicto"
         else:
             analysis["coherence"] = "neutral"
-            analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF de rango - sin sesgo claro"
+            analysis["coherence_text"] = f"Posicion {side_label} en contexto HTF neutral - sin sesgo claro"
 
         # ========== 4. KEY LEVELS ==========
         key_levels = []
@@ -835,50 +854,126 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
         analysis["key_levels"] = key_levels
 
         # ========== 5. MANAGEMENT SCENARIOS ==========
+        # Get swing levels from Fibonacci for proper invalidation
+        swing_high = htf_fib.get("swing_high") if htf_fib else None
+        swing_low = htf_fib.get("swing_low") if htf_fib else None
+
         if is_long:
-            # LONG favorable: price continues up, holds above key support
+            # LONG invalidation = price breaks BELOW support (must be below current price)
+            # Find the nearest support level below current price
             support_level = None
-            if ltf_fib and ltf_fib.get("levels"):
-                support_level = ltf_fib["levels"].get("38.2") or ltf_fib["levels"].get("50.0")
+            if htf_fib and htf_fib.get("levels") and current_price:
+                fib_levels = htf_fib["levels"]
+                candidates = []
+                for name in ["38.2", "50.0", "61.8"]:
+                    if name in fib_levels and fib_levels[name] < current_price:
+                        candidates.append(fib_levels[name])
+                if candidates:
+                    support_level = max(candidates)  # Closest support below
+            if support_level is None and swing_low:
+                support_level = swing_low
+            if support_level is None and entry_price:
+                support_level = entry_price * 0.97
 
-            analysis["favorable_scenario"] = (
-                f"El precio mantiene momentum alcista y respeta soportes. "
-                f"Confirmacion si el precio se mantiene sobre {_format_price(support_level) if support_level else 'soporte clave'} "
-                f"con RSI manteniendose sobre 50."
-            )
-
-            invalidation_level = support_level or (entry_price * 0.97 if entry_price else None)
+            invalidation_level = support_level
             analysis["invalidation_level"] = invalidation_level
-            analysis["invalidation_scenario"] = (
-                f"Perdida de {_format_price(invalidation_level)} invalida la estructura alcista. "
-                f"Si el precio cierra debajo de este nivel en 4H, la idea queda invalidada."
-            )
+
+            # Check if already breached
+            already_breached = current_price and invalidation_level and current_price < invalidation_level
+
+            if already_breached:
+                analysis["invalidation_breached"] = True
+                analysis["favorable_scenario"] = (
+                    f"La estructura ya esta comprometida. El precio ({_format_price(current_price)}) "
+                    f"ha perdido el soporte de {_format_price(invalidation_level)}. "
+                    f"Para recuperar el escenario favorable, el precio necesitaria cerrar en 4H "
+                    f"por encima de {_format_price(invalidation_level)} con fuerza."
+                )
+                analysis["invalidation_scenario"] = (
+                    f"ESTRUCTURA INVALIDADA. El precio ha cerrado por debajo de {_format_price(invalidation_level)}. "
+                    f"Segun las reglas actuales, la idea LONG esta invalidada."
+                )
+            else:
+                analysis["invalidation_breached"] = False
+                # Current state description
+                rsi_state = f"RSI en {htf_rsi:.0f}" if htf_rsi else "RSI"
+                analysis["favorable_scenario"] = (
+                    f"Para que el LONG se fortalezca, el precio necesitaria mantenerse sobre "
+                    f"{_format_price(support_level)} con momentum alcista. "
+                    f"Mientras {rsi_state} se mantenga sobre 50 y MACD siga alcista, la presion favorece la posicion."
+                )
+                analysis["invalidation_scenario"] = (
+                    f"Si el precio cierra en 4H por debajo de {_format_price(invalidation_level)}, "
+                    f"la estructura alcista queda invalidada. Ese nivel es el soporte clave a vigilar."
+                )
         else:
-            # SHORT favorable: price continues down, stays below resistance
+            # SHORT invalidation = price breaks ABOVE resistance (must be above current price)
+            # Find the nearest resistance level above current price
             resistance_level = None
-            if ltf_fib and ltf_fib.get("levels"):
-                resistance_level = ltf_fib["levels"].get("61.8") or ltf_fib["levels"].get("50.0")
+            if htf_fib and htf_fib.get("levels") and current_price:
+                fib_levels = htf_fib["levels"]
+                candidates = []
+                for name in ["38.2", "50.0", "61.8"]:
+                    if name in fib_levels and fib_levels[name] > current_price:
+                        candidates.append(fib_levels[name])
+                if candidates:
+                    resistance_level = min(candidates)  # Closest resistance above
+            if resistance_level is None and swing_high:
+                resistance_level = swing_high
+            if resistance_level is None and entry_price:
+                resistance_level = entry_price * 1.03
 
-            analysis["favorable_scenario"] = (
-                f"El precio mantiene presion bajista y respeta resistencias. "
-                f"Confirmacion si el precio se mantiene bajo {_format_price(resistance_level) if resistance_level else 'resistencia clave'} "
-                f"con RSI manteniendose bajo 50."
-            )
-
-            invalidation_level = resistance_level or (entry_price * 1.03 if entry_price else None)
+            invalidation_level = resistance_level
             analysis["invalidation_level"] = invalidation_level
-            analysis["invalidation_scenario"] = (
-                f"Superacion de {_format_price(invalidation_level)} invalida la estructura bajista. "
-                f"Si el precio cierra sobre este nivel en 4H, la idea queda invalidada."
-            )
+
+            # Check if already breached
+            already_breached = current_price and invalidation_level and current_price > invalidation_level
+
+            if already_breached:
+                analysis["invalidation_breached"] = True
+                analysis["favorable_scenario"] = (
+                    f"La estructura ya esta comprometida. El precio ({_format_price(current_price)}) "
+                    f"ha superado la resistencia de {_format_price(invalidation_level)}. "
+                    f"Para recuperar el escenario favorable, el precio necesitaria cerrar en 4H "
+                    f"por debajo de {_format_price(invalidation_level)} con fuerza."
+                )
+                analysis["invalidation_scenario"] = (
+                    f"ESTRUCTURA INVALIDADA. El precio ha cerrado por encima de {_format_price(invalidation_level)}. "
+                    f"Segun las reglas actuales, la idea SHORT esta invalidada."
+                )
+            else:
+                analysis["invalidation_breached"] = False
+                # Current state description
+                rsi_state = f"RSI en {htf_rsi:.0f}" if htf_rsi else "RSI"
+                analysis["favorable_scenario"] = (
+                    f"Para que el SHORT se fortalezca, el precio necesitaria mantenerse bajo "
+                    f"{_format_price(resistance_level)} con momentum bajista. "
+                    f"Mientras {rsi_state} se mantenga bajo 50 y MACD siga bajista, la presion favorece la posicion."
+                )
+                analysis["invalidation_scenario"] = (
+                    f"Si el precio cierra en 4H por encima de {_format_price(invalidation_level)}, "
+                    f"la estructura bajista queda invalidada. Ese nivel es la resistencia clave a vigilar."
+                )
 
         # ========== 6. FACTUAL OBSERVATIONS (no recommendations) ==========
         obs = []
+        ema_bias = analysis.get("_ema_bias")
+        macd_bias = analysis.get("_macd_bias")
 
-        # Price zone
+        # Note conflict first if exists
+        if ema_bias and macd_bias and ema_bias != macd_bias:
+            obs.append(f"CONFLICTO: Estructura ({ema_bias}) vs Momentum ({macd_bias}) en 4H")
+
+        # Price zone relative to EMA
         if htf_ema is not None:
             zone = "sobre" if htf_ema else "bajo"
-            obs.append(f"Precio {zone} EMA200 en 4H")
+            structural = "estructura alcista" if htf_ema else "estructura bajista"
+            obs.append(f"Precio {zone} EMA200 en 4H ({structural})")
+
+        # MACD state
+        if htf_macd:
+            macd_es = "alcista" if htf_macd == "bullish" else "bajista"
+            obs.append(f"MACD 4H {macd_es} (momentum {macd_es})")
 
         # RSI state
         if htf_rsi is not None:
@@ -892,11 +987,6 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
                 obs.append(f"RSI 4H en {htf_rsi:.0f} (momentum bajista)")
             else:
                 obs.append(f"RSI 4H en {htf_rsi:.0f} (zona neutral)")
-
-        # MACD state
-        if htf_macd:
-            macd_es = "alcista" if htf_macd == "bullish" else "bajista"
-            obs.append(f"MACD 4H {macd_es}")
 
         # Divergence
         if htf.get("divergence"):
