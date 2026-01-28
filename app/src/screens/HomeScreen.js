@@ -152,45 +152,6 @@ const alertStyles = {
   },
 };
 
-// Signal bars component (like iOS WiFi indicator)
-const SignalBars = ({ level, color = '#fff', size = 12 }) => {
-  // level: 1 = conservative, 2 = balanced, 3 = aggressive
-  const barWidth = size / 4;
-  const gap = size / 8;
-  const heights = [size * 0.4, size * 0.7, size];
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: gap }}>
-      {[0, 1, 2].map((i) => (
-        <View
-          key={i}
-          style={{
-            width: barWidth,
-            height: heights[i],
-            backgroundColor: i < level ? color : '#444',
-            borderRadius: 1,
-          }}
-        />
-      ))}
-    </View>
-  );
-};
-
-const TRADING_MODE_LABELS = {
-  conservative: { label: 'Conservador', level: 1 },
-  balanced: { label: 'Balanceado', level: 2 },
-  aggressive: { label: 'Agresivo', level: 3 },
-};
-
-const getModeColor = (mode) => {
-  switch (mode) {
-    case 'conservative': return '#00d4aa';
-    case 'balanced': return '#ffd93d';
-    case 'aggressive': return '#ff9f43';
-    default: return '#888';
-  }
-};
-
 const formatRelativeTime = (timestamp) => {
   const date = new Date(timestamp);
   const now = new Date();
@@ -479,13 +440,6 @@ const HomeScreen = () => {
                   >
                     <View style={styles.subscriptionLeft}>
                       <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
-                      <View style={styles.modeIconMini}>
-                        <SignalBars
-                          level={TRADING_MODE_LABELS[sub?.trading_mode]?.level || 2}
-                          color={getModeColor(sub?.trading_mode)}
-                          size={14}
-                        />
-                      </View>
                       <Text style={styles.subscriptionPairName}>{pair.replace('/USDT', '')}</Text>
                       {price && (
                         <Text style={styles.subscriptionPrice}>{formatPrice(price)}</Text>
@@ -889,9 +843,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginRight: 6,
-  },
-  modeIconMini: {
-    marginRight: 8,
   },
   subscriptionPrice: {
     color: '#888',
