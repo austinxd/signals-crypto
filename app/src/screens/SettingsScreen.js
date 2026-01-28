@@ -29,7 +29,7 @@ import {
   clearNotificationHistory,
 } from '../services/notifications';
 
-const SettingsScreen = () => {
+const SettingsScreen = ({ onLogout }) => {
   const [apiUrl, setApiUrlState] = useState('');
   const [pushToken, setPushToken] = useState(null);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -182,7 +182,9 @@ const SettingsScreen = () => {
         style: 'destructive',
         onPress: async () => {
           await logout();
-          Alert.alert('Sesion cerrada', 'Reinicia la app para iniciar sesion de nuevo');
+          if (onLogout) {
+            onLogout();
+          }
         },
       },
     ]);

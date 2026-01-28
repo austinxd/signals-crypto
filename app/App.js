@@ -120,12 +120,13 @@ export default function App() {
           />
           <Tab.Screen
             name="Settings"
-            component={SettingsScreen}
             options={{
               tabBarLabel: 'Ajustes',
               tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
             }}
-          />
+          >
+            {() => <SettingsScreen onLogout={() => setAuthed(false)} />}
+          </Tab.Screen>
         </Tab.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
