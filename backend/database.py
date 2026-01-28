@@ -127,6 +127,9 @@ class NotificationType(PyEnum):
     # Signal alerts
     NEW_SIGNAL = "new_signal"
     SIGNAL_IMPROVED = "signal_improved"
+    SIGNAL_LONG = "signal_long"
+    SIGNAL_SHORT = "signal_short"
+    FAVORABLE_CONDITIONS = "favorable_conditions"
 
 
 # ============================================================

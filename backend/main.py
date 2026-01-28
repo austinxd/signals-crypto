@@ -41,6 +41,7 @@ from alerts import (
     check_position_state_changes,
     check_meta_alerts,
     clear_position_state,
+    send_signal_notification,
 )
 
 
@@ -222,8 +223,8 @@ def monitor_markets():
                         except Exception as e:
                             logger.error(f"[ALERTS] Error checking context alerts: {e}")
 
-                    # Signal detection disabled - now using passive alerts only
-                    # The app no longer pushes trading signals, only context/state changes
+                    # Signal detection disabled - passive alerts only
+                    # The app notifies context changes, NOT trading signals
 
                 except Exception as e:
                     print(f"Error monitoring {pair} ({timeframe}): {e}")

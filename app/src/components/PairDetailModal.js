@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
+import { getUnifiedMarketData } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -63,7 +65,46 @@ const MOMENTUM_STYLES = {
   neutral: { label: 'Neutral', color: '#888', icon: '−' },
 };
 
-const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
+const PairDetailModal = ({ visible, onClose, pair, data: initialData, subscription }) => {
+  const [liveData, setLiveData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
+
+  // Fetch fresh data when modal opens or pair changes
+  useEffect(() => {
+    if (!visible || !pair) {
+      setLiveData(null);
+      setLastUpdate(null);
+      return;
+    }
+
+    const fetchPairData = async () => {
+      try {
+        setLoading(true);
+        const freshData = await getUnifiedMarketData([pair], true);
+        if (freshData?.pairs?.[pair]) {
+          setLiveData(freshData.pairs[pair]);
+          setLastUpdate(new Date());
+        }
+      } catch (err) {
+        console.error('Error fetching pair data:', err);
+        // Keep using initialData if fetch fails
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Fetch immediately when modal opens
+    fetchPairData();
+
+    // Auto-refresh every 15 seconds while modal is open
+    const interval = setInterval(fetchPairData, 15000);
+    return () => clearInterval(interval);
+  }, [visible, pair]);
+
+  // Use live data if available, otherwise fall back to initial data
+  const data = liveData || initialData;
+
   // Handle both unified data structure and legacy structure
   const hasUnifiedData = data?.htf_indicators || data?.ltf_indicators;
   const hasLegacyData = data?.indicators;
@@ -73,8 +114,11 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
       <Modal visible={visible} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.container}>
-            <Text style={styles.title}>{pair}</Text>
-            <Text style={styles.noData}>Sin datos disponibles</Text>
+            <View style={styles.header}>
+              <Text style={styles.title}>{pair}</Text>
+              {loading && <ActivityIndicator color="#00d4aa" style={{ marginTop: 10 }} />}
+            </View>
+            <Text style={styles.noData}>{loading ? 'Cargando datos...' : 'Sin datos disponibles'}</Text>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <Text style={styles.closeText}>Cerrar</Text>
             </TouchableOpacity>
@@ -321,7 +365,13 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
                   {directionPref && ` ${directionPref.toUpperCase()}`}
                 </Text>
               </View>
+              {loading && <ActivityIndicator color="#00d4aa" size="small" />}
             </View>
+            {lastUpdate && (
+              <Text style={styles.lastUpdateText}>
+                Actualizado: {lastUpdate.toLocaleTimeString('es-ES')}
+              </Text>
+            )}
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -719,6 +769,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     gap: 8,
+  },
+  lastUpdateText: {
+    color: '#666',
+    fontSize: 11,
+    marginTop: 6,
   },
   timeframe: {
     color: '#888',

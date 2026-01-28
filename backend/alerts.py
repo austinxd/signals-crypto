@@ -23,6 +23,11 @@ class AlertType(PyEnum):
     SCENARIO_CHANGED = "scenario_changed"
     VOLATILITY_CHANGED = "volatility_changed"
     PRICE_AT_KEY_ZONE = "price_at_key_zone"
+    FAVORABLE_CONDITIONS = "favorable_conditions"  # New: alert when conditions are good
+
+    # Signal alerts
+    SIGNAL_LONG = "signal_long"
+    SIGNAL_SHORT = "signal_short"
 
     # Position alerts
     COHERENCE_CHANGED = "coherence_changed"
@@ -52,6 +57,9 @@ ALERT_COOLDOWNS = {
     AlertType.SCENARIO_CHANGED: 30,  # 30 min
     AlertType.VOLATILITY_CHANGED: 60,
     AlertType.PRICE_AT_KEY_ZONE: 15,
+    AlertType.FAVORABLE_CONDITIONS: 240,  # 4 hours - notify when conditions are good
+    AlertType.SIGNAL_LONG: 60,  # 1 hour between same direction signals
+    AlertType.SIGNAL_SHORT: 60,
     AlertType.COHERENCE_CHANGED: 30,
     AlertType.THESIS_INVALIDATED: 5,  # Urgent - short cooldown
     AlertType.HTF_MOMENTUM_CHANGED: 60,
@@ -84,6 +92,9 @@ def _alert_type_to_notification_type(alert_type: AlertType) -> NotificationType:
         AlertType.SCENARIO_CHANGED: NotificationType.SCENARIO_CHANGED,
         AlertType.VOLATILITY_CHANGED: NotificationType.VOLATILITY_CHANGED,
         AlertType.PRICE_AT_KEY_ZONE: NotificationType.PRICE_AT_KEY_ZONE,
+        AlertType.FAVORABLE_CONDITIONS: NotificationType.FAVORABLE_CONDITIONS,
+        AlertType.SIGNAL_LONG: NotificationType.SIGNAL_LONG,
+        AlertType.SIGNAL_SHORT: NotificationType.SIGNAL_SHORT,
         AlertType.COHERENCE_CHANGED: NotificationType.COHERENCE_CHANGED,
         AlertType.THESIS_INVALIDATED: NotificationType.THESIS_INVALIDATED,
         AlertType.HTF_MOMENTUM_CHANGED: NotificationType.HTF_MOMENTUM_CHANGED,
@@ -320,6 +331,46 @@ def check_market_context_changes(
                 "structure": current_structure
             })
 
+    # --- Favorable Conditions Alert (periodic reminder when conditions are good) ---
+    direction = current_analysis.get("direction_preference")
+
+    if current_scenario in ["favorable", "operable"] and direction:
+        if not _is_on_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key):
+            # Build descriptive message
+            emoji = "🟢" if direction == "long" else "🔴"
+            direction_label = "LONG" if direction == "long" else "SHORT"
+            scenario_label = "Favorable" if current_scenario == "favorable" else "Operable"
+            bias_label = current_bias.capitalize() if current_bias else ""
+
+            title = f"{emoji} {pair_short} - Condiciones {scenario_label}"
+            body = f"Contexto {bias_label} con preferencia {direction_label}."
+
+            # Add timing info if available
+            timing = current_analysis.get("timing", {})
+            if timing.get("has_confirmation"):
+                body += " Confirmacion en 15m."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.FAVORABLE_CONDITIONS,
+                    data={
+                        "pair": pair,
+                        "timeframe": timeframe,
+                        "scenario": current_scenario,
+                        "direction": direction,
+                        "bias": current_bias,
+                    },
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.FAVORABLE_CONDITIONS, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.FAVORABLE_CONDITIONS.value,
+                "pair": pair, "timeframe": timeframe,
+                "scenario": current_scenario,
+                "direction": direction,
+            })
+
     # Update cache
     _market_state_cache[cache_key] = {
         "htf_bias": current_bias,
@@ -544,3 +595,106 @@ def get_current_states() -> Dict[str, Any]:
         "position_states": _position_state_cache,
         "cooldowns": {k: v.isoformat() for k, v in _alert_cooldowns.items()}
     }
+
+
+# =============================================================================
+# SIGNAL ALERTS
+# =============================================================================
+
+def send_signal_notification(
+    pair: str,
+    timeframe: str,
+    signal_type: str,  # "LONG" or "SHORT"
+    quality: str,  # "OPTIMA", "BUENA", "TEMPRANA"
+    score: float,
+    entry_price: float,
+    take_profit: float,
+    stop_loss: float,
+    subscribed_tokens: List[Tuple[str, int]],  # List of (push_token, user_id)
+    db: Session = None,
+    trading_mode_filter: Dict[int, str] = None,  # user_id -> trading_mode
+) -> List[Dict[str, Any]]:
+    """
+    Send signal notification to subscribed users.
+
+    Args:
+        pair: Trading pair (e.g., "BTC/USDT")
+        timeframe: Timeframe (e.g., "4h")
+        signal_type: "LONG" or "SHORT"
+        quality: Signal quality level
+        score: Numeric score
+        entry_price: Entry price
+        take_profit: Take profit level
+        stop_loss: Stop loss level
+        subscribed_tokens: List of (push_token, user_id) tuples
+        db: Database session
+        trading_mode_filter: Optional dict of user_id -> trading_mode to filter signals
+
+    Returns list of notifications sent.
+    """
+    if not subscribed_tokens:
+        return []
+
+    pair_short = pair.replace("/USDT", "").replace(":USDT", "")
+    cache_key = f"{pair}_{timeframe}"
+    alert_type = AlertType.SIGNAL_LONG if signal_type == "LONG" else AlertType.SIGNAL_SHORT
+
+    # Check cooldown
+    if _is_on_cooldown(alert_type, cache_key):
+        return []
+
+    # Determine emoji and colors based on signal type
+    emoji = "🟢" if signal_type == "LONG" else "🔴"
+    quality_emoji = {"OPTIMA": "✅", "BUENA": "👍", "TEMPRANA": "⚡"}.get(quality, "")
+
+    title = f"{emoji} {pair_short} - Senal {signal_type}"
+    body = f"{quality_emoji} {quality} ({score:.1f} pts)\nEntrada: ${entry_price:,.2f}\nTP: ${take_profit:,.2f} | SL: ${stop_loss:,.2f}"
+
+    notifications_sent = []
+
+    # Filter by trading mode if provided
+    min_score_by_mode = {
+        "conservative": 2.5,  # Only OPTIMA
+        "balanced": 1.5,      # OPTIMA + BUENA
+        "aggressive": 0,      # All signals
+    }
+
+    for token, user_id in subscribed_tokens:
+        # Check trading mode filter
+        if trading_mode_filter and user_id in trading_mode_filter:
+            user_mode = trading_mode_filter[user_id]
+            min_score = min_score_by_mode.get(user_mode, 0)
+            if score < min_score:
+                continue  # Skip this user - signal doesn't meet their criteria
+
+        result = _send_alert_notification(
+            push_token=token,
+            title=title,
+            body=body,
+            alert_type=alert_type,
+            data={
+                "pair": pair,
+                "timeframe": timeframe,
+                "signal_type": signal_type,
+                "quality": quality,
+                "score": score,
+                "entry": entry_price,
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
+            },
+            db=db,
+            user_id=user_id,
+            symbol=pair,
+        )
+
+        if result.get("status") == "success":
+            notifications_sent.append({
+                "user_id": user_id,
+                "pair": pair,
+                "signal_type": signal_type,
+            })
+
+    if notifications_sent:
+        _set_cooldown(alert_type, cache_key)
+
+    return notifications_sent
