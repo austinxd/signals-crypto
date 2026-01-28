@@ -36,6 +36,12 @@ from auth import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     decode_token, get_current_user, get_optional_user,
 )
+from alerts import (
+    check_market_context_changes,
+    check_position_state_changes,
+    check_meta_alerts,
+    clear_position_state,
+)
 
 
 # Available trading modes
@@ -193,14 +199,30 @@ def monitor_markets():
                     if timeframe == list(active_timeframes)[0]:
                         funding_data = client.get_funding_rate(pair)
 
+                    analysis = _compute_market_analysis(pair, indicators, funding_data)
+
                     market_data[timeframe][pair] = {
                         "pair": pair,
                         "timeframe": timeframe,
                         "price": indicators["price"],
                         "indicators": indicators,
                         "funding": funding_data,
+                        "analysis": analysis,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
+
+                    # Check for context alerts (passive notifications)
+                    if analysis and timeframe in ["4h", "1h"]:  # Only HTF alerts
+                        try:
+                            subscribed_tokens = _get_subscribed_tokens(pair, timeframe)
+                            if subscribed_tokens:
+                                alerts = check_market_context_changes(
+                                    pair, timeframe, analysis, subscribed_tokens
+                                )
+                                if alerts:
+                                    logger.info(f"[ALERTS] Context alerts for {pair} {timeframe}: {len(alerts)}")
+                        except Exception as e:
+                            logger.error(f"[ALERTS] Error checking context alerts: {e}")
 
                     signal = detect_signal(pair, indicators, funding_data)
                     if signal:
@@ -351,6 +373,55 @@ def monitor_positions():
 
                         except Exception as e:
                             logger.error(f"Error calculating indicators for position {pair}: {e}")
+
+                        # Check for position state changes (passive alerts)
+                        if account.get("push_token") and account.get("push_enabled", True):
+                            try:
+                                normalized_pair = _normalize_symbol(bp["symbol"])
+                                position_analysis = _compute_position_analysis(
+                                    normalized_pair, bp["side"],
+                                    bp["entry_price"], bp["current_price"]
+                                )
+                                if position_analysis:
+                                    position_alerts = check_position_state_changes(
+                                        account_id, normalized_pair, bp["side"],
+                                        position_analysis, account["push_token"]
+                                    )
+                                    if position_alerts:
+                                        logger.info(f"[ALERTS] Position alerts for {account_id}/{normalized_pair}: {len(position_alerts)}")
+                            except Exception as e:
+                                logger.error(f"[ALERTS] Error checking position alerts: {e}")
+
+                        # Track positions for meta alerts
+                        if "positions_for_meta" not in account:
+                            account["positions_for_meta"] = []
+                        try:
+                            normalized_pair = _normalize_symbol(bp["symbol"])
+                            pos_analysis = _compute_position_analysis(
+                                normalized_pair, bp["side"],
+                                bp["entry_price"], bp["current_price"]
+                            )
+                            account["positions_for_meta"].append({
+                                "symbol": normalized_pair,
+                                "side": bp["side"],
+                                "analysis": pos_analysis
+                            })
+                        except:
+                            pass
+
+                    # Check meta alerts after processing all positions for this account
+                    if (account.get("push_token") and account.get("push_enabled", True)
+                            and account.get("positions_for_meta")):
+                        try:
+                            meta_alerts = check_meta_alerts(
+                                account_id,
+                                account["positions_for_meta"],
+                                account["push_token"]
+                            )
+                            if meta_alerts:
+                                logger.info(f"[ALERTS] Meta alerts for account {account_id}: {len(meta_alerts)}")
+                        except Exception as e:
+                            logger.error(f"[ALERTS] Error checking meta alerts: {e}")
 
                     db.close()
 
@@ -599,6 +670,34 @@ async def update_account_settings(data: AccountSettingsUpdate, user: UserAccount
         return {"status": "updated"}
     finally:
         db.close()
+
+
+# ============================================================
+# Alert Helpers
+# ============================================================
+
+def _get_subscribed_tokens(pair: str, timeframe: str) -> List[str]:
+    """Get push tokens for all users subscribed to a pair/timeframe."""
+    if not notification_manager.use_db:
+        return []
+    try:
+        db = get_db()
+        from database import User
+        subs = db.query(Subscription).filter(
+            Subscription.pair == pair,
+            Subscription.timeframe == timeframe,
+            Subscription.enabled == True
+        ).all()
+        tokens = []
+        for sub in subs:
+            user = db.query(User).filter(User.id == sub.user_id).first()
+            if user and user.enabled:
+                tokens.append(user.push_token)
+        db.close()
+        return [t for t in tokens if t and t.startswith("ExponentPushToken")]
+    except Exception as e:
+        logger.error(f"[ALERTS] Error getting subscribed tokens: {e}")
+        return []
 
 
 # ============================================================
@@ -1675,6 +1774,13 @@ async def get_trading_modes():
 async def get_subscribers():
     subscribers = notification_manager.get_all_subscribers()
     return {"total": len(subscribers), "subscribers": subscribers}
+
+
+@app.get("/api/alert-states")
+async def get_alert_states():
+    """Get current alert state caches (for debugging)."""
+    from alerts import get_current_states
+    return get_current_states()
 
 
 @app.post("/api/subscriptions/add")
