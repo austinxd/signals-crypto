@@ -153,38 +153,91 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {/* a) Resumen del Escenario */}
-            <View style={[styles.scenarioBox, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
-              <View style={styles.scenarioHeader}>
-                <Text style={[styles.scenarioLabel, { color: scenarioStyle.color }]}>
-                  {scenarioStyle.label.toUpperCase()}
+            {/* a) Justificacion del Escenario */}
+            <View style={styles.justificationBox}>
+              <View style={styles.justificationHeader}>
+                <Text style={styles.justificationTitle}>
+                  Escenario clasificado como{' '}
+                  <Text style={{ color: scenarioStyle.color, fontWeight: 'bold' }}>
+                    {scenarioStyle.label}
+                  </Text>
+                  {directionPref && (
+                    <Text style={{ color: '#888' }}>
+                      {' '}con preferencia{' '}
+                      <Text style={{ color: directionPref === 'long' ? '#00d4aa' : '#ff4757', fontWeight: 'bold' }}>
+                        {directionPref.toUpperCase()}
+                      </Text>
+                    </Text>
+                  )}
                 </Text>
-                {directionPref ? (
-                  <View style={[styles.directionBadge, {
-                    backgroundColor: directionPref === 'long' ? '#00d4aa30' : '#ff475730',
-                    borderColor: directionPref === 'long' ? '#00d4aa' : '#ff4757',
-                  }]}>
-                    <Text style={[styles.directionText, {
-                      color: directionPref === 'long' ? '#00d4aa' : '#ff4757'
-                    }]}>
-                      {directionPref.toUpperCase()}
+              </View>
+
+              {/* Causal Reasons */}
+              <View style={styles.reasonsList}>
+                {/* HTF Context Reason */}
+                <View style={styles.reasonItem}>
+                  <Text style={styles.reasonBullet}>–</Text>
+                  <Text style={styles.reasonText}>
+                    El contexto 4H mantiene sesgo{' '}
+                    <Text style={{ color: biasStyle.color }}>{biasStyle.label.toLowerCase()}</Text>
+                    {htfStructure && htfStructure !== 'Sin datos' && (
+                      <Text> en {htfStructure.toLowerCase().replace(/_/g, ' ')}</Text>
+                    )}
+                  </Text>
+                </View>
+
+                {/* EMA Position Reason */}
+                {htfInd?.price_above_ema !== undefined && (
+                  <View style={styles.reasonItem}>
+                    <Text style={styles.reasonBullet}>–</Text>
+                    <Text style={styles.reasonText}>
+                      El precio se encuentra{' '}
+                      <Text style={{ color: htfInd.price_above_ema ? '#00d4aa' : '#ff4757' }}>
+                        {htfInd.price_above_ema ? 'sobre' : 'bajo'}
+                      </Text>
+                      {' '}la EMA200 en 4H
                     </Text>
                   </View>
-                ) : (
-                  <View style={[styles.directionBadge, { backgroundColor: '#44444430', borderColor: '#666' }]}>
-                    <Text style={[styles.directionText, { color: '#888' }]}>NINGUNA</Text>
+                )}
+
+                {/* LTF Alignment Reason */}
+                <View style={styles.reasonItem}>
+                  <Text style={styles.reasonBullet}>–</Text>
+                  <Text style={styles.reasonText}>
+                    El timing 15m {hasConfirmation ? 'presenta' : 'no presenta'} alineacion con el contexto
+                    {ltfMomentum !== 'neutral' && (
+                      <Text> (momentum <Text style={{ color: momentumStyle.color }}>{momentumStyle.label.toLowerCase()}</Text>)</Text>
+                    )}
+                  </Text>
+                </View>
+
+                {/* Volatility Factor if relevant */}
+                {volatilityState === 'alta' && (
+                  <View style={styles.reasonItem}>
+                    <Text style={styles.reasonBullet}>–</Text>
+                    <Text style={styles.reasonText}>
+                      <Text style={{ color: '#ff4757' }}>Volatilidad elevada</Text> incrementa el nivel de riesgo
+                    </Text>
+                  </View>
+                )}
+
+                {/* RSI Zone if extreme */}
+                {(rsiZone === 'sobrecompra' || rsiZone === 'sobrevendido') && (
+                  <View style={styles.reasonItem}>
+                    <Text style={styles.reasonBullet}>–</Text>
+                    <Text style={styles.reasonText}>
+                      RSI en zona de{' '}
+                      <Text style={{ color: rsiZone === 'sobrecompra' ? '#ff4757' : '#00d4aa' }}>
+                        {rsiZone === 'sobrecompra' ? 'sobrecompra' : 'sobreventa'}
+                      </Text>
+                    </Text>
                   </View>
                 )}
               </View>
 
-              {/* Unified Reading */}
-              {analysis.unified_reading && (
-                <Text style={styles.unifiedReading}>{analysis.unified_reading}</Text>
-              )}
-
-              {/* Scenario Reason */}
+              {/* Additional scenario reason if provided */}
               {analysis.scenario_reason && (
-                <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
+                <Text style={styles.additionalReason}>{analysis.scenario_reason}</Text>
               )}
             </View>
 
@@ -425,44 +478,50 @@ const styles = StyleSheet.create({
     padding: 40,
   },
 
-  // Scenario Box
-  scenarioBox: {
+  // Justification Box
+  justificationBox: {
+    backgroundColor: '#151525',
     borderRadius: 12,
-    borderWidth: 1,
     padding: 16,
     marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#00d4aa',
   },
-  scenarioHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+  justificationHeader: {
+    marginBottom: 14,
   },
-  scenarioLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  directionBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  directionText: {
+  justificationTitle: {
+    color: '#ccc',
     fontSize: 14,
-    fontWeight: 'bold',
-  },
-  unifiedReading: {
-    color: '#ddd',
-    fontSize: 15,
     lineHeight: 22,
-    marginBottom: 8,
   },
-  scenarioReason: {
-    color: '#999',
+  reasonsList: {
+    gap: 8,
+  },
+  reasonItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  reasonBullet: {
+    color: '#666',
+    fontSize: 14,
+    marginRight: 10,
+    marginTop: 1,
+  },
+  reasonText: {
+    color: '#aaa',
     fontSize: 13,
+    flex: 1,
+    lineHeight: 20,
+  },
+  additionalReason: {
+    color: '#777',
+    fontSize: 12,
     lineHeight: 18,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
   },
 
   // Two Layer Container
