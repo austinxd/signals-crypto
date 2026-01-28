@@ -11,6 +11,22 @@ import {
 
 const { width } = Dimensions.get('window');
 
+// Scenario classification styles
+const SCENARIO_STYLES = {
+  favorable: { label: 'Favorable', color: '#00d4aa', bg: '#00d4aa20', desc: 'Contexto alineado, buena zona de entrada' },
+  operable: { label: 'Operable', color: '#ffd93d', bg: '#ffd93d20', desc: 'Contexto presente pero entrada no ideal' },
+  alto_riesgo: { label: 'Alto Riesgo', color: '#ff4757', bg: '#ff475720', desc: 'Multiples senales conflictivas' },
+  espera: { label: 'Espera', color: '#888', bg: '#88888820', desc: 'Sin sesgo claro, esperar confirmacion' },
+};
+
+// HTF bias styles
+const BIAS_STYLES = {
+  alcista: { label: 'Alcista', color: '#00d4aa', icon: '↑' },
+  bajista: { label: 'Bajista', color: '#ff4757', icon: '↓' },
+  mixto: { label: 'Mixto', color: '#ffd93d', icon: '↔' },
+  neutral: { label: 'Neutral', color: '#888', icon: '−' },
+};
+
 // Signal bars component (like iOS WiFi indicator)
 const SignalBars = ({ level, color = '#fff', size = 12 }) => {
   const barWidth = size / 4;
@@ -40,7 +56,7 @@ const TRADING_MODE_CONFIG = {
   aggressive: { label: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las señales' },
 };
 
-const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal }) => {
+const PairDetailModal = ({ visible, onClose, pair, data, subscription }) => {
   if (!data || !data.indicators) {
     return (
       <Modal visible={visible} animationType="slide" transparent>
@@ -59,6 +75,14 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
 
   const ind = data.indicators;
   const funding = data.funding;
+  const analysis = data.analysis;
+
+  // Get scenario and bias styles
+  const scenario = analysis?.scenario || 'espera';
+  const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
+  const htfBias = analysis?.htf_bias || 'neutral';
+  const biasStyle = BIAS_STYLES[htfBias] || BIAS_STYLES.neutral;
+  const directionPref = analysis?.direction_preference;
 
   // Funding helpers
   const getFundingWarning = () => {
@@ -263,22 +287,6 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
     );
   };
 
-  // Get signal info for header - always use real-time calculated data from indicators
-  const getSignalInfo = () => {
-    // Always use calculated signal from current indicators (most up-to-date)
-    if (isLongSignal) {
-      const quality = getQualityLabel(longScore);
-      return { type: 'LONG', emoji: '🟢', quality, score: longScore };
-    }
-    if (isShortSignal) {
-      const quality = getQualityLabel(shortScore);
-      return { type: 'SHORT', emoji: '🔴', quality, score: shortScore };
-    }
-    return null;
-  };
-
-  const signalInfo = getSignalInfo();
-
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
@@ -288,22 +296,92 @@ const PairDetailModal = ({ visible, onClose, pair, data, subscription, signal })
             <Text style={styles.price}>${ind.price?.toLocaleString()}</Text>
             <View style={styles.headerBadges}>
               <Text style={styles.timeframe}>{data.timeframe}</Text>
-              {signalInfo ? (
-                <View style={[styles.signalBadge, { backgroundColor: signalInfo.quality.color + '20', borderColor: signalInfo.quality.color }]}>
-                  <Text style={[styles.signalBadgeText, { color: signalInfo.quality.color }]}>
-                    {signalInfo.emoji} {signalInfo.type} {signalInfo.quality.emoji} {signalInfo.quality.label}
-                    {signalInfo.score !== undefined ? ` (${signalInfo.score.toFixed(1)})` : ''}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.noSignalBadge}>
-                  <Text style={styles.noSignalBadgeText}>Sin señal</Text>
-                </View>
-              )}
+              <View style={[styles.signalBadge, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
+                <Text style={[styles.signalBadgeText, { color: scenarioStyle.color }]}>
+                  {scenarioStyle.label.toUpperCase()}
+                  {directionPref && ` ${directionPref.toUpperCase()}`}
+                </Text>
+              </View>
             </View>
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* 3-Layer Analysis Summary */}
+            {analysis && (
+              <View style={styles.analysisSection}>
+                {/* Scenario Classification */}
+                <View style={[styles.scenarioBox, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
+                  <View style={styles.scenarioBoxHeader}>
+                    <Text style={[styles.scenarioBoxLabel, { color: scenarioStyle.color }]}>
+                      {scenarioStyle.label.toUpperCase()}
+                    </Text>
+                    {directionPref && (
+                      <View style={[styles.directionBadge, {
+                        backgroundColor: directionPref === 'long' ? '#00d4aa30' : '#ff475730',
+                        borderColor: directionPref === 'long' ? '#00d4aa' : '#ff4757',
+                      }]}>
+                        <Text style={[styles.directionText, {
+                          color: directionPref === 'long' ? '#00d4aa' : '#ff4757'
+                        }]}>
+                          {directionPref.toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
+                </View>
+
+                {/* HTF Context Row */}
+                <View style={styles.htfContextRow}>
+                  <View style={styles.htfContextItem}>
+                    <Text style={styles.htfContextLabel}>Sesgo HTF</Text>
+                    <View style={[styles.htfBiasBadge, { borderColor: biasStyle.color }]}>
+                      <Text style={[styles.htfBiasText, { color: biasStyle.color }]}>
+                        {biasStyle.icon} {biasStyle.label}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.htfContextItem}>
+                    <Text style={styles.htfContextLabel}>Estructura</Text>
+                    <Text style={styles.htfContextValue}>
+                      {analysis.htf_structure?.replace(/_/g, ' ') || 'Sin datos'}
+                    </Text>
+                  </View>
+                  <View style={styles.htfContextItem}>
+                    <Text style={styles.htfContextLabel}>Volatilidad</Text>
+                    <Text style={[styles.htfContextValue, {
+                      color: analysis.volatility_state === 'alta' ? '#ff4757' :
+                             analysis.volatility_state === 'baja' ? '#ffd93d' : '#888'
+                    }]}>
+                      {analysis.volatility_state?.charAt(0).toUpperCase() + analysis.volatility_state?.slice(1)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Price Interpretation */}
+                {analysis.price_interpretation && (
+                  <View style={styles.priceInterpBox}>
+                    <Text style={styles.priceInterpText}>
+                      {analysis.price_interpretation}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Observations */}
+                {analysis.observations && analysis.observations.length > 0 && (
+                  <View style={styles.observationsBox}>
+                    <Text style={styles.observationsTitle}>Observaciones</Text>
+                    {analysis.observations.map((obs, idx) => (
+                      <View key={idx} style={styles.observationRow}>
+                        <Text style={styles.observationBullet}>•</Text>
+                        <Text style={styles.observationText}>{obs}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Subscription Alert Mode */}
             {subscription && (
               <View style={styles.alertModeSection}>
@@ -584,6 +662,112 @@ const styles = StyleSheet.create({
   noSignalBadgeText: {
     color: '#666',
     fontSize: 13,
+  },
+  analysisSection: {
+    marginBottom: 20,
+  },
+  scenarioBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 12,
+  },
+  scenarioBoxHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  scenarioBoxLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  scenarioReason: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  directionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  directionText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  htfContextRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#151525',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  htfContextItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  htfContextLabel: {
+    color: '#666',
+    fontSize: 10,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  htfBiasBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  htfBiasText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  htfContextValue: {
+    color: '#aaa',
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+  priceInterpBox: {
+    backgroundColor: '#1a1a30',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  priceInterpText: {
+    color: '#ccc',
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  observationsBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 8,
+    padding: 12,
+  },
+  observationsTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  observationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  observationBullet: {
+    color: '#666',
+    fontSize: 12,
+    marginRight: 8,
+    marginTop: 1,
+  },
+  observationText: {
+    color: '#999',
+    fontSize: 13,
+    flex: 1,
   },
   alertModeSection: {
     marginBottom: 16,

@@ -1,6 +1,22 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
+// Scenario classification styles
+const SCENARIO_STYLES = {
+  favorable: { label: 'Favorable', color: '#00d4aa', bg: '#00d4aa20' },
+  operable: { label: 'Operable', color: '#ffd93d', bg: '#ffd93d20' },
+  alto_riesgo: { label: 'Alto Riesgo', color: '#ff4757', bg: '#ff475720' },
+  espera: { label: 'Espera', color: '#888', bg: '#88888820' },
+};
+
+// HTF bias styles
+const BIAS_STYLES = {
+  alcista: { label: 'Alcista', color: '#00d4aa', icon: '↑' },
+  bajista: { label: 'Bajista', color: '#ff4757', icon: '↓' },
+  mixto: { label: 'Mixto', color: '#ffd93d', icon: '↔' },
+  neutral: { label: 'Neutral', color: '#888', icon: '−' },
+};
+
 const PairCard = ({ pair, data, onPress, embedded = false }) => {
   const cardStyle = embedded ? styles.cardEmbedded : styles.card;
 
@@ -13,11 +29,10 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
     );
   }
 
-  const { price, indicators, funding } = data;
+  const { price, indicators, funding, analysis } = data;
 
   const formatPrice = (p) => {
     if (p == null) return '$0.00';
-    // Use more decimals for small prices (< $1)
     const decimals = p < 1 ? 4 : p < 10 ? 3 : 2;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -29,7 +44,6 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
 
   const formatPriceShort = (p) => {
     if (p == null) return '$0';
-    // Smart formatting based on price magnitude
     if (p < 0.01) return `$${p.toFixed(6)}`;
     if (p < 1) return `$${p.toFixed(4)}`;
     if (p < 10) return `$${p.toFixed(3)}`;
@@ -37,106 +51,20 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
     return `$${p.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
   };
 
-  const getRsiColor = (rsi) => {
-    if (rsi < 30) return '#00d4aa';
-    if (rsi > 70) return '#ff4757';
-    return '#ffd93d';
-  };
+  // Get scenario styles
+  const scenario = analysis?.scenario || 'espera';
+  const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
 
-  const getTrendColor = (priceAboveEma) => {
-    return priceAboveEma ? '#00d4aa' : '#ff4757';
-  };
+  // Get HTF bias styles
+  const htfBias = analysis?.htf_bias || 'neutral';
+  const biasStyle = BIAS_STYLES[htfBias] || BIAS_STYLES.neutral;
 
-  const getFundingColor = (sentiment) => {
-    if (sentiment === 'too_many_longs') return '#ff4757';
-    if (sentiment === 'too_many_shorts') return '#00d4aa';
-    if (sentiment === 'slightly_long') return '#ffd93d';
-    if (sentiment === 'slightly_short') return '#ffd93d';
-    return '#888';
-  };
-
-  const getFundingLabel = (sentiment) => {
-    if (sentiment === 'too_many_longs') return 'Muchos Longs';
-    if (sentiment === 'too_many_shorts') return 'Muchos Shorts';
-    if (sentiment === 'slightly_long') return 'Leve Long';
-    if (sentiment === 'slightly_short') return 'Leve Short';
-    return 'Equilibrado';
-  };
-
-  const getFundingEmoji = (sentiment) => {
-    if (sentiment === 'too_many_longs') return '🔴';
-    if (sentiment === 'too_many_shorts') return '🟢';
-    return '⚖️';
-  };
-
-  // Check BASE conditions (2 required for signal)
-  const checkLongBase = () => {
-    if (!indicators) return { met: false, conditions: [] };
-    const conditions = [];
-    if (indicators.price_above_ema) conditions.push('EMA ✓');
-    if (indicators.rsi_rising) conditions.push('RSI ↑');
-    return { met: conditions.length === 2, conditions };
-  };
-
-  const checkShortBase = () => {
-    if (!indicators) return { met: false, conditions: [] };
-    const conditions = [];
-    if (!indicators.price_above_ema) conditions.push('EMA ✓');
-    if (indicators.rsi_falling) conditions.push('RSI ↓');
-    return { met: conditions.length === 2, conditions };
-  };
-
-  // Calculate SCORE for quality
-  const calculateLongScore = () => {
-    if (!indicators) return 0;
-    let score = 0;
-    if (indicators.rsi < 40) score += 1;           // RSI zone
-    if (indicators.macd_crossover_bullish) score += 1;  // MACD crossover
-    if (indicators.volume_above_average) score += 1;    // Volume
-    if (funding?.sentiment === 'too_many_shorts') score += 0.5;  // Funding
-    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo en nivel clave
-    else if (indicators.fibonacci?.near_key_level) score += 0.25;  // Fibo cerca
-    return score;
-  };
-
-  const calculateShortScore = () => {
-    if (!indicators) return 0;
-    let score = 0;
-    if (indicators.rsi > 60) score += 1;           // RSI zone
-    if (indicators.macd_crossover_bearish) score += 1;  // MACD crossover
-    if (indicators.volume_above_average) score += 1;    // Volume
-    if (funding?.sentiment === 'too_many_longs') score += 0.5;  // Funding
-    if (indicators.fibonacci?.at_key_level) score += 0.5;  // Fibo en nivel clave
-    else if (indicators.fibonacci?.near_key_level) score += 0.25;  // Fibo cerca
-    return score;
-  };
-
-  const getQuality = (score) => {
-    if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
-    if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '' };
-    return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
-  };
-
-  const longBase = checkLongBase();
-  const shortBase = checkShortBase();
-  const longScore = calculateLongScore();
-  const shortScore = calculateShortScore();
-
-  // Determine which signal is active
-  const isLongSignal = longBase.met;
-  const isShortSignal = shortBase.met;
-  const hasSignal = isLongSignal || isShortSignal;
-  const signalType = isLongSignal ? 'LONG' : (isShortSignal ? 'SHORT' : null);
-  const activeScore = isLongSignal ? longScore : shortScore;
-  const quality = getQuality(activeScore);
-
-  // For UI display - which direction has more conditions
-  const longMet = longBase.conditions.length;
-  const shortMet = shortBase.conditions.length;
+  // Direction preference
+  const directionPref = analysis?.direction_preference;
 
   return (
     <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7}>
-      {/* Header solo si no está embebido (ya se muestra en subscriptionHeader) */}
+      {/* Header only if not embedded */}
       {!embedded && (
         <View style={styles.header}>
           <View>
@@ -147,68 +75,124 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
         </View>
       )}
 
-      {indicators && (
+      {analysis ? (
         <>
-          {/* Tasa de Fondeo Indicator */}
-          {funding && (
-            <View style={styles.fundingContainer}>
-              <View style={styles.fundingHeader}>
-                <Text style={styles.fundingLabel}>Tasa de Fondeo</Text>
-                <Text style={[styles.fundingRate, { color: getFundingColor(funding.sentiment) }]}>
-                  {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
+          {/* LAYER 3: Scenario Classification Badge (top priority) */}
+          <View style={[styles.scenarioBadge, { backgroundColor: scenarioStyle.bg, borderColor: scenarioStyle.color }]}>
+            <View style={styles.scenarioHeader}>
+              <Text style={[styles.scenarioLabel, { color: scenarioStyle.color }]}>
+                {scenarioStyle.label.toUpperCase()}
+              </Text>
+              {directionPref && (
+                <View style={[styles.directionBadge, {
+                  backgroundColor: directionPref === 'long' ? '#00d4aa30' : '#ff475730',
+                  borderColor: directionPref === 'long' ? '#00d4aa' : '#ff4757',
+                }]}>
+                  <Text style={[styles.directionText, {
+                    color: directionPref === 'long' ? '#00d4aa' : '#ff4757'
+                  }]}>
+                    {directionPref === 'long' ? 'LONG' : 'SHORT'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
+          </View>
+
+          {/* LAYER 1: HTF Context */}
+          <View style={styles.htfContext}>
+            <Text style={styles.sectionTitle}>Contexto HTF</Text>
+            <View style={styles.htfRow}>
+              <View style={styles.htfItem}>
+                <Text style={styles.htfLabel}>Sesgo</Text>
+                <View style={[styles.htfValueBadge, { borderColor: biasStyle.color }]}>
+                  <Text style={[styles.htfValue, { color: biasStyle.color }]}>
+                    {biasStyle.icon} {biasStyle.label}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.htfItem}>
+                <Text style={styles.htfLabel}>Estructura</Text>
+                <Text style={styles.htfValueText}>
+                  {analysis.htf_structure?.replace(/_/g, ' ') || 'Sin datos'}
                 </Text>
               </View>
-              <View style={styles.fundingStatus}>
-                <Text style={styles.fundingEmoji}>{getFundingEmoji(funding.sentiment)}</Text>
-                <Text style={[styles.fundingSentiment, { color: getFundingColor(funding.sentiment) }]}>
-                  {getFundingLabel(funding.sentiment)}
+              <View style={styles.htfItem}>
+                <Text style={styles.htfLabel}>Volatilidad</Text>
+                <Text style={[styles.htfValueText, {
+                  color: analysis.volatility_state === 'alta' ? '#ff4757' :
+                         analysis.volatility_state === 'baja' ? '#ffd93d' : '#888'
+                }]}>
+                  {analysis.volatility_state?.charAt(0).toUpperCase() + analysis.volatility_state?.slice(1)}
                 </Text>
-                <Text style={styles.fundingRec}>{funding.recommendation}</Text>
               </View>
+            </View>
+          </View>
+
+          {/* LAYER 2: Price Interpretation */}
+          {analysis.price_interpretation && (
+            <View style={styles.priceInterpretation}>
+              <Text style={styles.interpretationText}>
+                {analysis.price_interpretation}
+              </Text>
             </View>
           )}
 
-          {/* Fibonacci - Solo niveles informativos */}
-          {indicators.fibonacci && indicators.fibonacci.levels && (() => {
+          {/* Observations */}
+          {analysis.observations && analysis.observations.length > 0 && (
+            <View style={styles.observations}>
+              {analysis.observations.map((obs, idx) => (
+                <View key={idx} style={styles.observationItem}>
+                  <Text style={styles.observationBullet}>•</Text>
+                  <Text style={styles.observationText}>{obs}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Funding Rate */}
+          {funding && (
+            <View style={styles.fundingRow}>
+              <Text style={styles.fundingLabel}>Funding</Text>
+              <Text style={[styles.fundingValue, {
+                color: funding.funding_rate_percent > 0.01 ? '#ff4757' :
+                       funding.funding_rate_percent < -0.01 ? '#00d4aa' : '#888'
+              }]}>
+                {funding.funding_rate_percent >= 0 ? '+' : ''}{funding.funding_rate_percent?.toFixed(4)}%
+              </Text>
+            </View>
+          )}
+
+          {/* Key Fibonacci Levels */}
+          {indicators?.fibonacci?.levels && (() => {
             const levels = indicators.fibonacci.levels;
             const currentPrice = price;
-
             const levelEntries = Object.entries(levels)
               .map(([name, p]) => ({ name, price: parseFloat(p) }))
               .sort((a, b) => a.price - b.price);
 
             const supports = levelEntries.filter(l => l.price < currentPrice);
             const resistances = levelEntries.filter(l => l.price > currentPrice);
-
             const nearestSupport = supports.length > 0 ? supports[supports.length - 1] : null;
             const nearestResistance = resistances.length > 0 ? resistances[0] : null;
 
-            const supportDist = nearestSupport ? ((currentPrice - nearestSupport.price) / currentPrice * 100) : null;
-            const resistanceDist = nearestResistance ? ((nearestResistance.price - currentPrice) / currentPrice * 100) : null;
-
             return (
-              <View style={styles.fiboContainer}>
-                <Text style={styles.fiboLabel}>📐 Fibonacci</Text>
-                <View style={styles.fiboLevels}>
+              <View style={styles.levelsContainer}>
+                <Text style={styles.levelsTitle}>Niveles Clave</Text>
+                <View style={styles.levelsRow}>
                   {nearestResistance && (
-                    <View style={styles.fiboLevelRow}>
-                      <Text style={styles.fiboLevelLabel}>↑ Resistencia {nearestResistance.name}%</Text>
-                      <Text style={[styles.fiboLevelPrice, { color: '#ff4757' }]}>
-                        {formatPriceShort(nearestResistance.price)} (+{resistanceDist?.toFixed(1)}%)
+                    <View style={styles.levelItem}>
+                      <Text style={styles.levelLabel}>Resistencia {nearestResistance.name}%</Text>
+                      <Text style={[styles.levelPrice, { color: '#ff4757' }]}>
+                        {formatPriceShort(nearestResistance.price)}
                       </Text>
                     </View>
                   )}
-                  <View style={styles.fiboLevelRow}>
-                    <Text style={styles.fiboLevelLabel}>● Precio actual</Text>
-                    <Text style={styles.fiboLevelPriceCurrent}>
-                      {formatPriceShort(currentPrice)}
-                    </Text>
-                  </View>
                   {nearestSupport && (
-                    <View style={styles.fiboLevelRow}>
-                      <Text style={styles.fiboLevelLabel}>↓ Soporte {nearestSupport.name}%</Text>
-                      <Text style={[styles.fiboLevelPrice, { color: '#00d4aa' }]}>
-                        {formatPriceShort(nearestSupport.price)} (-{supportDist?.toFixed(1)}%)
+                    <View style={styles.levelItem}>
+                      <Text style={styles.levelLabel}>Soporte {nearestSupport.name}%</Text>
+                      <Text style={[styles.levelPrice, { color: '#00d4aa' }]}>
+                        {formatPriceShort(nearestSupport.price)}
                       </Text>
                     </View>
                   )}
@@ -217,134 +201,45 @@ const PairCard = ({ pair, data, onPress, embedded = false }) => {
             );
           })()}
 
-          <View style={styles.signalProximity}>
-            {hasSignal ? (
-              <>
-                <View style={styles.signalHeader}>
-                  <Text style={[styles.signalType, { color: signalType === 'LONG' ? '#00d4aa' : '#ff4757' }]}>
-                    {signalType === 'LONG' ? '🟢' : '🔴'} Señal {signalType}
-                  </Text>
-                  <View style={[styles.qualityBadge, { backgroundColor: quality.color + '20', borderColor: quality.color }]}>
-                    <Text style={[styles.qualityText, { color: quality.color }]}>
-                      {quality.emoji} {quality.label}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Entry/TP/SL basado en ATR */}
-                {indicators.atr && (() => {
-                  const atr = indicators.atr;
-                  const entry = price;
-                  const slDistance = atr * 1.5;
-                  const tpDistance = atr * 3;
-
-                  const stopLoss = signalType === 'LONG' ? entry - slDistance : entry + slDistance;
-                  const takeProfit = signalType === 'LONG' ? entry + tpDistance : entry - tpDistance;
-
-                  const tpPercent = ((takeProfit - entry) / entry * 100);
-                  const slPercent = ((stopLoss - entry) / entry * 100);
-
-                  return (
-                    <View style={styles.tradeSetupCompact}>
-                      <View style={styles.tradeSetupItem}>
-                        <Text style={styles.tradeSetupItemLabel}>📍 Entrada</Text>
-                        <Text style={styles.tradeSetupItemValue}>
-                          {formatPriceShort(entry)}
-                        </Text>
-                      </View>
-                      <View style={styles.tradeSetupItem}>
-                        <Text style={styles.tradeSetupItemLabel}>🎯 TP ({tpPercent > 0 ? '+' : ''}{tpPercent.toFixed(1)}%)</Text>
-                        <Text style={[styles.tradeSetupItemValue, { color: '#00d4aa' }]}>
-                          {formatPriceShort(takeProfit)}
-                        </Text>
-                      </View>
-                      <View style={styles.tradeSetupItem}>
-                        <Text style={styles.tradeSetupItemLabel}>🛑 SL ({slPercent > 0 ? '+' : ''}{slPercent.toFixed(1)}%)</Text>
-                        <Text style={[styles.tradeSetupItemValue, { color: '#ff4757' }]}>
-                          {formatPriceShort(stopLoss)}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })()}
-
-                <View style={styles.scoreContainer}>
-                  <Text style={styles.scoreLabel}>Score: {activeScore.toFixed(1)} pts</Text>
-                  <View style={styles.scoreBar}>
-                    <View style={[styles.scoreFill, { width: `${Math.min((activeScore / 4) * 100, 100)}%`, backgroundColor: signalType === 'LONG' ? '#00d4aa' : '#ff4757' }]} />
-                  </View>
-                </View>
-              </>
-            ) : (
-              <>
-                <Text style={styles.proximityLabel}>Condiciones base:</Text>
-                <View style={styles.baseConditions}>
-                  <View style={styles.baseItem}>
-                    <Text style={styles.baseLabel}>LONG</Text>
-                    <Text style={[styles.baseStatus, { color: longBase.met ? '#00d4aa' : '#666' }]}>
-                      {longBase.conditions.join(' ')} ({longMet}/2)
-                    </Text>
-                  </View>
-                  <View style={styles.baseItem}>
-                    <Text style={styles.baseLabel}>SHORT</Text>
-                    <Text style={[styles.baseStatus, { color: shortBase.met ? '#ff4757' : '#666' }]}>
-                      {shortBase.conditions.join(' ')} ({shortMet}/2)
-                    </Text>
-                  </View>
-                </View>
-              </>
-            )}
-          </View>
-
-          <View style={styles.indicatorsGrid}>
-            <View style={styles.indicatorItem}>
-              <Text style={styles.indicatorLabel}>EMA 200</Text>
-              <View style={styles.indicatorValue}>
-                <View
-                  style={[
-                    styles.trendDot,
-                    { backgroundColor: getTrendColor(indicators.price_above_ema) },
-                  ]}
-                />
-                <Text style={styles.indicatorText}>
-                  {indicators.price_above_ema ? 'Arriba' : 'Abajo'}
+          {/* Raw Indicators (collapsed style) */}
+          <View style={styles.indicatorsRow}>
+            {indicators?.rsi != null && (
+              <View style={styles.indicatorChip}>
+                <Text style={styles.indicatorChipLabel}>RSI</Text>
+                <Text style={[styles.indicatorChipValue, {
+                  color: indicators.rsi > 70 ? '#ff4757' : indicators.rsi < 30 ? '#00d4aa' : '#fff'
+                }]}>
+                  {indicators.rsi.toFixed(0)}
                 </Text>
               </View>
-            </View>
-
-            <View style={styles.indicatorItem}>
-              <Text style={styles.indicatorLabel}>RSI</Text>
-              <Text style={[styles.indicatorText, { color: getRsiColor(indicators.rsi) }]}>
-                {indicators.rsi?.toFixed(1)}
-              </Text>
-            </View>
-
-            <View style={styles.indicatorItem}>
-              <Text style={styles.indicatorLabel}>MACD</Text>
-              <Text
-                style={[
-                  styles.indicatorText,
-                  { color: indicators.macd_histogram > 0 ? '#00d4aa' : '#ff4757' },
-                ]}
-              >
-                {indicators.macd_histogram > 0 ? '+' : ''}
-                {indicators.macd_histogram?.toFixed(2)}
-              </Text>
-            </View>
-
-            <View style={styles.indicatorItem}>
-              <Text style={styles.indicatorLabel}>Volumen</Text>
-              <Text
-                style={[
-                  styles.indicatorText,
-                  { color: indicators.volume_above_average ? '#00d4aa' : '#888' },
-                ]}
-              >
-                {indicators.volume_ratio?.toFixed(1)}x
-              </Text>
-            </View>
+            )}
+            {indicators?.macd_histogram != null && (
+              <View style={styles.indicatorChip}>
+                <Text style={styles.indicatorChipLabel}>MACD</Text>
+                <Text style={[styles.indicatorChipValue, {
+                  color: indicators.macd_histogram > 0 ? '#00d4aa' : '#ff4757'
+                }]}>
+                  {indicators.macd_histogram > 0 ? '+' : ''}{indicators.macd_histogram.toFixed(2)}
+                </Text>
+              </View>
+            )}
+            {indicators?.volume_ratio != null && (
+              <View style={styles.indicatorChip}>
+                <Text style={styles.indicatorChipLabel}>Vol</Text>
+                <Text style={[styles.indicatorChipValue, {
+                  color: indicators.volume_ratio > 1.5 ? '#00d4aa' : '#888'
+                }]}>
+                  {indicators.volume_ratio.toFixed(1)}x
+                </Text>
+              </View>
+            )}
           </View>
         </>
+      ) : (
+        // Fallback when no analysis available
+        <View style={styles.noAnalysis}>
+          <Text style={styles.noAnalysisText}>Esperando datos de analisis...</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -388,233 +283,200 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
   },
-  fundingContainer: {
-    backgroundColor: '#151525',
-    borderRadius: 8,
+
+  // Scenario Badge (Layer 3 - top priority)
+  scenarioBadge: {
+    borderRadius: 10,
+    borderWidth: 1,
     padding: 12,
-    marginBottom: 8,
-  },
-  fundingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 12,
   },
-  fundingLabel: {
-    color: '#888',
-    fontSize: 12,
-  },
-  fundingRate: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  fundingStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  fundingEmoji: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  fundingSentiment: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  fundingRec: {
-    color: '#666',
-    fontSize: 11,
-    flex: 1,
-  },
-  fiboContainer: {
-    backgroundColor: '#151525',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  fiboHeader: {
+  scenarioHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
-  fiboLabel: {
-    color: '#fff',
+  scenarioLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
-  distanceBadge: {
+  scenarioReason: {
+    color: '#aaa',
+    fontSize: 13,
+  },
+  directionBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
   },
-  distanceText: {
+  directionText: {
     fontSize: 12,
     fontWeight: 'bold',
   },
-  fiboDetail: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 8,
-  },
-  fiboLevels: {
-    marginTop: 10,
-  },
-  fiboLevelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a4a',
-  },
-  fiboLevelLabel: {
-    color: '#888',
-    fontSize: 12,
-  },
-  fiboLevelPrice: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  fiboLevelPriceCurrent: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  fiboQuality: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  fiboStatus: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  tradeSetupCompact: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#2a2a4a',
-  },
-  tradeSetupItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  tradeSetupItemLabel: {
-    color: '#666',
-    fontSize: 10,
-    marginBottom: 2,
-  },
-  tradeSetupItemValue: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  fiboLevel: {
-    color: '#aaa',
-    fontSize: 12,
-  },
-  fiboDistance: {
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  signalProximity: {
+
+  // HTF Context (Layer 1)
+  htfContext: {
     backgroundColor: '#151525',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  proximityLabel: {
-    color: '#888',
-    fontSize: 12,
+  sectionTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
     marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  signalHeader: {
+  htfRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  htfItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  htfLabel: {
+    color: '#666',
+    fontSize: 10,
+    marginBottom: 4,
+  },
+  htfValueBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  htfValue: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  htfValueText: {
+    color: '#aaa',
+    fontSize: 12,
+    textTransform: 'capitalize',
+  },
+
+  // Price Interpretation (Layer 2)
+  priceInterpretation: {
+    backgroundColor: '#1a1a30',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  interpretationText: {
+    color: '#ccc',
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+
+  // Observations
+  observations: {
+    marginBottom: 10,
+  },
+  observationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  observationBullet: {
+    color: '#666',
+    fontSize: 12,
+    marginRight: 6,
+    marginTop: 1,
+  },
+  observationText: {
+    color: '#999',
+    fontSize: 12,
+    flex: 1,
+  },
+
+  // Funding
+  fundingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
     marginBottom: 8,
   },
-  signalType: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  qualityBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  qualityText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  scoreContainer: {
-    marginTop: 4,
-  },
-  scoreLabel: {
-    color: '#888',
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  scoreBar: {
-    height: 6,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  scoreFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  baseConditions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  baseItem: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  baseLabel: {
+  fundingLabel: {
     color: '#666',
+    fontSize: 12,
+  },
+  fundingValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Key Levels
+  levelsContainer: {
+    marginBottom: 10,
+  },
+  levelsTitle: {
+    color: '#666',
+    fontSize: 11,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  levelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  levelItem: {
+    alignItems: 'center',
+  },
+  levelLabel: {
+    color: '#888',
     fontSize: 10,
     marginBottom: 2,
   },
-  baseStatus: {
-    fontSize: 12,
+  levelPrice: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  indicatorsGrid: {
+
+  // Indicators Row
+  indicatorsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
+    justifyContent: 'center',
+    gap: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
   },
-  indicatorItem: {
-    width: '50%',
-    paddingVertical: 8,
-  },
-  indicatorLabel: {
-    color: '#888',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  indicatorValue: {
+  indicatorChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#252535',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 6,
   },
-  indicatorText: {
-    color: '#fff',
-    fontSize: 14,
+  indicatorChipLabel: {
+    color: '#666',
+    fontSize: 10,
+  },
+  indicatorChipValue: {
+    fontSize: 12,
     fontWeight: '600',
   },
-  trendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+
+  // No analysis fallback
+  noAnalysis: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  noAnalysisText: {
+    color: '#666',
+    fontSize: 13,
   },
 });
 

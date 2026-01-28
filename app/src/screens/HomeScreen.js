@@ -291,51 +291,12 @@ const HomeScreen = () => {
         );
       }
 
-      // Helper to check if there's an active signal based on current indicators
-      const checkActiveSignal = (indicators) => {
-        if (!indicators) return { hasSignal: false, side: null };
-
-        // Check LONG base conditions (need 2/2)
-        const longConditions = [
-          indicators.price_above_ema,
-          indicators.rsi_rising
-        ].filter(Boolean).length;
-
-        // Check SHORT base conditions (need 2/2)
-        const shortConditions = [
-          !indicators.price_above_ema,
-          indicators.rsi_falling
-        ].filter(Boolean).length;
-
-        if (longConditions === 2) return { hasSignal: true, side: 'LONG' };
-        if (shortConditions === 2) return { hasSignal: true, side: 'SHORT' };
-        return { hasSignal: false, side: null };
-      };
-
-      // Helper to calculate score from current indicators (same logic as PairCard)
-      const calculateScore = (indicators, funding, isLong) => {
-        if (!indicators) return 0;
-        let score = 0;
-        if (isLong) {
-          if (indicators.rsi < 40) score += 1;
-          if (indicators.macd_crossover_bullish) score += 1;
-          if (funding?.sentiment === 'too_many_shorts') score += 0.5;
-        } else {
-          if (indicators.rsi > 60) score += 1;
-          if (indicators.macd_crossover_bearish) score += 1;
-          if (funding?.sentiment === 'too_many_longs') score += 0.5;
-        }
-        if (indicators.volume_above_average) score += 1;
-        if (indicators.fibonacci?.at_key_level) score += 0.5;
-        else if (indicators.fibonacci?.near_key_level) score += 0.25;
-        return score;
-      };
-
-      // Helper to get quality badge config from score (real-time calculation)
-      const getQualityFromScore = (score) => {
-        if (score >= 2.5) return { label: 'Óptima', color: '#00d4aa', emoji: '✅' };
-        if (score >= 1.5) return { label: 'Buena', color: '#ffd93d', emoji: '' };
-        return { label: 'Alto Riesgo', color: '#ff4757', emoji: '' };
+      // Scenario styles for header badges
+      const SCENARIO_STYLES = {
+        favorable: { label: 'Favorable', color: '#00d4aa' },
+        operable: { label: 'Operable', color: '#ffd93d' },
+        alto_riesgo: { label: 'Alto Riesgo', color: '#ff4757' },
+        espera: { label: 'Espera', color: '#888' },
       };
 
       // Render right swipe action (delete)
@@ -363,15 +324,12 @@ const HomeScreen = () => {
             const isExpanded = expandedSubs[sub.id] !== false; // Default expanded
             const pairData = marketData[`${sub.pair}_${sub.timeframe}`];
             const price = pairData?.price;
+            const analysis = pairData?.analysis;
 
-            // Check for active signal based on CURRENT indicators (not backend signal)
-            const activeSignal = checkActiveSignal(pairData?.indicators);
-
-            // Calculate real-time quality from current indicators
-            const realTimeScore = activeSignal.hasSignal && pairData?.indicators
-              ? calculateScore(pairData.indicators, pairData.funding, activeSignal.side === 'LONG')
-              : 0;
-            const realTimeQuality = getQualityFromScore(realTimeScore);
+            // Get scenario from backend analysis
+            const scenario = analysis?.scenario || 'espera';
+            const scenarioStyle = SCENARIO_STYLES[scenario] || SCENARIO_STYLES.espera;
+            const directionPref = analysis?.direction_preference;
 
             return (
               <Swipeable
@@ -404,25 +362,20 @@ const HomeScreen = () => {
                       </View>
                     </View>
                     <View style={styles.subscriptionBadges}>
-                      {/* Signal indicator: green for LONG, red for SHORT, gray for none */}
-                      {activeSignal.hasSignal ? (
-                        <>
-                          <View style={[styles.signalIndicator, { backgroundColor: activeSignal.side === 'LONG' ? '#00d4aa' : '#ff4757' }]}>
-                            <Text style={styles.signalIndicatorText}>
-                              {activeSignal.side === 'LONG' ? '🟢' : '🔴'}
-                            </Text>
-                          </View>
-                          <View style={[styles.qualityBadgeSmall, { backgroundColor: realTimeQuality.color + '30', borderColor: realTimeQuality.color }]}>
-                            <Text style={[styles.qualityBadgeTextSmall, { color: realTimeQuality.color }]}>
-                              {realTimeQuality.emoji} {realTimeQuality.label}
-                            </Text>
-                          </View>
-                        </>
-                      ) : (
-                        <View style={styles.noSignalIndicator}>
-                          <Text style={styles.noSignalText}>⚪</Text>
+                      {/* Direction preference indicator */}
+                      {directionPref && (
+                        <View style={[styles.signalIndicator, { backgroundColor: directionPref === 'long' ? '#00d4aa' : '#ff4757' }]}>
+                          <Text style={styles.signalIndicatorText}>
+                            {directionPref === 'long' ? '↑' : '↓'}
+                          </Text>
                         </View>
                       )}
+                      {/* Scenario badge */}
+                      <View style={[styles.qualityBadgeSmall, { backgroundColor: scenarioStyle.color + '30', borderColor: scenarioStyle.color }]}>
+                        <Text style={[styles.qualityBadgeTextSmall, { color: scenarioStyle.color }]}>
+                          {scenarioStyle.label}
+                        </Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
 
@@ -644,7 +597,6 @@ const HomeScreen = () => {
         pair={selectedPair}
         data={selectedPair && selectedSubscription ? marketData[`${selectedPair}_${selectedSubscription.timeframe}`] : null}
         subscription={selectedSubscription}
-        signal={selectedPair && selectedSubscription ? badgeSignals.find(s => s.pair === selectedPair && s.timeframe === selectedSubscription.timeframe) : null}
       />
 
       <AddSubscriptionModal

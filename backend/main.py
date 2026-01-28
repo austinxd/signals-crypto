@@ -697,6 +697,302 @@ def _format_price(p):
     return f"${p:,.0f}"
 
 
+def _compute_market_analysis(pair: str, indicators: dict, funding: dict = None) -> dict:
+    """
+    Compute 3-layer market analysis for the Mercado tab.
+    This is PRE-ENTRY analysis - classifies terrain, not generates orders.
+
+    Layer 1: HTF Context (4H) - bias, structure, volatility
+    Layer 2: Current Price State - interpreted indicators
+    Layer 3: Scenario Classification - favorable/operable/alto_riesgo/espera
+    """
+    analysis = {
+        # Layer 1: HTF Context
+        "htf_bias": "neutral",  # alcista / bajista / mixto / neutral
+        "htf_structure": "sin_datos",  # tendencia / retroceso / consolidacion / sin_datos
+        "volatility_state": "normal",  # alta / normal / baja
+
+        # Layer 2: Price State
+        "price_state": {
+            "ema_position": None,  # "sobre" / "bajo"
+            "rsi_zone": None,  # "sobrecompra" / "sobrevendido" / "alcista" / "bajista" / "neutral"
+            "macd_momentum": None,  # "alcista" / "bajista" / "cruce_alcista" / "cruce_bajista"
+            "volume_state": None,  # "alto" / "normal" / "bajo"
+            "fibo_context": None,  # descripcion del nivel fibonacci
+        },
+        "price_interpretation": "",  # Single sentence interpreting current state
+
+        # Layer 3: Scenario Classification
+        "scenario": "espera",  # favorable / operable / alto_riesgo / espera
+        "direction_preference": None,  # "long" / "short" / None (only if HTF allows)
+        "scenario_reason": "",  # Why this classification
+
+        # Key levels for reference
+        "key_levels": [],
+
+        # Summary observations (factual)
+        "observations": [],
+    }
+
+    if not indicators:
+        analysis["scenario_reason"] = "Sin datos de indicadores disponibles"
+        return analysis
+
+    price = indicators.get("price")
+    rsi = indicators.get("rsi")
+    macd_hist = indicators.get("macd_histogram")
+    macd_bullish = indicators.get("macd_crossover_bullish")
+    macd_bearish = indicators.get("macd_crossover_bearish")
+    price_above_ema = indicators.get("price_above_ema")
+    volume_above = indicators.get("volume_above_average")
+    volume_ratio = indicators.get("volume_ratio", 1)
+    atr = indicators.get("atr")
+    fib = indicators.get("fibonacci")
+    divergence = indicators.get("divergence")
+
+    # ========== LAYER 1: HTF CONTEXT ==========
+    # Determine structure bias from EMA200
+    ema_bias = None
+    if price_above_ema is True:
+        ema_bias = "alcista"
+        analysis["price_state"]["ema_position"] = "sobre"
+    elif price_above_ema is False:
+        ema_bias = "bajista"
+        analysis["price_state"]["ema_position"] = "bajo"
+
+    # Determine momentum from MACD
+    macd_bias = None
+    if macd_hist is not None:
+        if macd_hist > 0:
+            macd_bias = "alcista"
+            analysis["price_state"]["macd_momentum"] = "alcista"
+        else:
+            macd_bias = "bajista"
+            analysis["price_state"]["macd_momentum"] = "bajista"
+
+    if macd_bullish:
+        analysis["price_state"]["macd_momentum"] = "cruce_alcista"
+    elif macd_bearish:
+        analysis["price_state"]["macd_momentum"] = "cruce_bajista"
+
+    # Combine for HTF bias - requires agreement for clear direction
+    if ema_bias and macd_bias:
+        if ema_bias == macd_bias:
+            analysis["htf_bias"] = ema_bias
+        else:
+            analysis["htf_bias"] = "mixto"
+    elif ema_bias:
+        analysis["htf_bias"] = ema_bias
+    elif macd_bias:
+        analysis["htf_bias"] = macd_bias
+
+    # Structure from Fibonacci
+    if fib:
+        is_uptrend = fib.get("is_uptrend", False)
+        dist = fib.get("distance_percent", 0)
+        at_level = fib.get("at_key_level", False)
+        near_level = fib.get("near_key_level", False)
+        level_name = fib.get("key_level_name", "")
+
+        if at_level or near_level:
+            analysis["htf_structure"] = "en nivel clave"
+            proximity = "en" if at_level else "cerca de"
+            analysis["price_state"]["fibo_context"] = f"Precio {proximity} Fibo {level_name}"
+        elif abs(dist) < 3:
+            analysis["htf_structure"] = "consolidacion"
+            analysis["price_state"]["fibo_context"] = "Precio en zona de consolidacion"
+        elif (is_uptrend and dist > 0) or (not is_uptrend and dist < 0):
+            analysis["htf_structure"] = "extension"
+            analysis["price_state"]["fibo_context"] = f"Extension {'alcista' if is_uptrend else 'bajista'}"
+        else:
+            analysis["htf_structure"] = "retroceso"
+            trend = "alcista" if is_uptrend else "bajista"
+            analysis["price_state"]["fibo_context"] = f"Retroceso en tendencia {trend}"
+
+    # Volatility from ATR and volume
+    if atr and price:
+        atr_pct = (atr / price) * 100
+        if atr_pct > 3:
+            analysis["volatility_state"] = "alta"
+        elif atr_pct < 1:
+            analysis["volatility_state"] = "baja"
+        else:
+            analysis["volatility_state"] = "normal"
+
+    # ========== LAYER 2: PRICE STATE ==========
+    # RSI interpretation
+    if rsi is not None:
+        if rsi > 70:
+            analysis["price_state"]["rsi_zone"] = "sobrecompra"
+        elif rsi < 30:
+            analysis["price_state"]["rsi_zone"] = "sobrevendido"
+        elif rsi > 55:
+            analysis["price_state"]["rsi_zone"] = "alcista"
+        elif rsi < 45:
+            analysis["price_state"]["rsi_zone"] = "bajista"
+        else:
+            analysis["price_state"]["rsi_zone"] = "neutral"
+
+    # Volume state
+    if volume_ratio is not None:
+        if volume_ratio > 1.5:
+            analysis["price_state"]["volume_state"] = "alto"
+        elif volume_ratio < 0.7:
+            analysis["price_state"]["volume_state"] = "bajo"
+        else:
+            analysis["price_state"]["volume_state"] = "normal"
+
+    # Build price interpretation
+    parts = []
+    if analysis["price_state"]["ema_position"]:
+        parts.append(f"precio {analysis['price_state']['ema_position']} EMA200")
+    if analysis["price_state"]["rsi_zone"]:
+        zone = analysis["price_state"]["rsi_zone"]
+        if zone == "sobrecompra":
+            parts.append("RSI en sobrecompra")
+        elif zone == "sobrevendido":
+            parts.append("RSI en sobreventa")
+        elif zone in ["alcista", "bajista"]:
+            parts.append(f"momentum {zone}")
+    if analysis["price_state"]["macd_momentum"]:
+        mom = analysis["price_state"]["macd_momentum"]
+        if "cruce" in mom:
+            parts.append(f"MACD con {mom.replace('_', ' ')}")
+        else:
+            parts.append(f"MACD {mom}")
+
+    if parts:
+        analysis["price_interpretation"] = ", ".join(parts).capitalize()
+
+    # ========== LAYER 3: SCENARIO CLASSIFICATION ==========
+    htf_bias = analysis["htf_bias"]
+    rsi_zone = analysis["price_state"]["rsi_zone"]
+    structure = analysis["htf_structure"]
+    vol_state = analysis["volatility_state"]
+    macd_state = analysis["price_state"]["macd_momentum"]
+
+    # Classification logic:
+    # FAVORABLE: Clear HTF bias + supportive indicators + good entry zone
+    # OPERABLE: HTF bias present but entry zone not ideal
+    # ALTO_RIESGO: Conflicting signals, extreme RSI, or divergence
+    # ESPERA: No clear bias, waiting for confirmation
+
+    risk_factors = 0
+    favorable_factors = 0
+
+    # Check risk factors
+    if htf_bias == "mixto":
+        risk_factors += 2
+    if rsi_zone in ["sobrecompra", "sobrevendido"]:
+        risk_factors += 1
+    if divergence:
+        risk_factors += 2
+    if vol_state == "alta":
+        risk_factors += 1
+
+    # Check favorable factors
+    if htf_bias in ["alcista", "bajista"]:
+        favorable_factors += 2
+    if structure in ["retroceso", "en nivel clave"]:
+        favorable_factors += 1
+    if macd_state and "cruce" in macd_state:
+        favorable_factors += 1
+    if vol_state == "normal":
+        favorable_factors += 1
+
+    # Funding rate consideration
+    if funding:
+        sentiment = funding.get("sentiment", "")
+        if htf_bias == "alcista" and sentiment == "too_many_shorts":
+            favorable_factors += 1
+        elif htf_bias == "bajista" and sentiment == "too_many_longs":
+            favorable_factors += 1
+        elif sentiment in ["too_many_longs", "too_many_shorts"]:
+            risk_factors += 1
+
+    # Determine scenario
+    if risk_factors >= 3:
+        analysis["scenario"] = "alto_riesgo"
+        analysis["scenario_reason"] = "Multiples senales conflictivas o extremas"
+    elif htf_bias == "neutral" or htf_bias == "mixto":
+        analysis["scenario"] = "espera"
+        analysis["scenario_reason"] = "Sin sesgo direccional claro en HTF"
+    elif favorable_factors >= 3 and risk_factors <= 1:
+        analysis["scenario"] = "favorable"
+        analysis["scenario_reason"] = f"Contexto {htf_bias} con estructura {structure}"
+    elif favorable_factors >= 2:
+        analysis["scenario"] = "operable"
+        analysis["scenario_reason"] = f"Contexto {htf_bias} pero entrada no ideal"
+    else:
+        analysis["scenario"] = "espera"
+        analysis["scenario_reason"] = "Esperando confirmacion adicional"
+
+    # Direction preference (only if HTF allows)
+    if analysis["scenario"] in ["favorable", "operable"]:
+        if htf_bias == "alcista":
+            # Check if RSI allows long
+            if rsi_zone not in ["sobrecompra"]:
+                analysis["direction_preference"] = "long"
+        elif htf_bias == "bajista":
+            # Check if RSI allows short
+            if rsi_zone not in ["sobrevendido"]:
+                analysis["direction_preference"] = "short"
+
+    # ========== KEY LEVELS ==========
+    if fib and fib.get("levels"):
+        levels = fib["levels"]
+        for name in ["38.2", "50.0", "61.8"]:
+            if name in levels:
+                analysis["key_levels"].append({
+                    "name": f"Fibo {name}%",
+                    "price": levels[name]
+                })
+
+    # ========== OBSERVATIONS (factual only) ==========
+    obs = []
+
+    if htf_bias == "mixto":
+        obs.append("Estructura y momentum en conflicto")
+
+    if price_above_ema is not None:
+        zone = "sobre" if price_above_ema else "bajo"
+        bias = "alcista" if price_above_ema else "bajista"
+        obs.append(f"Precio {zone} EMA200 (estructura {bias})")
+
+    if macd_state:
+        if "cruce" in macd_state:
+            direction = "alcista" if "alcista" in macd_state else "bajista"
+            obs.append(f"MACD acaba de cruzar {direction}")
+        else:
+            obs.append(f"Momentum MACD {macd_state}")
+
+    if rsi is not None:
+        if rsi_zone in ["sobrecompra", "sobrevendido"]:
+            obs.append(f"RSI en {rsi:.0f} - zona de {rsi_zone}")
+        else:
+            obs.append(f"RSI en {rsi:.0f}")
+
+    if divergence:
+        obs.append(f"Divergencia {divergence} detectada")
+
+    if vol_state == "alto":
+        obs.append(f"Volumen elevado ({volume_ratio:.1f}x promedio)")
+    elif vol_state == "bajo":
+        obs.append(f"Volumen bajo ({volume_ratio:.1f}x promedio)")
+
+    if funding:
+        rate = funding.get("funding_rate_percent", 0)
+        sentiment = funding.get("sentiment", "balanced")
+        if sentiment == "too_many_longs":
+            obs.append(f"Funding {rate:.4f}% (exceso de longs)")
+        elif sentiment == "too_many_shorts":
+            obs.append(f"Funding {rate:.4f}% (exceso de shorts)")
+
+    analysis["observations"] = obs
+
+    return analysis
+
+
 def _compute_position_analysis(symbol: str, side: str, entry_price: float, current_price: float):
     """
     Analyze position according to spec:
@@ -1198,10 +1494,13 @@ async def get_market_data(timeframe: str = DEFAULT_TIMEFRAME, refresh: bool = Fa
                 indicators = get_latest_indicators(df)
                 funding_data = client.get_funding_rate(pair)
                 if indicators:
+                    # Compute 3-layer market analysis
+                    analysis = _compute_market_analysis(pair, indicators, funding_data)
                     market_data[timeframe][pair] = {
                         "pair": pair, "timeframe": timeframe,
                         "price": indicators["price"], "indicators": indicators,
                         "funding": funding_data,
+                        "analysis": analysis,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
             except Exception as e:
