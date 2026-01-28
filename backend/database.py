@@ -105,6 +105,30 @@ class RecommendedAction(PyEnum):
     CLOSE_ALL = "CLOSE_ALL"
 
 
+class NotificationType(PyEnum):
+    """Types of notifications."""
+    # Context alerts (market)
+    HTF_BIAS_CHANGED = "htf_bias_changed"
+    SCENARIO_CHANGED = "scenario_changed"
+    VOLATILITY_CHANGED = "volatility_changed"
+    PRICE_AT_KEY_ZONE = "price_at_key_zone"
+    # Position alerts
+    COHERENCE_CHANGED = "coherence_changed"
+    THESIS_INVALIDATED = "thesis_invalidated"
+    HTF_MOMENTUM_CHANGED = "htf_momentum_changed"
+    # Meta alerts
+    MULTIPLE_AGAINST_CONTEXT = "multiple_against_context"
+    HIGH_RISK_EXPOSURE = "high_risk_exposure"
+    # Exit alerts
+    TRAILING_BREAKEVEN = "trailing_breakeven"
+    TRAILING_UPDATE = "trailing_update"
+    MACD_REVERSAL = "macd_reversal"
+    RSI_EXTREME = "rsi_extreme"
+    # Signal alerts
+    NEW_SIGNAL = "new_signal"
+    SIGNAL_IMPROVED = "signal_improved"
+
+
 # ============================================================
 # Legacy User model (kept for backward compatibility with push tokens)
 # ============================================================
@@ -228,6 +252,24 @@ class ExitAlert(Base):
     new_sl_price = Column(Float, nullable=True)
     was_executed = Column(Boolean, default=False)  # True if bot mode executed the action
     is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+# ============================================================
+# UserNotification model (all types of notifications)
+# ============================================================
+class UserNotification(Base):
+    """Stores all notifications sent to users."""
+    __tablename__ = "user_notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
+    notification_type = Column(Enum(NotificationType), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    symbol = Column(String(20), nullable=True)  # Optional: related symbol
+    data = Column(JSON, nullable=True)  # Additional context data
+    is_read = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
@@ -815,6 +857,77 @@ class DBHelper:
         return db.query(ExitAlert).filter(
             ExitAlert.position_id == position_id
         ).order_by(ExitAlert.created_at.desc()).limit(limit).all()
+
+    # ---- UserNotification methods ----
+    @staticmethod
+    def create_notification(
+        db: Session,
+        user_id: int,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+        symbol: str = None,
+        data: dict = None,
+    ) -> UserNotification:
+        """Create a new notification for a user."""
+        notification = UserNotification(
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            symbol=symbol,
+            data=data,
+        )
+        db.add(notification)
+        db.commit()
+        db.refresh(notification)
+        return notification
+
+    @staticmethod
+    def get_user_notifications(
+        db: Session,
+        user_id: int,
+        limit: int = 50,
+        unread_only: bool = False,
+    ) -> list:
+        """Get notifications for a user."""
+        query = db.query(UserNotification).filter(
+            UserNotification.user_id == user_id
+        )
+        if unread_only:
+            query = query.filter(UserNotification.is_read == False)
+        return query.order_by(UserNotification.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def get_unread_count(db: Session, user_id: int) -> int:
+        """Get count of unread notifications for a user."""
+        return db.query(UserNotification).filter(
+            UserNotification.user_id == user_id,
+            UserNotification.is_read == False
+        ).count()
+
+    @staticmethod
+    def mark_notification_read(db: Session, notification_id: int, user_id: int) -> bool:
+        """Mark a notification as read."""
+        notification = db.query(UserNotification).filter(
+            UserNotification.id == notification_id,
+            UserNotification.user_id == user_id
+        ).first()
+        if notification:
+            notification.is_read = True
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
+    def mark_all_notifications_read(db: Session, user_id: int) -> int:
+        """Mark all notifications as read for a user. Returns count updated."""
+        count = db.query(UserNotification).filter(
+            UserNotification.user_id == user_id,
+            UserNotification.is_read == False
+        ).update({"is_read": True})
+        db.commit()
+        return count
 
 
 # Migration helper to import existing tokens.json

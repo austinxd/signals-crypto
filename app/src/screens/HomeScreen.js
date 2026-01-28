@@ -22,12 +22,14 @@ import {
   getNotificationHistoryFromServer,
   clearSignals,
   clearNotifications,
+  getUnreadCount,
 } from '../services/api';
 import { getStoredPushToken } from '../services/notifications';
 import SignalCard from '../components/SignalCard';
 import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
+import NotificationsModal from '../components/NotificationsModal';
 
 // Signal bars component (like iOS WiFi indicator)
 const SignalBars = ({ level, color = '#fff', size = 12 }) => {
@@ -117,6 +119,8 @@ const HomeScreen = () => {
   const [selectedSubscription, setSelectedSubscription] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [expandedSubs, setExpandedSubs] = useState({});  // Track expanded subscriptions
 
@@ -211,6 +215,23 @@ const HomeScreen = () => {
     const interval = setInterval(() => fetchData(true), 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Fetch unread notifications count
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const data = await getUnreadCount();
+      setUnreadNotifications(data.unread_count || 0);
+    } catch (err) {
+      // Ignore errors - not critical
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    // Refresh count every 60 seconds
+    const interval = setInterval(fetchUnreadCount, 60000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -542,13 +563,27 @@ const HomeScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
-          {subscriptions.length > 0 && activeTab === 'market' && (
-            <View style={styles.headerRight}>
+          <View style={styles.headerRight}>
+            {/* Bell icon for notifications */}
+            <TouchableOpacity
+              style={styles.bellButton}
+              onPress={() => setNotificationsModalVisible(true)}
+            >
+              <Text style={styles.bellIcon}>🔔</Text>
+              {unreadNotifications > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {subscriptions.length > 0 && activeTab === 'market' && (
               <View style={styles.countBadge}>
                 <Text style={styles.countText}>{[...new Set(subscriptions.map(s => s.pair))].length} pares</Text>
               </View>
-            </View>
-          )}
+            )}
+          </View>
         </View>
         {lastUpdate && activeTab === 'market' && (
           <Text style={styles.lastUpdate}>
@@ -601,7 +636,7 @@ const HomeScreen = () => {
           setSelectedSubscription(null);
         }}
         pair={selectedPair}
-        data={selectedPair && selectedSubscription ? marketData[`${selectedPair}_${selectedSubscription.timeframe}`] : null}
+        data={selectedPair ? marketData[selectedPair] : null}
         subscription={selectedSubscription}
       />
 
@@ -610,6 +645,12 @@ const HomeScreen = () => {
         onClose={() => setAddModalVisible(false)}
         onAdd={handleAddSubscription}
         existingSubscriptions={subscriptions}
+      />
+
+      <NotificationsModal
+        visible={notificationsModalVisible}
+        onClose={() => setNotificationsModalVisible(false)}
+        onUnreadCountChange={setUnreadNotifications}
       />
     </View>
   );
@@ -668,7 +709,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   headerRight: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  bellButton: {
+    position: 'relative',
+    padding: 8,
+  },
+  bellIcon: {
+    fontSize: 22,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#ff4757',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  bellBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   countBadge: {
     backgroundColor: '#1a1a2e',

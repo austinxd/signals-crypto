@@ -34,18 +34,16 @@ const SignalBars = ({ level, color = '#fff', size = 12 }) => {
 };
 
 const TRADING_MODES = [
-  { id: 'conservative', name: 'Conservador', level: 1, color: '#00d4aa', description: 'Solo Óptimas' },
-  { id: 'balanced', name: 'Balanceado', level: 2, color: '#ffd93d', description: 'Óptimas + Buenas' },
-  { id: 'aggressive', name: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las señales' },
+  { id: 'conservative', name: 'Conservador', level: 1, color: '#00d4aa', description: 'Solo alertas criticas' },
+  { id: 'balanced', name: 'Balanceado', level: 2, color: '#ffd93d', description: 'Alertas importantes (Recomendado)' },
+  { id: 'aggressive', name: 'Agresivo', level: 3, color: '#ff9f43', description: 'Todas las alertas' },
 ];
 
 const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions = [] }) => {
   const [step, setStep] = useState(1);
   const [selectedPair, setSelectedPair] = useState(null);
-  const [selectedTimeframe, setSelectedTimeframe] = useState(null);
   const [selectedMode, setSelectedMode] = useState('balanced');
   const [availablePairs, setAvailablePairs] = useState([]);
-  const [availableTimeframes, setAvailableTimeframes] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,7 +52,6 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
       // Reset state
       setStep(1);
       setSelectedPair(null);
-      setSelectedTimeframe(null);
       setSelectedMode('balanced');
     }
   }, [visible]);
@@ -64,29 +61,24 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
       setLoading(true);
       const config = await getConfig();
       setAvailablePairs(config.available_pairs || []);
-      setAvailableTimeframes(config.available_timeframes || []);
     } catch (err) {
       setAvailablePairs([
         'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT',
         'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT',
       ]);
-      setAvailableTimeframes(['15m', '30m', '1h', '4h', '1d']);
     } finally {
       setLoading(false);
     }
   };
 
-  const isAlreadySubscribed = (pair, timeframe) => {
-    return existingSubscriptions.some(
-      sub => sub.pair === pair && sub.timeframe === timeframe
-    );
+  // Check if pair is already subscribed (ignore timeframe - we now use unified)
+  const isAlreadySubscribed = (pair) => {
+    return existingSubscriptions.some(sub => sub.pair === pair);
   };
 
   const handleNext = () => {
     if (step === 1 && selectedPair) {
       setStep(2);
-    } else if (step === 2 && selectedTimeframe) {
-      setStep(3);
     }
   };
 
@@ -97,8 +89,10 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
   };
 
   const handleAdd = () => {
-    if (selectedPair && selectedTimeframe && selectedMode) {
-      onAdd(selectedPair, selectedTimeframe, selectedMode);
+    if (selectedPair && selectedMode) {
+      // Use "4h" as default timeframe for backend compatibility
+      // The frontend now shows unified 4H+15m analysis regardless
+      onAdd(selectedPair, '4h', selectedMode);
       onClose();
     }
   };
@@ -106,25 +100,40 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
   const renderStep1 = () => (
     <>
       <Text style={styles.stepTitle}>1. Selecciona el par</Text>
+      <Text style={styles.stepDescription}>
+        Cada par muestra analisis unificado 4H (contexto) + 15m (timing)
+      </Text>
       <ScrollView style={styles.optionsList}>
         {availablePairs.map((pair) => {
           const pairShort = pair.replace('/USDT', '');
+          const alreadyExists = isAlreadySubscribed(pair);
           return (
             <TouchableOpacity
               key={pair}
               style={[
                 styles.optionItem,
                 selectedPair === pair && styles.optionItemSelected,
+                alreadyExists && styles.optionItemDisabled,
               ]}
-              onPress={() => setSelectedPair(pair)}
+              onPress={() => !alreadyExists && setSelectedPair(pair)}
+              disabled={alreadyExists}
             >
-              <Text style={[
-                styles.optionText,
-                selectedPair === pair && styles.optionTextSelected,
-              ]}>
-                {pairShort}
-              </Text>
-              <Text style={styles.optionSubtext}>{pair}</Text>
+              <View>
+                <Text style={[
+                  styles.optionText,
+                  selectedPair === pair && styles.optionTextSelected,
+                  alreadyExists && styles.optionTextDisabled,
+                ]}>
+                  {pairShort}
+                </Text>
+                <Text style={styles.optionSubtext}>{pair}</Text>
+              </View>
+              {alreadyExists && (
+                <Text style={styles.alreadyAddedText}>Ya agregado</Text>
+              )}
+              {selectedPair === pair && !alreadyExists && (
+                <Text style={styles.checkMark}>✓</Text>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -134,43 +143,8 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
 
   const renderStep2 = () => (
     <>
-      <Text style={styles.stepTitle}>2. Selecciona la temporalidad</Text>
-      <Text style={styles.selectedInfo}>Par: {selectedPair}</Text>
-      <ScrollView style={styles.optionsList}>
-        {availableTimeframes.map((tf) => {
-          const alreadyExists = isAlreadySubscribed(selectedPair, tf);
-          return (
-            <TouchableOpacity
-              key={tf}
-              style={[
-                styles.optionItem,
-                selectedTimeframe === tf && styles.optionItemSelected,
-                alreadyExists && styles.optionItemDisabled,
-              ]}
-              onPress={() => !alreadyExists && setSelectedTimeframe(tf)}
-              disabled={alreadyExists}
-            >
-              <Text style={[
-                styles.optionText,
-                selectedTimeframe === tf && styles.optionTextSelected,
-                alreadyExists && styles.optionTextDisabled,
-              ]}>
-                {tf}
-              </Text>
-              {alreadyExists && (
-                <Text style={styles.alreadyAddedText}>Ya agregado</Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </>
-  );
-
-  const renderStep3 = () => (
-    <>
-      <Text style={styles.stepTitle}>3. Tipo de notificaciones</Text>
-      <Text style={styles.selectedInfo}>{selectedPair} - {selectedTimeframe}</Text>
+      <Text style={styles.stepTitle}>2. Nivel de alertas</Text>
+      <Text style={styles.selectedInfo}>Par: {selectedPair?.replace('/USDT', '')}</Text>
       <View style={styles.modesList}>
         {TRADING_MODES.map((mode) => (
           <TouchableOpacity
@@ -203,6 +177,13 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
           </TouchableOpacity>
         ))}
       </View>
+      <View style={styles.infoBox}>
+        <Text style={styles.infoTitle}>Alertas que recibiras:</Text>
+        <Text style={styles.infoText}>• Cambios de sesgo HTF (4H)</Text>
+        <Text style={styles.infoText}>• Cambios de escenario</Text>
+        <Text style={styles.infoText}>• Volatilidad significativa</Text>
+        <Text style={styles.infoText}>• Zonas clave de decision</Text>
+      </View>
     </>
   );
 
@@ -222,9 +203,9 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
             </TouchableOpacity>
           </View>
 
-          {/* Progress indicator */}
+          {/* Progress indicator - now only 2 steps */}
           <View style={styles.progress}>
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <View
                 key={s}
                 style={[
@@ -243,24 +224,23 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
             <View style={styles.content}>
               {step === 1 && renderStep1()}
               {step === 2 && renderStep2()}
-              {step === 3 && renderStep3()}
             </View>
           )}
 
           <View style={styles.footer}>
             {step > 1 && (
               <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-                <Text style={styles.backButtonText}>Atrás</Text>
+                <Text style={styles.backButtonText}>Atras</Text>
               </TouchableOpacity>
             )}
-            {step < 3 ? (
+            {step < 2 ? (
               <TouchableOpacity
                 style={[
                   styles.nextButton,
-                  !(step === 1 ? selectedPair : selectedTimeframe) && styles.buttonDisabled,
+                  !selectedPair && styles.buttonDisabled,
                 ]}
                 onPress={handleNext}
-                disabled={!(step === 1 ? selectedPair : selectedTimeframe)}
+                disabled={!selectedPair}
               >
                 <Text style={styles.nextButtonText}>Siguiente</Text>
               </TouchableOpacity>
@@ -269,7 +249,7 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
                 style={styles.addButton}
                 onPress={handleAdd}
               >
-                <Text style={styles.addButtonText}>Agregar</Text>
+                <Text style={styles.addButtonText}>Agregar Par</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -338,6 +318,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
+    marginBottom: 8,
+  },
+  stepDescription: {
+    color: '#888',
+    fontSize: 13,
     marginBottom: 16,
   },
   selectedInfo: {
@@ -380,10 +365,16 @@ const styles = StyleSheet.create({
   optionSubtext: {
     color: '#666',
     fontSize: 12,
+    marginTop: 2,
   },
   alreadyAddedText: {
     color: '#ff9f43',
     fontSize: 12,
+  },
+  checkMark: {
+    color: '#00d4aa',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   modesList: {
     gap: 10,
@@ -425,6 +416,25 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 13,
     marginLeft: 30,
+  },
+  infoBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 20,
+    borderLeftWidth: 3,
+    borderLeftColor: '#00d4aa',
+  },
+  infoTitle: {
+    color: '#00d4aa',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  infoText: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 4,
   },
   footer: {
     flexDirection: 'row',

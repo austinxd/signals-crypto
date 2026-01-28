@@ -482,3 +482,23 @@ export async function getPositionAlerts(symbol) {
 export async function getExitAlerts(limit = 50) {
   return apiRequest(`/api/exit-alerts?limit=${limit}`);
 }
+
+// ============================================================
+// Notifications (Bell) endpoints
+// ============================================================
+
+export async function getNotifications(limit = 50, unreadOnly = false) {
+  return apiRequest(`/api/notifications?limit=${limit}&unread_only=${unreadOnly}`);
+}
+
+export async function getUnreadCount() {
+  return apiRequest('/api/notifications/unread-count');
+}
+
+export async function markNotificationRead(notificationId) {
+  return apiRequest(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+}
+
+export async function markAllNotificationsRead() {
+  return apiRequest('/api/notifications/read-all', { method: 'POST' });
+}

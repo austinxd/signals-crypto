@@ -7,11 +7,13 @@ and do NOT replace trader decisions.
 Their only purpose is to notify relevant changes in market or trade state.
 """
 import requests
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from enum import Enum as PyEnum
 
+from sqlalchemy.orm import Session
 from config import EXPO_PUSH_URL
+from database import DBHelper, NotificationType
 
 
 class AlertType(PyEnum):
@@ -75,14 +77,50 @@ def _set_cooldown(alert_type: AlertType, key: str):
     _alert_cooldowns[full_key] = datetime.utcnow()
 
 
+def _alert_type_to_notification_type(alert_type: AlertType) -> NotificationType:
+    """Convert AlertType to NotificationType for database storage."""
+    mapping = {
+        AlertType.HTF_BIAS_CHANGED: NotificationType.HTF_BIAS_CHANGED,
+        AlertType.SCENARIO_CHANGED: NotificationType.SCENARIO_CHANGED,
+        AlertType.VOLATILITY_CHANGED: NotificationType.VOLATILITY_CHANGED,
+        AlertType.PRICE_AT_KEY_ZONE: NotificationType.PRICE_AT_KEY_ZONE,
+        AlertType.COHERENCE_CHANGED: NotificationType.COHERENCE_CHANGED,
+        AlertType.THESIS_INVALIDATED: NotificationType.THESIS_INVALIDATED,
+        AlertType.HTF_MOMENTUM_CHANGED: NotificationType.HTF_MOMENTUM_CHANGED,
+        AlertType.MULTIPLE_AGAINST_CONTEXT: NotificationType.MULTIPLE_AGAINST_CONTEXT,
+        AlertType.HIGH_RISK_EXPOSURE: NotificationType.HIGH_RISK_EXPOSURE,
+    }
+    return mapping.get(alert_type, NotificationType.SCENARIO_CHANGED)
+
+
 def _send_alert_notification(
     push_token: str,
     title: str,
     body: str,
     alert_type: AlertType,
-    data: Dict[str, Any] = None
+    data: Dict[str, Any] = None,
+    db: Session = None,
+    user_id: int = None,
+    symbol: str = None,
 ) -> Dict[str, Any]:
-    """Send a passive alert push notification."""
+    """Send a passive alert push notification and optionally save to database."""
+    # Save to database if db session and user_id are provided
+    if db and user_id:
+        try:
+            notification_type = _alert_type_to_notification_type(alert_type)
+            DBHelper.create_notification(
+                db=db,
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                message=body,
+                symbol=symbol,
+                data=data,
+            )
+        except Exception as e:
+            print(f"Error saving notification to DB: {e}")
+
+    # Send push notification
     if not push_token or not push_token.startswith("ExponentPushToken"):
         return {"status": "skipped", "reason": "invalid_token"}
 
@@ -122,10 +160,18 @@ def check_market_context_changes(
     pair: str,
     timeframe: str,
     current_analysis: Dict[str, Any],
-    subscribed_tokens: List[str]
+    subscribed_tokens: List[Tuple[str, int]],  # List of (push_token, user_id)
+    db: Session = None,
 ) -> List[Dict[str, Any]]:
     """
     Check for market context changes and generate alerts.
+
+    Args:
+        pair: Trading pair
+        timeframe: Timeframe
+        current_analysis: Current market analysis
+        subscribed_tokens: List of (push_token, user_id) tuples
+        db: Database session for saving notifications
 
     Returns list of alerts that were triggered.
     """
@@ -156,11 +202,12 @@ def check_market_context_changes(
             title = f"{pair_short} {timeframe} - Cambio de sesgo"
             body = f"El sesgo HTF paso de {old_label} a {new_label}."
 
-            for token in subscribed_tokens:
-                _send_alert_notification(token, title, body, AlertType.HTF_BIAS_CHANGED, {
-                    "pair": pair, "timeframe": timeframe,
-                    "old_bias": previous_bias, "new_bias": current_bias
-                })
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.HTF_BIAS_CHANGED,
+                    data={"pair": pair, "timeframe": timeframe, "old_bias": previous_bias, "new_bias": current_bias},
+                    db=db, user_id=user_id, symbol=pair
+                )
 
             _set_cooldown(AlertType.HTF_BIAS_CHANGED, cache_key)
             alerts_triggered.append({
@@ -197,11 +244,12 @@ def check_market_context_changes(
             if direction and current_scenario in ["favorable", "operable"]:
                 body += f" Preferencia: {direction.upper()}."
 
-            for token in subscribed_tokens:
-                _send_alert_notification(token, title, body, AlertType.SCENARIO_CHANGED, {
-                    "pair": pair, "timeframe": timeframe,
-                    "old_scenario": previous_scenario, "new_scenario": current_scenario
-                })
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.SCENARIO_CHANGED,
+                    data={"pair": pair, "timeframe": timeframe, "old_scenario": previous_scenario, "new_scenario": current_scenario},
+                    db=db, user_id=user_id, symbol=pair
+                )
 
             _set_cooldown(AlertType.SCENARIO_CHANGED, cache_key)
             alerts_triggered.append({
@@ -231,11 +279,12 @@ def check_market_context_changes(
             else:
                 body = f"La volatilidad cambio a {current_vol}."
 
-            for token in subscribed_tokens:
-                _send_alert_notification(token, title, body, AlertType.VOLATILITY_CHANGED, {
-                    "pair": pair, "timeframe": timeframe,
-                    "old_volatility": previous_vol, "new_volatility": current_vol
-                })
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.VOLATILITY_CHANGED,
+                    data={"pair": pair, "timeframe": timeframe, "old_volatility": previous_vol, "new_volatility": current_vol},
+                    db=db, user_id=user_id, symbol=pair
+                )
 
             _set_cooldown(AlertType.VOLATILITY_CHANGED, cache_key)
             alerts_triggered.append({
@@ -257,11 +306,12 @@ def check_market_context_changes(
             if fibo_context:
                 body = f"{fibo_context}."
 
-            for token in subscribed_tokens:
-                _send_alert_notification(token, title, body, AlertType.PRICE_AT_KEY_ZONE, {
-                    "pair": pair, "timeframe": timeframe,
-                    "structure": current_structure
-                })
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.PRICE_AT_KEY_ZONE,
+                    data={"pair": pair, "timeframe": timeframe, "structure": current_structure},
+                    db=db, user_id=user_id, symbol=pair
+                )
 
             _set_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key)
             alerts_triggered.append({
@@ -291,7 +341,8 @@ def check_position_state_changes(
     symbol: str,
     side: str,
     current_analysis: Dict[str, Any],
-    push_token: str
+    push_token: str,
+    db: Session = None,
 ) -> List[Dict[str, Any]]:
     """
     Check for position state changes and generate alerts.
@@ -317,9 +368,11 @@ def check_position_state_changes(
             title = f"{symbol_short} {side} - TESIS INVALIDADA"
             body = f"La estructura definida para este trade fue INVALIDADA segun las reglas establecidas."
 
-            _send_alert_notification(push_token, title, body, AlertType.THESIS_INVALIDATED, {
-                "symbol": symbol, "side": side, "user_id": user_id
-            })
+            _send_alert_notification(
+                push_token, title, body, AlertType.THESIS_INVALIDATED,
+                data={"symbol": symbol, "side": side, "user_id": user_id},
+                db=db, user_id=user_id, symbol=symbol
+            )
 
             _set_cooldown(AlertType.THESIS_INVALIDATED, cache_key)
             alerts_triggered.append({
@@ -350,10 +403,11 @@ def check_position_state_changes(
             title = f"{symbol_short} {side} - Coherencia cambio"
             body = f"Tu posicion paso de {old_label} a {new_label} segun HTF."
 
-            _send_alert_notification(push_token, title, body, AlertType.COHERENCE_CHANGED, {
-                "symbol": symbol, "side": side, "user_id": user_id,
-                "old_coherence": previous_coherence, "new_coherence": current_coherence
-            })
+            _send_alert_notification(
+                push_token, title, body, AlertType.COHERENCE_CHANGED,
+                data={"symbol": symbol, "side": side, "old_coherence": previous_coherence, "new_coherence": current_coherence},
+                db=db, user_id=user_id, symbol=symbol
+            )
 
             _set_cooldown(AlertType.COHERENCE_CHANGED, cache_key)
             alerts_triggered.append({
@@ -377,10 +431,11 @@ def check_position_state_changes(
             title = f"{symbol_short} {side} - Momentum HTF"
             body = f"El sesgo HTF cambio a {'bajista' if is_long else 'alcista'}, en contra de la posicion."
 
-            _send_alert_notification(push_token, title, body, AlertType.HTF_MOMENTUM_CHANGED, {
-                "symbol": symbol, "side": side, "user_id": user_id,
-                "new_bias": current_htf_bias
-            })
+            _send_alert_notification(
+                push_token, title, body, AlertType.HTF_MOMENTUM_CHANGED,
+                data={"symbol": symbol, "side": side, "new_bias": current_htf_bias},
+                db=db, user_id=user_id, symbol=symbol
+            )
 
             _set_cooldown(AlertType.HTF_MOMENTUM_CHANGED, cache_key)
             alerts_triggered.append({
@@ -407,7 +462,8 @@ def check_position_state_changes(
 def check_meta_alerts(
     user_id: int,
     positions_data: List[Dict[str, Any]],
-    push_token: str
+    push_token: str,
+    db: Session = None,
 ) -> List[Dict[str, Any]]:
     """
     Check for discipline/meta alerts across all positions.
@@ -437,9 +493,11 @@ def check_meta_alerts(
             title = "Exposicion contra contexto"
             body = f"Tienes {against_context_count} posiciones activas contra contexto HTF."
 
-            _send_alert_notification(push_token, title, body, AlertType.MULTIPLE_AGAINST_CONTEXT, {
-                "user_id": user_id, "count": against_context_count
-            })
+            _send_alert_notification(
+                push_token, title, body, AlertType.MULTIPLE_AGAINST_CONTEXT,
+                data={"count": against_context_count},
+                db=db, user_id=user_id
+            )
 
             _set_cooldown(AlertType.MULTIPLE_AGAINST_CONTEXT, cache_key)
             alerts_triggered.append({
@@ -453,9 +511,11 @@ def check_meta_alerts(
             title = "Alto riesgo acumulado"
             body = f"Tienes {high_risk_count} posiciones con tesis invalidada."
 
-            _send_alert_notification(push_token, title, body, AlertType.HIGH_RISK_EXPOSURE, {
-                "user_id": user_id, "count": high_risk_count
-            })
+            _send_alert_notification(
+                push_token, title, body, AlertType.HIGH_RISK_EXPOSURE,
+                data={"count": high_risk_count},
+                db=db, user_id=user_id
+            )
 
             _set_cooldown(AlertType.HIGH_RISK_EXPOSURE, cache_key)
             alerts_triggered.append({

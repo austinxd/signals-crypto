@@ -30,7 +30,7 @@ from notifications import NotificationManager, send_test_notification, send_exit
 from database import (
     init_db, get_db, DBHelper, TradingMode, Subscription,
     UserAccount, OperationMode, ExitAlertType, RecommendedAction,
-    ActivePosition, ExitAlert,
+    ActivePosition, ExitAlert, NotificationType, UserNotification,
 )
 from auth import (
     hash_password, verify_password, create_access_token, create_refresh_token,
@@ -214,13 +214,15 @@ def monitor_markets():
                     # Check for context alerts (passive notifications)
                     if analysis and timeframe in ["4h", "1h"]:  # Only HTF alerts
                         try:
-                            subscribed_tokens = _get_subscribed_tokens(pair, timeframe)
+                            alert_db, subscribed_tokens = _get_subscribed_tokens_with_db(pair, timeframe)
                             if subscribed_tokens:
                                 alerts = check_market_context_changes(
-                                    pair, timeframe, analysis, subscribed_tokens
+                                    pair, timeframe, analysis, subscribed_tokens, db=alert_db
                                 )
                                 if alerts:
                                     logger.info(f"[ALERTS] Context alerts for {pair} {timeframe}: {len(alerts)}")
+                            if alert_db:
+                                alert_db.close()
                         except Exception as e:
                             logger.error(f"[ALERTS] Error checking context alerts: {e}")
 
@@ -385,7 +387,8 @@ def monitor_positions():
                                 if position_analysis:
                                     position_alerts = check_position_state_changes(
                                         account_id, normalized_pair, bp["side"],
-                                        position_analysis, account["push_token"]
+                                        position_analysis, account["push_token"],
+                                        db=db
                                     )
                                     if position_alerts:
                                         logger.info(f"[ALERTS] Position alerts for {account_id}/{normalized_pair}: {len(position_alerts)}")
@@ -416,7 +419,8 @@ def monitor_positions():
                             meta_alerts = check_meta_alerts(
                                 account_id,
                                 account["positions_for_meta"],
-                                account["push_token"]
+                                account["push_token"],
+                                db=db
                             )
                             if meta_alerts:
                                 logger.info(f"[ALERTS] Meta alerts for account {account_id}: {len(meta_alerts)}")
@@ -676,10 +680,13 @@ async def update_account_settings(data: AccountSettingsUpdate, user: UserAccount
 # Alert Helpers
 # ============================================================
 
-def _get_subscribed_tokens(pair: str, timeframe: str) -> List[str]:
-    """Get push tokens for all users subscribed to a pair/timeframe."""
+def _get_subscribed_tokens_with_db(pair: str, timeframe: str):
+    """Get push tokens and user IDs for all users subscribed to a pair/timeframe.
+
+    Returns: (db_session, list of (push_token, user_id) tuples)
+    """
     if not notification_manager.use_db:
-        return []
+        return None, []
     try:
         db = get_db()
         from database import User
@@ -691,12 +698,14 @@ def _get_subscribed_tokens(pair: str, timeframe: str) -> List[str]:
         tokens = []
         for sub in subs:
             user = db.query(User).filter(User.id == sub.user_id).first()
-            if user and user.enabled:
-                tokens.append(user.push_token)
-        db.close()
-        return [t for t in tokens if t and t.startswith("ExponentPushToken")]
+            if user and user.enabled and user.push_token and user.push_token.startswith("ExponentPushToken"):
+                # Find the UserAccount that links to this legacy User
+                if user.account_id:
+                    tokens.append((user.push_token, user.account_id))
+        return db, tokens
     except Exception as e:
         logger.error(f"[ALERTS] Error getting subscribed tokens: {e}")
+        return None, []
         return []
 
 
@@ -1878,6 +1887,80 @@ async def get_exit_alerts(limit: int = 50, user: UserAccount = Depends(get_curre
             ],
             "total": len(alerts),
         }
+    finally:
+        db.close()
+
+
+# ============================================================
+# Notifications Endpoints (Bell icon)
+# ============================================================
+
+@app.get("/api/notifications")
+async def get_notifications(
+    limit: int = 50,
+    unread_only: bool = False,
+    user: UserAccount = Depends(get_current_user)
+):
+    """Get all notifications for the authenticated user."""
+    db = get_db()
+    try:
+        notifications = DBHelper.get_user_notifications(db, user.id, limit, unread_only)
+        unread_count = DBHelper.get_unread_count(db, user.id)
+        return {
+            "notifications": [
+                {
+                    "id": n.id,
+                    "type": n.notification_type.value if n.notification_type else None,
+                    "title": n.title,
+                    "message": n.message,
+                    "symbol": n.symbol,
+                    "data": n.data,
+                    "is_read": n.is_read,
+                    "created_at": n.created_at.isoformat() if n.created_at else None,
+                }
+                for n in notifications
+            ],
+            "total": len(notifications),
+            "unread_count": unread_count,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/notifications/unread-count")
+async def get_unread_count(user: UserAccount = Depends(get_current_user)):
+    """Get count of unread notifications."""
+    db = get_db()
+    try:
+        count = DBHelper.get_unread_count(db, user.id)
+        return {"unread_count": count}
+    finally:
+        db.close()
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    user: UserAccount = Depends(get_current_user)
+):
+    """Mark a specific notification as read."""
+    db = get_db()
+    try:
+        success = DBHelper.mark_notification_read(db, notification_id, user.id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.post("/api/notifications/read-all")
+async def mark_all_read(user: UserAccount = Depends(get_current_user)):
+    """Mark all notifications as read."""
+    db = get_db()
+    try:
+        count = DBHelper.mark_all_notifications_read(db, user.id)
+        return {"success": True, "marked_count": count}
     finally:
         db.close()
 
