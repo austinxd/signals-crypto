@@ -95,7 +95,7 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
               <Text style={[styles.scenarioLabel, { color: scenarioStyle.color }]}>
                 {scenarioStyle.label.toUpperCase()}
               </Text>
-              {directionPref && (
+              {directionPref ? (
                 <View style={[styles.directionBadge, {
                   backgroundColor: directionPref === 'long' ? '#00d4aa30' : '#ff475730',
                   borderColor: directionPref === 'long' ? '#00d4aa' : '#ff4757',
@@ -105,6 +105,10 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
                   }]}>
                     {directionPref === 'long' ? 'LONG' : 'SHORT'}
                   </Text>
+                </View>
+              ) : scenario === 'espera' && (
+                <View style={[styles.directionBadge, { backgroundColor: '#44444430', borderColor: '#666' }]}>
+                  <Text style={[styles.directionText, { color: '#888' }]}>NINGUNA</Text>
                 </View>
               )}
             </View>

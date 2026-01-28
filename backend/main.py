@@ -1043,7 +1043,7 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         analysis["scenario_reason"] = "Multiples senales conflictivas o extremas"
     elif htf_bias in ["neutral", "mixto"]:
         analysis["scenario"] = "espera"
-        analysis["scenario_reason"] = "4H sin sesgo direccional claro"
+        analysis["scenario_reason"] = "El contexto 4H no ofrece sesgo direccional claro. Sin autorizacion estructural."
     elif favorable_factors >= 4 and risk_factors <= 1:
         analysis["scenario"] = "favorable"
         analysis["scenario_reason"] = f"Contexto 4H {htf_bias} con confirmacion 15m"
@@ -1052,10 +1052,10 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         if has_confirmation:
             analysis["scenario_reason"] = f"Contexto 4H {htf_bias}, timing 15m confirmando"
         else:
-            analysis["scenario_reason"] = f"Contexto 4H {htf_bias}, esperando confirmacion 15m"
+            analysis["scenario_reason"] = f"Contexto 4H {htf_bias}, confirmacion 15m pendiente"
     else:
         analysis["scenario"] = "espera"
-        analysis["scenario_reason"] = "Esperando alineacion de contexto y timing"
+        analysis["scenario_reason"] = "Contexto y timing no alineados. Sin autorizacion para operar."
 
     # Direction preference (only if 4H allows)
     if analysis["scenario"] in ["favorable", "operable"]:
@@ -1084,7 +1084,7 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         if htf_bias in ["alcista", "bajista"] and ltf_momentum != htf_bias:
             reading_parts.append(f"15m en contra ({ltf_momentum}), sin confirmacion")
         else:
-            reading_parts.append(f"15m {ltf_momentum}, esperando cruce MACD")
+            reading_parts.append(f"15m muestra momentum {ltf_momentum}, confirmacion MACD pendiente")
     else:
         reading_parts.append("15m neutral, sin confirmacion de timing")
 
@@ -1360,7 +1360,7 @@ def _compute_market_analysis(pair: str, indicators: dict, funding: dict = None) 
         analysis["scenario_reason"] = "Multiples senales conflictivas o extremas"
     elif htf_bias == "neutral" or htf_bias == "mixto":
         analysis["scenario"] = "espera"
-        analysis["scenario_reason"] = "Sin sesgo direccional claro en HTF"
+        analysis["scenario_reason"] = "El contexto HTF no ofrece sesgo claro. Sin autorizacion estructural."
     elif favorable_factors >= 3 and risk_factors <= 1:
         analysis["scenario"] = "favorable"
         analysis["scenario_reason"] = f"Contexto {htf_bias} con estructura {structure}"
@@ -1369,7 +1369,7 @@ def _compute_market_analysis(pair: str, indicators: dict, funding: dict = None) 
         analysis["scenario_reason"] = f"Contexto {htf_bias} pero entrada no ideal"
     else:
         analysis["scenario"] = "espera"
-        analysis["scenario_reason"] = "Esperando confirmacion adicional"
+        analysis["scenario_reason"] = "Sin confirmacion suficiente. Condiciones no alineadas."
 
     # Direction preference (only if HTF allows)
     if analysis["scenario"] in ["favorable", "operable"]:
