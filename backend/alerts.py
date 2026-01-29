@@ -57,20 +57,20 @@ _alert_cooldowns: Dict[str, datetime] = {}
 
 # Cooldown duration per alert type (in minutes)
 ALERT_COOLDOWNS = {
-    AlertType.HTF_BIAS_CHANGED: 60,  # 1 hour minimum between bias alerts
-    AlertType.SCENARIO_CHANGED: 30,  # 30 min
-    AlertType.VOLATILITY_CHANGED: 60,
+    AlertType.HTF_BIAS_CHANGED: 15,
+    AlertType.SCENARIO_CHANGED: 15,
+    AlertType.VOLATILITY_CHANGED: 15,
     AlertType.PRICE_AT_KEY_ZONE: 15,
-    AlertType.FAVORABLE_CONDITIONS: 240,  # 4 hours - notify when conditions are good
-    AlertType.SIGNAL_LONG: 60,  # 1 hour between same direction signals
-    AlertType.SIGNAL_SHORT: 60,
-    AlertType.COHERENCE_CHANGED: 30,
-    AlertType.THESIS_INVALIDATED: 5,  # Urgent - short cooldown
-    AlertType.HTF_MOMENTUM_CHANGED: 60,
-    AlertType.MULTIPLE_AGAINST_CONTEXT: 120,
-    AlertType.HIGH_RISK_EXPOSURE: 120,
-    AlertType.CONFIRMATION_GAINED: 15,  # 15 min - timing opportunity
-    AlertType.CONFIRMATION_LOST: 30,  # 30 min
+    AlertType.FAVORABLE_CONDITIONS: 15,
+    AlertType.SIGNAL_LONG: 15,
+    AlertType.SIGNAL_SHORT: 15,
+    AlertType.COHERENCE_CHANGED: 15,
+    AlertType.THESIS_INVALIDATED: 15,
+    AlertType.HTF_MOMENTUM_CHANGED: 15,
+    AlertType.MULTIPLE_AGAINST_CONTEXT: 15,
+    AlertType.HIGH_RISK_EXPOSURE: 15,
+    AlertType.CONFIRMATION_GAINED: 15,
+    AlertType.CONFIRMATION_LOST: 15,
 }
 
 
