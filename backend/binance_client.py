@@ -164,6 +164,55 @@ class BinanceClient:
             logger.error(f"[POSITIONS] Error fetching futures positions: {e}", exc_info=True)
             return []
 
+    def fetch_recent_trades(
+        self, symbol: str, limit: int = 1000
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch recent executed trades for volume analysis.
+        Returns list of trades with price, amount, side, timestamp.
+        """
+        try:
+            trades = self.exchange.fetch_trades(symbol, limit=limit)
+            return [
+                {
+                    "price": float(t["price"]),
+                    "amount": float(t["amount"]),
+                    "side": t["side"],  # 'buy' or 'sell'
+                    "timestamp": t["timestamp"],
+                }
+                for t in trades
+            ]
+        except Exception as e:
+            print(f"Error fetching trades for {symbol}: {e}")
+            return None
+
+    def fetch_aggregated_trades(
+        self, symbol: str, start_time: int = None, limit: int = 1000
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch aggregated trades from Binance.
+        Aggregated trades combine trades at the same price within a time window.
+        """
+        try:
+            params = {}
+            if start_time:
+                params["startTime"] = start_time
+
+            # Use ccxt's fetch_trades which returns aggregated trades on Binance futures
+            trades = self.exchange.fetch_trades(symbol, limit=limit, params=params)
+            return [
+                {
+                    "price": float(t["price"]),
+                    "amount": float(t["amount"]),
+                    "side": t["side"],
+                    "timestamp": t["timestamp"],
+                }
+                for t in trades
+            ]
+        except Exception as e:
+            print(f"Error fetching aggregated trades for {symbol}: {e}")
+            return None
+
     def modify_stop_loss(
         self, symbol: str, side: str, new_sl_price: float, amount: float
     ) -> Optional[Dict[str, Any]]:

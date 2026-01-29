@@ -231,6 +231,15 @@ export async function getUnifiedMarketData(pairs = null, refresh = false) {
 }
 
 /**
+ * Get volume profile and CVD for a pair
+ * Returns executed volume by price level (no signals, context only)
+ */
+export async function getVolumeProfile(pair, timeframe = '15m') {
+  const pairFormatted = pair.replace('/', '-').replace(':USDT', '');
+  return apiRequest(`/api/volume-profile/${pairFormatted}?timeframe=${timeframe}`);
+}
+
+/**
  * Get recent signals (filtered by user subscriptions if token provided)
  */
 export async function getSignals(limit = 20, timeframe = null, token = null) {

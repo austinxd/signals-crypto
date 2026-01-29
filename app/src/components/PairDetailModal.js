@@ -8,7 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { getUnifiedMarketData } from '../services/api';
+import { getUnifiedMarketData, getVolumeProfile } from '../services/api';
 
 // Scenario classification styles
 const SCENARIO_STYLES = {
@@ -58,11 +58,19 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
 
+  // Volume profile state (advanced, hidden by default)
+  const [showVolumeProfile, setShowVolumeProfile] = useState(false);
+  const [volumeData, setVolumeData] = useState(null);
+  const [volumeLoading, setVolumeLoading] = useState(false);
+  const [volumeTf, setVolumeTf] = useState('15m');
+
   // Fetch fresh data when modal opens
   useEffect(() => {
     if (!visible || !pair) {
       setLiveData(null);
       setLastUpdate(null);
+      setShowVolumeProfile(false);
+      setVolumeData(null);
       return;
     }
 
@@ -85,6 +93,26 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
     const interval = setInterval(fetchPairData, 15000);
     return () => clearInterval(interval);
   }, [visible, pair]);
+
+  // Fetch volume profile when expanded
+  useEffect(() => {
+    if (!showVolumeProfile || !pair) return;
+
+    const fetchVolume = async () => {
+      try {
+        setVolumeLoading(true);
+        const data = await getVolumeProfile(pair, volumeTf);
+        setVolumeData(data);
+      } catch (err) {
+        console.error('Error fetching volume profile:', err);
+        setVolumeData(null);
+      } finally {
+        setVolumeLoading(false);
+      }
+    };
+
+    fetchVolume();
+  }, [showVolumeProfile, pair, volumeTf]);
 
   const data = liveData || initialData;
 
@@ -402,6 +430,126 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </View>
             </View>
 
+            {/* Volumen Ejecutado (Avanzado) - Collapsible */}
+            <TouchableOpacity
+              style={styles.advancedToggle}
+              onPress={() => setShowVolumeProfile(!showVolumeProfile)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.advancedToggleText}>
+                {showVolumeProfile ? '▼' : '▶'} Volumen Ejecutado (Avanzado)
+              </Text>
+            </TouchableOpacity>
+
+            {showVolumeProfile && (
+              <View style={styles.volumeSection}>
+                {/* Timeframe selector */}
+                <View style={styles.volumeTfSelector}>
+                  {['15m', '4h'].map((tf) => (
+                    <TouchableOpacity
+                      key={tf}
+                      style={[styles.volumeTfButton, volumeTf === tf && styles.volumeTfButtonActive]}
+                      onPress={() => setVolumeTf(tf)}
+                    >
+                      <Text style={[styles.volumeTfText, volumeTf === tf && styles.volumeTfTextActive]}>
+                        {tf}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {volumeLoading ? (
+                  <View style={styles.volumeLoading}>
+                    <ActivityIndicator color="#888" size="small" />
+                    <Text style={styles.volumeLoadingText}>Cargando volumen...</Text>
+                  </View>
+                ) : volumeData ? (
+                  <>
+                    {/* Summary */}
+                    <View style={styles.volumeSummary}>
+                      <Text style={styles.volumeSummaryTitle}>Resumen del Periodo</Text>
+                      <Text style={[styles.volumeSummaryText, {
+                        color: volumeData.summary?.dominant_side === 'compradora' ? '#00d4aa' :
+                               volumeData.summary?.dominant_side === 'vendedora' ? '#ff4757' : '#888'
+                      }]}>
+                        {volumeData.summary?.description || 'Sin datos'}
+                      </Text>
+                      <View style={styles.volumeStats}>
+                        <View style={styles.volumeStat}>
+                          <Text style={styles.volumeStatLabel}>Compras</Text>
+                          <Text style={[styles.volumeStatValue, { color: '#00d4aa' }]}>
+                            ${(volumeData.summary?.total_buy_volume / 1000)?.toFixed(1)}K
+                          </Text>
+                        </View>
+                        <View style={styles.volumeStat}>
+                          <Text style={styles.volumeStatLabel}>Ventas</Text>
+                          <Text style={[styles.volumeStatValue, { color: '#ff4757' }]}>
+                            ${(volumeData.summary?.total_sell_volume / 1000)?.toFixed(1)}K
+                          </Text>
+                        </View>
+                        <View style={styles.volumeStat}>
+                          <Text style={styles.volumeStatLabel}>Delta</Text>
+                          <Text style={[styles.volumeStatValue, {
+                            color: volumeData.summary?.net_delta > 0 ? '#00d4aa' : '#ff4757'
+                          }]}>
+                            {volumeData.summary?.net_delta > 0 ? '+' : ''}
+                            ${(volumeData.summary?.net_delta / 1000)?.toFixed(1)}K
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Volume Profile Histogram */}
+                    {volumeData.volume_profile?.length > 0 && (
+                      <View style={styles.volumeProfile}>
+                        <Text style={styles.volumeProfileTitle}>Volumen por Precio</Text>
+                        <Text style={styles.volumeProfileHint}>
+                          Muestra donde hubo mayor volumen ejecutado
+                        </Text>
+                        {volumeData.volume_profile.slice(-10).map((level, idx) => (
+                          <View key={idx} style={styles.volumeBar}>
+                            <Text style={styles.volumeBarPrice}>
+                              ${level.price?.toFixed(level.price > 100 ? 0 : 2)}
+                            </Text>
+                            <View style={styles.volumeBarContainer}>
+                              {/* Buy bar */}
+                              <View style={[styles.volumeBarFill, styles.volumeBarBuy, {
+                                width: `${(level.buy / level.total) * level.percent}%`
+                              }]} />
+                              {/* Sell bar */}
+                              <View style={[styles.volumeBarFill, styles.volumeBarSell, {
+                                width: `${(level.sell / level.total) * level.percent}%`
+                              }]} />
+                            </View>
+                          </View>
+                        ))}
+                        <View style={styles.volumeLegend}>
+                          <View style={styles.volumeLegendItem}>
+                            <View style={[styles.volumeLegendDot, { backgroundColor: '#00d4aa' }]} />
+                            <Text style={styles.volumeLegendText}>Compras</Text>
+                          </View>
+                          <View style={styles.volumeLegendItem}>
+                            <View style={[styles.volumeLegendDot, { backgroundColor: '#ff4757' }]} />
+                            <Text style={styles.volumeLegendText}>Ventas</Text>
+                          </View>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Interpretive note */}
+                    <View style={styles.volumeNote}>
+                      <Text style={styles.volumeNoteText}>
+                        El volumen ejecutado muestra lo que ocurrio, no lo que ocurrira.
+                        Usalo para contextualizar estructura, no para tomar decisiones.
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.volumeNoData}>No hay datos de volumen disponibles</Text>
+                )}
+              </View>
+            )}
+
             {/* Disclaimer */}
             <View style={styles.disclaimerBox}>
               <Text style={styles.disclaimerText}>
@@ -709,6 +857,173 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     lineHeight: 16,
+  },
+
+  // Advanced Volume Section
+  advancedToggle: {
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  advancedToggleText: {
+    color: '#666',
+    fontSize: 13,
+  },
+  volumeSection: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  volumeTfSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  volumeTfButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#1a1a2e',
+  },
+  volumeTfButtonActive: {
+    backgroundColor: '#2a2a4a',
+  },
+  volumeTfText: {
+    color: '#666',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  volumeTfTextActive: {
+    color: '#fff',
+  },
+  volumeLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 10,
+  },
+  volumeLoadingText: {
+    color: '#666',
+    fontSize: 13,
+  },
+  volumeNoData: {
+    color: '#555',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  volumeSummary: {
+    marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a4a',
+  },
+  volumeSummaryTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  volumeSummaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  volumeStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  volumeStat: {
+    alignItems: 'center',
+  },
+  volumeStatLabel: {
+    color: '#666',
+    fontSize: 10,
+    marginBottom: 4,
+  },
+  volumeStatValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  volumeProfile: {
+    marginBottom: 14,
+  },
+  volumeProfileTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  volumeProfileHint: {
+    color: '#555',
+    fontSize: 10,
+    marginBottom: 10,
+  },
+  volumeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  volumeBarPrice: {
+    color: '#888',
+    fontSize: 10,
+    width: 60,
+    textAlign: 'right',
+    marginRight: 8,
+  },
+  volumeBarContainer: {
+    flex: 1,
+    height: 12,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 2,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  volumeBarFill: {
+    height: '100%',
+  },
+  volumeBarBuy: {
+    backgroundColor: '#00d4aa',
+  },
+  volumeBarSell: {
+    backgroundColor: '#ff4757',
+  },
+  volumeLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+    marginTop: 10,
+  },
+  volumeLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  volumeLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  volumeLegendText: {
+    color: '#666',
+    fontSize: 10,
+  },
+  volumeNote: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+  volumeNoteText: {
+    color: '#555',
+    fontSize: 10,
+    textAlign: 'center',
+    lineHeight: 14,
   },
 
   // Close Button

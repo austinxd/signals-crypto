@@ -2281,6 +2281,154 @@ async def get_pair_data(pair: str, timeframe: str = DEFAULT_TIMEFRAME):
     }
 
 
+@app.get("/api/volume-profile/{pair}")
+async def get_volume_profile(pair: str, timeframe: str = "15m"):
+    """
+    Get executed volume profile and CVD for a pair.
+    Returns volume by price level and cumulative volume delta.
+    Used for context/structure analysis only - no signals.
+    """
+    if timeframe not in ["15m", "4h"]:
+        raise HTTPException(status_code=400, detail="Timeframe must be 15m or 4h")
+
+    pair_formatted = pair.replace("-", "/").upper()
+    if not pair_formatted.endswith("/USDT"):
+        pair_formatted = f"{pair_formatted}/USDT"
+
+    client = get_binance_client()
+
+    # Calculate time range based on timeframe
+    import time as time_module
+    now_ms = int(time_module.time() * 1000)
+    if timeframe == "15m":
+        # Last 4 hours of trades for 15m view
+        start_time = now_ms - (4 * 60 * 60 * 1000)
+        num_bins = 20
+    else:  # 4h
+        # Last 24 hours of trades for 4h view
+        start_time = now_ms - (24 * 60 * 60 * 1000)
+        num_bins = 15
+
+    # Fetch recent trades
+    trades = client.fetch_recent_trades(pair_formatted, limit=1000)
+    if not trades:
+        raise HTTPException(status_code=404, detail=f"No trades found for {pair_formatted}")
+
+    # Filter trades by time range
+    trades = [t for t in trades if t["timestamp"] >= start_time]
+    if not trades:
+        return {
+            "pair": pair_formatted,
+            "timeframe": timeframe,
+            "volume_profile": [],
+            "cvd": [],
+            "summary": {
+                "total_buy_volume": 0,
+                "total_sell_volume": 0,
+                "net_delta": 0,
+                "dominant_side": "neutral",
+            }
+        }
+
+    # Calculate price range and bin size
+    prices = [t["price"] for t in trades]
+    min_price = min(prices)
+    max_price = max(prices)
+    price_range = max_price - min_price
+
+    if price_range == 0:
+        price_range = min_price * 0.01  # 1% range if all same price
+
+    bin_size = price_range / num_bins
+
+    # Initialize volume profile bins
+    volume_profile = {}
+    for i in range(num_bins):
+        bin_price = min_price + (i + 0.5) * bin_size
+        volume_profile[i] = {
+            "price_level": round(bin_price, 6),
+            "buy_volume": 0.0,
+            "sell_volume": 0.0,
+            "total_volume": 0.0,
+        }
+
+    # Calculate CVD over time
+    cvd_data = []
+    cumulative_delta = 0.0
+    total_buy = 0.0
+    total_sell = 0.0
+
+    # Sort trades by timestamp
+    trades_sorted = sorted(trades, key=lambda x: x["timestamp"])
+
+    for trade in trades_sorted:
+        price = trade["price"]
+        amount = trade["amount"]
+        side = trade["side"]
+
+        # Assign to volume profile bin
+        bin_idx = min(int((price - min_price) / bin_size), num_bins - 1)
+        if bin_idx < 0:
+            bin_idx = 0
+
+        notional = price * amount
+
+        if side == "buy":
+            volume_profile[bin_idx]["buy_volume"] += notional
+            total_buy += notional
+            cumulative_delta += notional
+        else:
+            volume_profile[bin_idx]["sell_volume"] += notional
+            total_sell += notional
+            cumulative_delta -= notional
+
+        volume_profile[bin_idx]["total_volume"] += notional
+
+    # Convert volume profile to list, sorted by price
+    profile_list = []
+    for bin_data in volume_profile.values():
+        if bin_data["total_volume"] > 0:
+            profile_list.append({
+                "price": bin_data["price_level"],
+                "buy": round(bin_data["buy_volume"], 2),
+                "sell": round(bin_data["sell_volume"], 2),
+                "total": round(bin_data["total_volume"], 2),
+            })
+
+    profile_list.sort(key=lambda x: x["price"])
+
+    # Calculate max volume for normalization
+    max_vol = max((p["total"] for p in profile_list), default=1)
+
+    # Add percentage for visualization
+    for p in profile_list:
+        p["percent"] = round((p["total"] / max_vol) * 100, 1)
+
+    # Simplified CVD - just start and end for the period
+    net_delta = total_buy - total_sell
+
+    # Determine dominant side
+    if net_delta > total_buy * 0.1:
+        dominant = "compradora"
+    elif net_delta < -total_sell * 0.1:
+        dominant = "vendedora"
+    else:
+        dominant = "equilibrada"
+
+    return {
+        "pair": pair_formatted,
+        "timeframe": timeframe,
+        "volume_profile": profile_list,
+        "summary": {
+            "total_buy_volume": round(total_buy, 2),
+            "total_sell_volume": round(total_sell, 2),
+            "net_delta": round(net_delta, 2),
+            "dominant_side": dominant,
+            "description": f"Agresion {dominant} en el periodo"
+        }
+    }
+
+
 @app.get("/api/signals")
 async def get_signals(
     limit: int = 20, timeframe: Optional[str] = None,
