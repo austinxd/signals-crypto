@@ -1912,8 +1912,8 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "breakeven_reached": p.breakeven_reached,
                 "entry_atr": p.entry_atr,
                 "liquidation_price": liq_price,
-                "opened_at": p.opened_at.isoformat() if p.opened_at else None,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                "opened_at": p.opened_at.isoformat() + "Z" if p.opened_at else None,
+                "updated_at": p.updated_at.isoformat() + "Z" if p.updated_at else None,
                 "timeframes": timeframes_data,
                 "analysis": analysis,
             })
@@ -1951,7 +1951,7 @@ async def get_position_alerts(symbol: str, user: UserAccount = Depends(get_curre
                     "new_sl_price": a.new_sl_price,
                     "was_executed": a.was_executed,
                     "is_read": a.is_read,
-                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
                 }
                 for a in alerts
             ],
@@ -1977,7 +1977,7 @@ async def get_exit_alerts(limit: int = 50, user: UserAccount = Depends(get_curre
                     "new_sl_price": a.new_sl_price,
                     "was_executed": a.was_executed,
                     "is_read": a.is_read,
-                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
                 }
                 for a in alerts
             ],
@@ -2012,7 +2012,7 @@ async def get_notifications(
                     "symbol": n.symbol,
                     "data": n.data,
                     "is_read": n.is_read,
-                    "created_at": n.created_at.isoformat() if n.created_at else None,
+                    "created_at": n.created_at.isoformat() + "Z" if n.created_at else None,
                 }
                 for n in notifications
             ],
@@ -2534,7 +2534,7 @@ async def get_notification_history(data: NotificationHistoryReq):
                 "pair": sig.pair, "timeframe": sig.timeframe, "side": sig.side,
                 "quality": sig.quality.value, "score": sig.score,
                 "entry_price": sig.entry_price, "take_profit": sig.take_profit,
-                "stop_loss": sig.stop_loss, "receivedAt": sig.created_at.isoformat(),
+                "stop_loss": sig.stop_loss, "receivedAt": sig.created_at.isoformat() + "Z",
             })
         return {"notifications": notifications, "total": len(notifications)}
     except HTTPException:
