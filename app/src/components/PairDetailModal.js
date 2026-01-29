@@ -53,6 +53,19 @@ const getVolatilityLabel = (state) => {
   return labels[state] || 'Normal';
 };
 
+// Format volume with K/M suffix
+const formatVolume = (value) => {
+  if (value == null) return '$0';
+  const absValue = Math.abs(value);
+  if (absValue >= 1000000) {
+    return `$${(value / 1000000).toFixed(2)}M`;
+  }
+  if (absValue >= 1000) {
+    return `$${(value / 1000).toFixed(1)}K`;
+  }
+  return `$${value.toFixed(0)}`;
+};
+
 const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [liveData, setLiveData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -479,13 +492,13 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                         <View style={styles.volumeStat}>
                           <Text style={styles.volumeStatLabel}>Compras</Text>
                           <Text style={[styles.volumeStatValue, { color: '#5b9bd5' }]}>
-                            ${(volumeData.summary?.total_buy_volume / 1000)?.toFixed(1)}K
+                            {formatVolume(volumeData.summary?.total_buy_volume)}
                           </Text>
                         </View>
                         <View style={styles.volumeStat}>
                           <Text style={styles.volumeStatLabel}>Ventas</Text>
                           <Text style={[styles.volumeStatValue, { color: '#ed7d31' }]}>
-                            ${(volumeData.summary?.total_sell_volume / 1000)?.toFixed(1)}K
+                            {formatVolume(volumeData.summary?.total_sell_volume)}
                           </Text>
                         </View>
                         <View style={styles.volumeStat}>
@@ -494,8 +507,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                             color: volumeData.summary?.dominant_side === 'equilibrada' ? '#888' :
                                    volumeData.summary?.net_delta > 0 ? '#5b9bd5' : '#ed7d31'
                           }]}>
-                            {volumeData.summary?.net_delta > 0 ? '+' : ''}
-                            ${(volumeData.summary?.net_delta / 1000)?.toFixed(1)}K
+                            {volumeData.summary?.net_delta > 0 ? '+' : ''}{formatVolume(Math.abs(volumeData.summary?.net_delta || 0)).replace('$', '')}
                           </Text>
                         </View>
                       </View>
