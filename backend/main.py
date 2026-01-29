@@ -2407,13 +2407,19 @@ async def get_volume_profile(pair: str, timeframe: str = "15m"):
     # Simplified CVD - just start and end for the period
     net_delta = total_buy - total_sell
 
-    # Determine dominant side
-    if net_delta > total_buy * 0.1:
-        dominant = "compradora"
-    elif net_delta < -total_sell * 0.1:
-        dominant = "vendedora"
-    else:
+    # Determine dominant side - only if delta is significant (>15% of total)
+    total_volume = total_buy + total_sell
+    delta_ratio = abs(net_delta) / total_volume if total_volume > 0 else 0
+
+    if delta_ratio < 0.15:
         dominant = "equilibrada"
+        description = "Volumen equilibrado en el periodo"
+    elif net_delta > 0:
+        dominant = "compradora"
+        description = "Mayor agresion compradora en el periodo"
+    else:
+        dominant = "vendedora"
+        description = "Mayor agresion vendedora en el periodo"
 
     return {
         "pair": pair_formatted,
@@ -2424,7 +2430,8 @@ async def get_volume_profile(pair: str, timeframe: str = "15m"):
             "total_sell_volume": round(total_sell, 2),
             "net_delta": round(net_delta, 2),
             "dominant_side": dominant,
-            "description": f"Agresion {dominant} en el periodo"
+            "delta_ratio": round(delta_ratio * 100, 1),
+            "description": description
         }
     }
 

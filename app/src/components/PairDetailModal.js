@@ -59,10 +59,11 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [lastUpdate, setLastUpdate] = useState(null);
 
   // Volume profile state (advanced, hidden by default)
+  // Default 4H for Mercado modal (context view)
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
   const [volumeData, setVolumeData] = useState(null);
   const [volumeLoading, setVolumeLoading] = useState(false);
-  const [volumeTf, setVolumeTf] = useState('15m');
+  const [volumeTf, setVolumeTf] = useState('4h');
 
   // Fetch fresh data when modal opens
   useEffect(() => {
@@ -469,28 +470,29 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                     <View style={styles.volumeSummary}>
                       <Text style={styles.volumeSummaryTitle}>Resumen del Periodo</Text>
                       <Text style={[styles.volumeSummaryText, {
-                        color: volumeData.summary?.dominant_side === 'compradora' ? '#00d4aa' :
-                               volumeData.summary?.dominant_side === 'vendedora' ? '#ff4757' : '#888'
+                        color: volumeData.summary?.dominant_side === 'compradora' ? '#5b9bd5' :
+                               volumeData.summary?.dominant_side === 'vendedora' ? '#ed7d31' : '#888'
                       }]}>
                         {volumeData.summary?.description || 'Sin datos'}
                       </Text>
                       <View style={styles.volumeStats}>
                         <View style={styles.volumeStat}>
                           <Text style={styles.volumeStatLabel}>Compras</Text>
-                          <Text style={[styles.volumeStatValue, { color: '#00d4aa' }]}>
+                          <Text style={[styles.volumeStatValue, { color: '#5b9bd5' }]}>
                             ${(volumeData.summary?.total_buy_volume / 1000)?.toFixed(1)}K
                           </Text>
                         </View>
                         <View style={styles.volumeStat}>
                           <Text style={styles.volumeStatLabel}>Ventas</Text>
-                          <Text style={[styles.volumeStatValue, { color: '#ff4757' }]}>
+                          <Text style={[styles.volumeStatValue, { color: '#ed7d31' }]}>
                             ${(volumeData.summary?.total_sell_volume / 1000)?.toFixed(1)}K
                           </Text>
                         </View>
                         <View style={styles.volumeStat}>
                           <Text style={styles.volumeStatLabel}>Delta</Text>
                           <Text style={[styles.volumeStatValue, {
-                            color: volumeData.summary?.net_delta > 0 ? '#00d4aa' : '#ff4757'
+                            color: volumeData.summary?.dominant_side === 'equilibrada' ? '#888' :
+                                   volumeData.summary?.net_delta > 0 ? '#5b9bd5' : '#ed7d31'
                           }]}>
                             {volumeData.summary?.net_delta > 0 ? '+' : ''}
                             ${(volumeData.summary?.net_delta / 1000)?.toFixed(1)}K
@@ -525,11 +527,11 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                         ))}
                         <View style={styles.volumeLegend}>
                           <View style={styles.volumeLegendItem}>
-                            <View style={[styles.volumeLegendDot, { backgroundColor: '#00d4aa' }]} />
+                            <View style={[styles.volumeLegendDot, { backgroundColor: '#5b9bd5' }]} />
                             <Text style={styles.volumeLegendText}>Compras</Text>
                           </View>
                           <View style={styles.volumeLegendItem}>
-                            <View style={[styles.volumeLegendDot, { backgroundColor: '#ff4757' }]} />
+                            <View style={[styles.volumeLegendDot, { backgroundColor: '#ed7d31' }]} />
                             <Text style={styles.volumeLegendText}>Ventas</Text>
                           </View>
                         </View>
@@ -988,10 +990,10 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   volumeBarBuy: {
-    backgroundColor: '#00d4aa',
+    backgroundColor: '#5b9bd5',  // Neutral blue - no "good" connotation
   },
   volumeBarSell: {
-    backgroundColor: '#ff4757',
+    backgroundColor: '#ed7d31',  // Neutral orange - no "bad" connotation
   },
   volumeLegend: {
     flexDirection: 'row',
