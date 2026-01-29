@@ -66,6 +66,16 @@ const formatVolume = (value) => {
   return `$${value.toFixed(0)}`;
 };
 
+// Format price with appropriate decimals
+const formatPrice = (price) => {
+  if (price == null) return '$0';
+  if (price >= 10000) return `$${price.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`; // BTC: $102,345
+  if (price >= 100) return `$${price.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`; // ETH: $3,456.78
+  if (price >= 1) return `$${price.toFixed(3)}`; // SOL: $123.456
+  if (price >= 0.01) return `$${price.toFixed(4)}`; // DOGE: $0.1234
+  return `$${price.toFixed(6)}`; // SHIB: $0.000012
+};
+
 const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [liveData, setLiveData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -523,7 +533,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                         {volumeData.volume_profile.slice(-10).map((level, idx) => (
                           <View key={idx} style={styles.volumeBar}>
                             <Text style={styles.volumeBarPrice}>
-                              ${level.price?.toFixed(level.price > 100 ? 0 : 2)}
+                              {formatPrice(level.price)}
                             </Text>
                             <View style={styles.volumeBarContainer}>
                               {/* Buy bar */}
