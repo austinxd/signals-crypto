@@ -130,6 +130,9 @@ class NotificationType(PyEnum):
     SIGNAL_LONG = "signal_long"
     SIGNAL_SHORT = "signal_short"
     FAVORABLE_CONDITIONS = "favorable_conditions"
+    # Unified pair alerts (timing confirmation)
+    CONFIRMATION_GAINED = "confirmation_gained"
+    CONFIRMATION_LOST = "confirmation_lost"
 
 
 # ============================================================

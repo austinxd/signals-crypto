@@ -38,6 +38,7 @@ from auth import (
 )
 from alerts import (
     check_market_context_changes,
+    check_unified_pair_changes,
     check_position_state_changes,
     check_meta_alerts,
     clear_position_state,
@@ -142,7 +143,8 @@ def get_all_monitored_pairs() -> Set[str]:
 
 
 def get_all_monitored_timeframes() -> Set[str]:
-    default_monitored = {"15m", "30m", "1h", "4h", "1d"}
+    # Only monitor 4h (context) and 15m (timing) for unified analysis
+    default_monitored = {"15m", "4h"}
     timeframes = set(default_monitored)
     if notification_manager.use_db:
         try:
@@ -171,7 +173,6 @@ def monitor_markets():
     global market_data, monitoring_active, active_pairs, active_timeframes
 
     client = get_binance_client()
-    monitoring_active = True
 
     while monitoring_active:
         active_pairs = get_all_monitored_pairs()
@@ -208,26 +209,36 @@ def monitor_markets():
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
-                    # Check for context alerts (passive notifications)
-                    if analysis and timeframe in ["4h", "1h"]:  # Only HTF alerts
-                        try:
-                            alert_db, subscribed_tokens = _get_subscribed_tokens_with_db(pair, timeframe)
-                            if subscribed_tokens:
-                                alerts = check_market_context_changes(
-                                    pair, timeframe, analysis, subscribed_tokens, db=alert_db
-                                )
-                                if alerts:
-                                    logger.info(f"[ALERTS] Context alerts for {pair} {timeframe}: {len(alerts)}")
-                            if alert_db:
-                                alert_db.close()
-                        except Exception as e:
-                            logger.error(f"[ALERTS] Error checking context alerts: {e}")
-
-                    # Signal detection disabled - passive alerts only
-                    # The app notifies context changes, NOT trading signals
-
                 except Exception as e:
                     print(f"Error monitoring {pair} ({timeframe}): {e}")
+
+        # After processing all timeframes, check unified pair alerts (4H context + 15m timing)
+        for pair in active_pairs:
+            try:
+                htf_data = market_data.get("4h", {}).get(pair, {})
+                ltf_data = market_data.get("15m", {}).get(pair, {})
+
+                htf_indicators = htf_data.get("indicators")
+                ltf_indicators = ltf_data.get("indicators")
+                funding_data = htf_data.get("funding") or ltf_data.get("funding")
+
+                if htf_indicators or ltf_indicators:
+                    unified_analysis = _compute_unified_pair_analysis(
+                        pair, htf_indicators, ltf_indicators, funding_data
+                    )
+
+                    # Check for unified pair alerts
+                    alert_db, subscribed_tokens = _get_subscribed_tokens_with_db(pair, "4h")
+                    if subscribed_tokens:
+                        alerts = check_unified_pair_changes(
+                            pair, unified_analysis, subscribed_tokens, db=alert_db
+                        )
+                        if alerts:
+                            logger.info(f"[ALERTS] Unified alerts for {pair}: {len(alerts)}")
+                    if alert_db:
+                        alert_db.close()
+            except Exception as e:
+                logger.error(f"[ALERTS] Error checking unified alerts for {pair}: {e}")
 
         for _ in range(POLL_INTERVAL):
             if not monitoring_active:
@@ -369,7 +380,7 @@ def monitor_positions():
                         if account.get("push_token") and account.get("push_enabled", True):
                             try:
                                 normalized_pair = _normalize_symbol(bp["symbol"])
-                                position_analysis = _compute_position_analysis(
+                                _, position_analysis = _compute_position_analysis(
                                     normalized_pair, bp["side"],
                                     bp["entry_price"], bp["current_price"]
                                 )
@@ -389,7 +400,7 @@ def monitor_positions():
                             account["positions_for_meta"] = []
                         try:
                             normalized_pair = _normalize_symbol(bp["symbol"])
-                            pos_analysis = _compute_position_analysis(
+                            _, pos_analysis = _compute_position_analysis(
                                 normalized_pair, bp["side"],
                                 bp["entry_price"], bp["current_price"]
                             )
@@ -439,6 +450,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Database initialization failed (using JSON fallback): {e}")
 
+    # Enable monitoring flag before starting threads to avoid race condition
+    global monitoring_active
+    monitoring_active = True
+
     # Start background monitoring
     monitor_thread = threading.Thread(target=monitor_markets, daemon=True)
     monitor_thread.start()
@@ -450,7 +465,6 @@ async def lifespan(app: FastAPI):
     logger.info("Position monitoring started")
 
     yield
-    global monitoring_active
     monitoring_active = False
     print("Monitoring stopped")
 

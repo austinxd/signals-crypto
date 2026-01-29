@@ -64,7 +64,7 @@ POLL_INTERVAL = 300
 SIGNAL_COOLDOWN = 4 * 60 * 60
 
 # Position monitoring interval (seconds)
-POSITION_POLL_INTERVAL = 60
+POSITION_POLL_INTERVAL = 15
 
 # Trailing stop ATR multiplier
 TRAILING_STOP_ATR_MULTIPLIER = 1.0

@@ -38,9 +38,13 @@ class AlertType(PyEnum):
     MULTIPLE_AGAINST_CONTEXT = "multiple_against_context"
     HIGH_RISK_EXPOSURE = "high_risk_exposure"
 
+    # Unified pair alerts (no timeframe)
+    CONFIRMATION_GAINED = "confirmation_gained"
+    CONFIRMATION_LOST = "confirmation_lost"
+
 
 # In-memory state cache for detecting changes
-# Structure: { "pair_timeframe": { "htf_bias": "...", "scenario": "...", ... } }
+# Structure: { "pair": { "htf_bias": "...", "scenario": "...", "has_confirmation": ..., ... } }
 _market_state_cache: Dict[str, Dict[str, Any]] = {}
 
 # Position state cache
@@ -65,6 +69,8 @@ ALERT_COOLDOWNS = {
     AlertType.HTF_MOMENTUM_CHANGED: 60,
     AlertType.MULTIPLE_AGAINST_CONTEXT: 120,
     AlertType.HIGH_RISK_EXPOSURE: 120,
+    AlertType.CONFIRMATION_GAINED: 15,  # 15 min - timing opportunity
+    AlertType.CONFIRMATION_LOST: 30,  # 30 min
 }
 
 
@@ -100,6 +106,8 @@ def _alert_type_to_notification_type(alert_type: AlertType) -> NotificationType:
         AlertType.HTF_MOMENTUM_CHANGED: NotificationType.HTF_MOMENTUM_CHANGED,
         AlertType.MULTIPLE_AGAINST_CONTEXT: NotificationType.MULTIPLE_AGAINST_CONTEXT,
         AlertType.HIGH_RISK_EXPOSURE: NotificationType.HIGH_RISK_EXPOSURE,
+        AlertType.CONFIRMATION_GAINED: NotificationType.CONFIRMATION_GAINED,
+        AlertType.CONFIRMATION_LOST: NotificationType.CONFIRMATION_LOST,
     }
     return mapping.get(alert_type, NotificationType.SCENARIO_CHANGED)
 
@@ -313,15 +321,28 @@ def check_market_context_changes(
         if not _is_on_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key):
             fibo_context = current_analysis.get("price_state", {}).get("fibo_context", "")
 
-            title = f"{pair_short} - Zona de decision"
+            # Add trend direction to the notification
+            trend_label = ""
+            if current_bias == "alcista":
+                trend_label = "ALCISTA"
+            elif current_bias == "bajista":
+                trend_label = "BAJISTA"
+
+            if trend_label:
+                title = f"{pair_short} - Zona clave ({trend_label})"
+            else:
+                title = f"{pair_short} - Zona de decision"
+
             body = f"El precio entro en zona clave."
             if fibo_context:
                 body = f"{fibo_context}."
+            if trend_label:
+                body += f" Tendencia {trend_label}."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
                     token, title, body, AlertType.PRICE_AT_KEY_ZONE,
-                    data={"pair": pair, "timeframe": timeframe, "structure": current_structure},
+                    data={"pair": pair, "timeframe": timeframe, "structure": current_structure, "trend": current_bias},
                     db=db, user_id=user_id, symbol=pair
                 )
 
@@ -329,7 +350,8 @@ def check_market_context_changes(
             alerts_triggered.append({
                 "type": AlertType.PRICE_AT_KEY_ZONE.value,
                 "pair": pair, "timeframe": timeframe,
-                "structure": current_structure
+                "structure": current_structure,
+                "trend": current_bias
             })
 
     # --- Favorable Conditions Alert (only when ENTERING favorable/operable) ---
@@ -381,6 +403,215 @@ def check_market_context_changes(
         "htf_bias": current_bias,
         "scenario": current_scenario,
         "volatility_state": current_vol,
+        "htf_structure": current_structure,
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+    return alerts_triggered
+
+
+# =============================================================================
+# UNIFIED PAIR ALERTS (based on 4H+15m combined analysis)
+# =============================================================================
+
+def check_unified_pair_changes(
+    pair: str,
+    unified_analysis: Dict[str, Any],
+    subscribed_tokens: List[Tuple[str, int]],  # List of (push_token, user_id)
+    db: Session = None,
+) -> List[Dict[str, Any]]:
+    """
+    Check for unified pair analysis changes and generate alerts.
+    Works with combined 4H (context) + 15m (timing) analysis.
+
+    No timeframe is mentioned in notifications - the user sees the PAR status.
+
+    Args:
+        pair: Trading pair (e.g., "BTC/USDT")
+        unified_analysis: Result from _compute_unified_pair_analysis()
+        subscribed_tokens: List of (push_token, user_id) tuples
+        db: Database session for saving notifications
+
+    Returns list of alerts that were triggered.
+    """
+    if not unified_analysis:
+        return []
+
+    cache_key = pair  # No timeframe - just the pair
+    previous = _market_state_cache.get(cache_key, {})
+    alerts_triggered = []
+
+    pair_short = pair.replace("/USDT", "").replace(":USDT", "")
+
+    # Extract current state from unified analysis
+    context = unified_analysis.get("context", {})
+    timing = unified_analysis.get("timing", {})
+
+    current_bias = context.get("htf_bias")
+    current_scenario = unified_analysis.get("scenario")
+    current_direction = unified_analysis.get("direction_preference")
+    current_confirmation = timing.get("has_confirmation", False)
+    current_volatility = context.get("volatility_state")
+
+    previous_bias = previous.get("htf_bias")
+    previous_scenario = previous.get("scenario")
+    previous_confirmation = previous.get("has_confirmation", False)
+
+    # --- HTF Bias Changed (no timeframe in message) ---
+    if previous_bias and current_bias and current_bias != previous_bias:
+        if not _is_on_cooldown(AlertType.HTF_BIAS_CHANGED, cache_key):
+            bias_labels = {
+                "alcista": "ALCISTA",
+                "bajista": "BAJISTA",
+                "mixto": "MIXTO",
+                "neutral": "NEUTRAL"
+            }
+            new_label = bias_labels.get(current_bias, current_bias)
+            old_label = bias_labels.get(previous_bias, previous_bias)
+
+            title = f"{pair_short} - Cambio de contexto"
+            body = f"Sesgo cambio de {old_label} a {new_label}."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.HTF_BIAS_CHANGED,
+                    data={"pair": pair, "old_bias": previous_bias, "new_bias": current_bias},
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.HTF_BIAS_CHANGED, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.HTF_BIAS_CHANGED.value,
+                "pair": pair,
+                "old": previous_bias, "new": current_bias
+            })
+
+    # --- Scenario Changed ---
+    if previous_scenario and current_scenario and current_scenario != previous_scenario:
+        if not _is_on_cooldown(AlertType.SCENARIO_CHANGED, cache_key):
+            scenario_labels = {
+                "favorable": "FAVORABLE",
+                "operable": "OPERABLE",
+                "alto_riesgo": "ALTO RIESGO",
+                "espera": "ESPERA"
+            }
+            new_label = scenario_labels.get(current_scenario, current_scenario)
+
+            # Build message based on scenario
+            if current_scenario == "favorable":
+                title = f"{pair_short} - Escenario FAVORABLE"
+                body = f"Contexto y timing alineados."
+                if current_direction:
+                    body += f" Preferencia: {current_direction.upper()}."
+            elif current_scenario == "operable":
+                title = f"{pair_short} - Escenario OPERABLE"
+                body = f"Condiciones aceptables para operar."
+                if current_direction:
+                    body += f" Direccion: {current_direction.upper()}."
+            elif current_scenario == "alto_riesgo":
+                title = f"{pair_short} - ALTO RIESGO"
+                body = "Condiciones adversas. Precaucion."
+            else:
+                title = f"{pair_short} - En espera"
+                body = "Sin condiciones claras para operar."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.SCENARIO_CHANGED,
+                    data={"pair": pair, "old_scenario": previous_scenario, "new_scenario": current_scenario, "direction": current_direction},
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.SCENARIO_CHANGED, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.SCENARIO_CHANGED.value,
+                "pair": pair,
+                "old": previous_scenario, "new": current_scenario,
+                "direction": current_direction
+            })
+
+    # --- Confirmation Gained (LTF confirms HTF) ---
+    if current_confirmation and not previous_confirmation:
+        if not _is_on_cooldown(AlertType.CONFIRMATION_GAINED, cache_key):
+            title = f"{pair_short} - Confirmacion de timing"
+            body = "El timeframe menor confirma la direccion del contexto."
+            if current_direction:
+                body = f"Timing confirma direccion {current_direction.upper()}."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.CONFIRMATION_GAINED,
+                    data={"pair": pair, "direction": current_direction},
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.CONFIRMATION_GAINED, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.CONFIRMATION_GAINED.value,
+                "pair": pair,
+                "direction": current_direction
+            })
+
+    # --- Confirmation Lost ---
+    if previous_confirmation and not current_confirmation and previous.get("htf_bias"):
+        if not _is_on_cooldown(AlertType.CONFIRMATION_LOST, cache_key):
+            title = f"{pair_short} - Perdio confirmacion"
+            body = "El timing ya no confirma el contexto."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.CONFIRMATION_LOST,
+                    data={"pair": pair},
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.CONFIRMATION_LOST, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.CONFIRMATION_LOST.value,
+                "pair": pair
+            })
+
+    # --- Price at Key Zone (Fibonacci) ---
+    current_structure = context.get("htf_structure")
+    previous_structure = previous.get("htf_structure")
+
+    if previous_structure and current_structure == "en nivel clave" and previous_structure != "en nivel clave":
+        if not _is_on_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key):
+            # Include trend direction in the notification
+            trend_label = ""
+            if current_bias == "alcista":
+                trend_label = "ALCISTA"
+            elif current_bias == "bajista":
+                trend_label = "BAJISTA"
+
+            if trend_label:
+                title = f"{pair_short} - Zona clave ({trend_label})"
+                body = f"El precio entro en nivel clave de Fibonacci. Tendencia {trend_label}."
+            else:
+                title = f"{pair_short} - Zona de decision"
+                body = "El precio entro en nivel clave de Fibonacci."
+
+            for token, user_id in subscribed_tokens:
+                _send_alert_notification(
+                    token, title, body, AlertType.PRICE_AT_KEY_ZONE,
+                    data={"pair": pair, "structure": current_structure, "trend": current_bias},
+                    db=db, user_id=user_id, symbol=pair
+                )
+
+            _set_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key)
+            alerts_triggered.append({
+                "type": AlertType.PRICE_AT_KEY_ZONE.value,
+                "pair": pair,
+                "trend": current_bias
+            })
+
+    # Update cache with current state
+    _market_state_cache[cache_key] = {
+        "htf_bias": current_bias,
+        "scenario": current_scenario,
+        "direction_preference": current_direction,
+        "has_confirmation": current_confirmation,
+        "volatility_state": current_volatility,
         "htf_structure": current_structure,
         "updated_at": datetime.utcnow().isoformat()
     }
