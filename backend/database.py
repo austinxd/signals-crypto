@@ -301,6 +301,18 @@ class Subscription(Base):
     )
 
 
+class AlertCooldown(Base):
+    """Distributed cooldown tracking for alerts (multi-worker safe)."""
+    __tablename__ = "alert_cooldowns"
+
+    alert_key = Column(String(100), primary_key=True)
+    last_triggered = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        {'mysql_charset': 'utf8mb4'},
+    )
+
+
 class Signal(Base):
     """Signal history model."""
     __tablename__ = "signals"

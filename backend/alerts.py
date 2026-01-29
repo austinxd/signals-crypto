@@ -13,7 +13,7 @@ from enum import Enum as PyEnum
 
 from sqlalchemy.orm import Session
 from config import EXPO_PUSH_URL
-from database import DBHelper, NotificationType
+from database import DBHelper, NotificationType, AlertCooldown, get_db
 
 
 class AlertType(PyEnum):
@@ -51,10 +51,6 @@ _market_state_cache: Dict[str, Dict[str, Any]] = {}
 # Structure: { "user_id_symbol": { "coherence": "...", "invalidation_breached": False, ... } }
 _position_state_cache: Dict[str, Dict[str, Any]] = {}
 
-# Alert cooldown tracking (avoid spam)
-# Structure: { "alert_key": datetime_of_last_alert }
-_alert_cooldowns: Dict[str, datetime] = {}
-
 # Cooldown duration per alert type (in minutes)
 ALERT_COOLDOWNS = {
     AlertType.HTF_BIAS_CHANGED: 15,
@@ -74,21 +70,59 @@ ALERT_COOLDOWNS = {
 }
 
 
-def _is_on_cooldown(alert_type: AlertType, key: str) -> bool:
-    """Check if an alert is still on cooldown."""
+def _is_on_cooldown(alert_type: AlertType, key: str, db: Session = None) -> bool:
+    """Check if an alert is still on cooldown (uses database for multi-worker support)."""
     full_key = f"{alert_type.value}:{key}"
-    if full_key not in _alert_cooldowns:
-        return False
-
     cooldown_minutes = ALERT_COOLDOWNS.get(alert_type, 30)
-    last_alert = _alert_cooldowns[full_key]
-    return datetime.utcnow() - last_alert < timedelta(minutes=cooldown_minutes)
+
+    close_db = False
+    if db is None:
+        try:
+            db = get_db()
+            close_db = True
+        except Exception:
+            return False
+
+    try:
+        cooldown = db.query(AlertCooldown).filter(AlertCooldown.alert_key == full_key).first()
+        if not cooldown:
+            return False
+        is_cooling = datetime.utcnow() - cooldown.last_triggered < timedelta(minutes=cooldown_minutes)
+        return is_cooling
+    except Exception as e:
+        print(f"Error checking cooldown: {e}")
+        return False
+    finally:
+        if close_db:
+            db.close()
 
 
-def _set_cooldown(alert_type: AlertType, key: str):
-    """Set cooldown for an alert."""
+def _set_cooldown(alert_type: AlertType, key: str, db: Session = None):
+    """Set cooldown for an alert (uses database for multi-worker support)."""
     full_key = f"{alert_type.value}:{key}"
-    _alert_cooldowns[full_key] = datetime.utcnow()
+
+    close_db = False
+    if db is None:
+        try:
+            db = get_db()
+            close_db = True
+        except Exception:
+            return
+
+    try:
+        cooldown = db.query(AlertCooldown).filter(AlertCooldown.alert_key == full_key).first()
+        if cooldown:
+            cooldown.last_triggered = datetime.utcnow()
+        else:
+            cooldown = AlertCooldown(alert_key=full_key, last_triggered=datetime.utcnow())
+            db.add(cooldown)
+        db.commit()
+    except Exception as e:
+        print(f"Error setting cooldown: {e}")
+        db.rollback()
+    finally:
+        if close_db:
+            db.close()
 
 
 def _alert_type_to_notification_type(alert_type: AlertType) -> NotificationType:
@@ -826,10 +860,19 @@ def clear_position_state(user_id: int, symbol: str):
 
 def get_current_states() -> Dict[str, Any]:
     """Get current state caches for debugging."""
+    cooldowns = {}
+    try:
+        db = get_db()
+        all_cooldowns = db.query(AlertCooldown).all()
+        cooldowns = {c.alert_key: c.last_triggered.isoformat() for c in all_cooldowns}
+        db.close()
+    except Exception as e:
+        print(f"Error getting cooldowns: {e}")
+
     return {
         "market_states": _market_state_cache,
         "position_states": _position_state_cache,
-        "cooldowns": {k: v.isoformat() for k, v in _alert_cooldowns.items()}
+        "cooldowns": cooldowns
     }
 
 

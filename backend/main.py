@@ -700,8 +700,13 @@ def _get_subscribed_tokens_with_db(pair: str, timeframe: str = None):
             Subscription.pair == pair,
             Subscription.enabled == True
         ).all()
+        # Deduplicate by account_id to avoid sending multiple notifications
+        seen_accounts = set()
         tokens = []
         for sub in subs:
+            if sub.account_id in seen_accounts:
+                continue
+            seen_accounts.add(sub.account_id)
             # Get push_token directly from UserAccount
             account = db.query(UserAccount).filter(
                 UserAccount.id == sub.account_id,
