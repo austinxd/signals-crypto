@@ -1149,6 +1149,209 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
 
     analysis["observations"] = obs
 
+    # ========== STRUCTURAL ZONES (HTF - 4H) ==========
+    structural_zones = []
+    htf_price = htf_indicators.get("price") if htf_indicators else None
+    htf_ema200 = htf_indicators.get("ema_200") if htf_indicators else None
+    htf_fib = htf_indicators.get("fibonacci") if htf_indicators else None
+
+    if htf_fib and htf_price:
+        swing_high = htf_fib.get("swing_high")
+        swing_low = htf_fib.get("swing_low")
+        fib_levels = htf_fib.get("levels", {})
+
+        # Check for confluences and add zones
+        for level_name, level_price in fib_levels.items():
+            if level_price is None:
+                continue
+
+            confluence = []
+            confluence.append(f"Fibo {level_name}%")
+
+            # Check EMA200 confluence (within 0.5%)
+            if htf_ema200 and abs(level_price - htf_ema200) / htf_ema200 < 0.005:
+                confluence.append("EMA200")
+
+            # Check swing confluence
+            if swing_high and abs(level_price - swing_high) / swing_high < 0.003:
+                confluence.append("swing high")
+            if swing_low and abs(level_price - swing_low) / swing_low < 0.003:
+                confluence.append("swing low")
+
+            # Determine zone type
+            if htf_price:
+                distance_pct = ((level_price - htf_price) / htf_price) * 100
+                if distance_pct > 0.5:
+                    zone_type = "oferta"  # Above price = supply/resistance
+                elif distance_pct < -0.5:
+                    zone_type = "demanda"  # Below price = demand/support
+                else:
+                    zone_type = "actual"  # At current price
+
+                structural_zones.append({
+                    "price": round(level_price, 6),
+                    "type": zone_type,
+                    "confluence": confluence,
+                    "distance_percent": round(distance_pct, 2),
+                    "description": f"Zona de {zone_type} en ${level_price:,.2f} ({' + '.join(confluence)})"
+                })
+
+        # Add swing high/low if not already covered by Fibo
+        if swing_high and not any(abs(z["price"] - swing_high) / swing_high < 0.003 for z in structural_zones):
+            distance_pct = ((swing_high - htf_price) / htf_price) * 100 if htf_price else 0
+            structural_zones.append({
+                "price": round(swing_high, 6),
+                "type": "oferta",
+                "confluence": ["swing high 4H"],
+                "distance_percent": round(distance_pct, 2),
+                "description": f"Swing high previo en ${swing_high:,.2f}"
+            })
+
+        if swing_low and not any(abs(z["price"] - swing_low) / swing_low < 0.003 for z in structural_zones):
+            distance_pct = ((swing_low - htf_price) / htf_price) * 100 if htf_price else 0
+            structural_zones.append({
+                "price": round(swing_low, 6),
+                "type": "demanda",
+                "confluence": ["swing low 4H"],
+                "distance_percent": round(distance_pct, 2),
+                "description": f"Swing low previo en ${swing_low:,.2f}"
+            })
+
+    # Sort by distance and limit
+    structural_zones.sort(key=lambda x: abs(x["distance_percent"]))
+    analysis["structural_zones"] = structural_zones[:6]
+
+    # Nearest zone info
+    if structural_zones:
+        nearest = structural_zones[0]
+        dist = abs(nearest["distance_percent"])
+        if dist < 1:
+            analysis["distance_to_zone"] = {
+                "description": f"El precio se encuentra dentro de una zona de friccion estructural",
+                "zone": nearest,
+                "state": "en_zona"
+            }
+        elif dist < 3:
+            direction = "sobre" if nearest["distance_percent"] < 0 else "bajo"
+            analysis["distance_to_zone"] = {
+                "description": f"El precio esta a {dist:.1f}% de una zona de {nearest['type']} relevante",
+                "zone": nearest,
+                "state": "cercano"
+            }
+        else:
+            analysis["distance_to_zone"] = {
+                "description": f"El precio esta a {dist:.1f}% de la zona estructural mas cercana",
+                "zone": nearest,
+                "state": "extendido"
+            }
+    else:
+        analysis["distance_to_zone"] = None
+
+    # ========== RSI HTF STATE (Movement Reading) ==========
+    htf_rsi = htf_indicators.get("rsi") if htf_indicators else None
+    rsi_state = {
+        "value": htf_rsi,
+        "label": "normal",
+        "icon": "🟢",
+        "description": "Momentum dentro de rango normal"
+    }
+
+    if htf_rsi is not None:
+        if htf_rsi >= 75:
+            rsi_state = {
+                "value": htf_rsi,
+                "label": "agotamiento_potencial",
+                "icon": "🔴",
+                "description": f"RSI 4H en {htf_rsi:.0f} - Zona de agotamiento potencial alcista"
+            }
+        elif htf_rsi <= 25:
+            rsi_state = {
+                "value": htf_rsi,
+                "label": "agotamiento_potencial",
+                "icon": "🔴",
+                "description": f"RSI 4H en {htf_rsi:.0f} - Zona de agotamiento potencial bajista"
+            }
+        elif htf_rsi >= 65:
+            rsi_state = {
+                "value": htf_rsi,
+                "label": "momentum_extendido",
+                "icon": "🟡",
+                "description": f"RSI 4H en {htf_rsi:.0f} - Momentum alcista extendido"
+            }
+        elif htf_rsi <= 35:
+            rsi_state = {
+                "value": htf_rsi,
+                "label": "momentum_extendido",
+                "icon": "🟡",
+                "description": f"RSI 4H en {htf_rsi:.0f} - Momentum bajista extendido"
+            }
+        else:
+            rsi_state = {
+                "value": htf_rsi,
+                "label": "normal",
+                "icon": "🟢",
+                "description": f"RSI 4H en {htf_rsi:.0f} - Momentum dentro de rango normal"
+            }
+
+    analysis["rsi_htf_state"] = rsi_state
+
+    # ========== CONTEXT CHECKLIST ==========
+    checklist = {
+        "context_4h": {
+            "tendencia": {
+                "checked": htf_bias in ["alcista", "bajista"],
+                "label": "Tendencia definida",
+                "detail": f"Sesgo {htf_bias}" if htf_bias else "Sin sesgo"
+            },
+            "momentum": {
+                "checked": analysis["context"]["macd_momentum"] is not None,
+                "label": "Momentum HTF",
+                "detail": f"MACD {analysis['context']['macd_momentum']}" if analysis["context"]["macd_momentum"] else "Sin datos"
+            },
+            "movimiento_extendido": {
+                "checked": rsi_state["label"] != "normal",
+                "warning": rsi_state["label"] in ["momentum_extendido", "agotamiento_potencial"],
+                "label": "Movimiento extendido",
+                "detail": rsi_state["description"]
+            }
+        },
+        "timing_15m": {
+            "confirmacion": {
+                "checked": has_confirmation,
+                "label": "Confirmacion LTF",
+                "detail": "Momentum alineado" if has_confirmation else "Sin confirmacion"
+            },
+            "volumen": {
+                "checked": analysis["timing"]["volume_state"] == "alto",
+                "label": "Volumen",
+                "detail": f"Volumen {analysis['timing']['volume_state']}" if analysis["timing"]["volume_state"] else "Sin datos"
+            },
+            "macd_15m": {
+                "checked": macd_state and "cruce" in macd_state,
+                "label": "Cruce MACD",
+                "detail": f"MACD {macd_state}" if macd_state else "Sin cruce"
+            }
+        }
+    }
+
+    # Generate checklist summary text
+    ctx_ok = sum(1 for k, v in checklist["context_4h"].items() if v.get("checked") and not v.get("warning"))
+    ctx_warn = sum(1 for k, v in checklist["context_4h"].items() if v.get("warning"))
+    tim_ok = sum(1 for k, v in checklist["timing_15m"].items() if v.get("checked"))
+
+    if ctx_ok >= 2 and tim_ok >= 2 and ctx_warn == 0:
+        checklist["summary"] = "Contexto y timing alineados. Escenario completo."
+    elif ctx_ok >= 2 and tim_ok < 2:
+        checklist["summary"] = "El contexto favorece la direccion, pero el timing aun no acompana. Escenario incompleto."
+    elif ctx_ok < 2:
+        checklist["summary"] = "El contexto no ofrece claridad direccional. Esperar definicion."
+    elif ctx_warn > 0:
+        checklist["summary"] = "Contexto presente pero con senales de extension. Precaucion."
+    else:
+        checklist["summary"] = "Evaluando condiciones..."
+
+    analysis["checklist"] = checklist
+
     return analysis
 
 

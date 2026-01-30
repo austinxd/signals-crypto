@@ -382,6 +382,106 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </View>
             )}
 
+            {/* RSI HTF State - Movement Reading */}
+            {analysis.rsi_htf_state && (
+              <View style={styles.rsiStateBox}>
+                <View style={styles.rsiStateHeader}>
+                  <Text style={styles.rsiStateIcon}>{analysis.rsi_htf_state.icon}</Text>
+                  <Text style={[styles.rsiStateLabel, {
+                    color: analysis.rsi_htf_state.label === 'normal' ? '#888' :
+                           analysis.rsi_htf_state.label === 'momentum_extendido' ? '#ffd93d' : '#ff4757'
+                  }]}>
+                    {analysis.rsi_htf_state.label === 'normal' ? 'Normal' :
+                     analysis.rsi_htf_state.label === 'momentum_extendido' ? 'Momentum Extendido' : 'Agotamiento Potencial'}
+                  </Text>
+                </View>
+                <Text style={styles.rsiStateDescription}>{analysis.rsi_htf_state.description}</Text>
+              </View>
+            )}
+
+            {/* Structural Zones (HTF) */}
+            {analysis.structural_zones && analysis.structural_zones.length > 0 && (
+              <View style={styles.structuralSection}>
+                <Text style={styles.structuralTitle}>Zonas Estructurales (4H)</Text>
+                {analysis.distance_to_zone && (
+                  <View style={[styles.distanceBox, {
+                    borderLeftColor: analysis.distance_to_zone.state === 'en_zona' ? '#ffd93d' :
+                                     analysis.distance_to_zone.state === 'cercano' ? '#ff9f43' : '#888'
+                  }]}>
+                    <Text style={styles.distanceText}>{analysis.distance_to_zone.description}</Text>
+                  </View>
+                )}
+                <View style={styles.zonesContainer}>
+                  {analysis.structural_zones.slice(0, 4).map((zone, idx) => (
+                    <View key={idx} style={[styles.zoneItem, {
+                      borderLeftColor: zone.type === 'oferta' ? '#ed7d31' : zone.type === 'demanda' ? '#5b9bd5' : '#888'
+                    }]}>
+                      <View style={styles.zoneHeader}>
+                        <Text style={[styles.zoneType, {
+                          color: zone.type === 'oferta' ? '#ed7d31' : zone.type === 'demanda' ? '#5b9bd5' : '#888'
+                        }]}>
+                          {zone.type === 'oferta' ? 'Oferta' : zone.type === 'demanda' ? 'Demanda' : 'Actual'}
+                        </Text>
+                        <Text style={styles.zoneDistance}>
+                          {zone.distance_percent > 0 ? '+' : ''}{zone.distance_percent}%
+                        </Text>
+                      </View>
+                      <Text style={styles.zonePrice}>{formatPrice(zone.price)}</Text>
+                      <Text style={styles.zoneConfluence}>{zone.confluence?.join(' + ')}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Context Checklist */}
+            {analysis.checklist && (
+              <View style={styles.checklistSection}>
+                <Text style={styles.checklistTitle}>Checklist de Contexto</Text>
+
+                {/* 4H Context */}
+                <View style={styles.checklistGroup}>
+                  <Text style={styles.checklistGroupTitle}>Contexto 4H</Text>
+                  {Object.entries(analysis.checklist.context_4h || {}).map(([key, item]) => (
+                    <View key={key} style={styles.checklistItem}>
+                      <Text style={styles.checklistIcon}>
+                        {item.warning ? '⚠' : item.checked ? '✔' : '✖'}
+                      </Text>
+                      <Text style={[styles.checklistLabel, {
+                        color: item.warning ? '#ffd93d' : item.checked ? '#00d4aa' : '#666'
+                      }]}>
+                        {item.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* 15m Timing */}
+                <View style={styles.checklistGroup}>
+                  <Text style={styles.checklistGroupTitle}>Timing 15m</Text>
+                  {Object.entries(analysis.checklist.timing_15m || {}).map(([key, item]) => (
+                    <View key={key} style={styles.checklistItem}>
+                      <Text style={styles.checklistIcon}>
+                        {item.checked ? '✔' : '✖'}
+                      </Text>
+                      <Text style={[styles.checklistLabel, {
+                        color: item.checked ? '#00d4aa' : '#666'
+                      }]}>
+                        {item.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Summary */}
+                {analysis.checklist.summary && (
+                  <View style={styles.checklistSummary}>
+                    <Text style={styles.checklistSummaryText}>{analysis.checklist.summary}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Funding Info (descriptive only) */}
             {funding && (
               <View style={styles.infoSection}>
@@ -792,6 +892,145 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
+  },
+
+  // RSI HTF State
+  rsiStateBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  rsiStateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  rsiStateIcon: {
+    fontSize: 16,
+  },
+  rsiStateLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rsiStateDescription: {
+    color: '#888',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  // Structural Zones
+  structuralSection: {
+    marginBottom: 16,
+  },
+  structuralTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    letterSpacing: 0.5,
+  },
+  distanceBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+  },
+  distanceText: {
+    color: '#aaa',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  zonesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  zoneItem: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 8,
+    padding: 10,
+    borderLeftWidth: 3,
+    width: '48%',
+  },
+  zoneHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  zoneType: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  zoneDistance: {
+    color: '#666',
+    fontSize: 10,
+  },
+  zonePrice: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  zoneConfluence: {
+    color: '#666',
+    fontSize: 10,
+  },
+
+  // Context Checklist
+  checklistSection: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  checklistTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  checklistGroup: {
+    marginBottom: 12,
+  },
+  checklistGroupTitle: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  checklistItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  checklistIcon: {
+    fontSize: 12,
+    width: 16,
+  },
+  checklistLabel: {
+    fontSize: 12,
+  },
+  checklistSummary: {
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  checklistSummaryText: {
+    color: '#aaa',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 
   // Info Sections
