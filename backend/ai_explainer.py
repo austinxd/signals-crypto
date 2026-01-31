@@ -126,11 +126,13 @@ def _call_claude_api(prompt: str) -> Optional[str]:
         logger.warning("ANTHROPIC_API_KEY not set. AI explanations disabled.")
         return None
 
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+
     try:
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",  # Using Sonnet 3.5 for better reasoning
+            model=model,
             max_tokens=500,
             system=SYSTEM_PROMPT,
             messages=[
