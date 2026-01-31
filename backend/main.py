@@ -2174,17 +2174,10 @@ async def get_position_alerts(symbol: str, user: UserAccount = Depends(get_curre
 async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_user)):
     """
     Get AI-generated analysis for a specific position.
-    Returns personalized recommendation and best/worst scenarios.
+    Returns: lectura, fragilidad, si_favorece, si_contra.
     """
     db = get_db()
     try:
-        # Normalize symbol format
-        symbol_query = symbol.replace("-", "/")
-        if ":USDT" not in symbol_query and "USDT" in symbol_query:
-            symbol_query = symbol_query.replace("USDT", "/USDT")
-        if ":USDT" not in symbol_query:
-            symbol_query = f"{symbol_query}:USDT"
-
         # Find position
         pos = db.query(ActivePosition).filter(
             ActivePosition.user_id == user.id,
@@ -2195,50 +2188,42 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
         if not pos:
             raise HTTPException(status_code=404, detail="Position not found")
 
-        # Calculate PnL percent
-        pnl_pct = 0
-        if pos.entry_price and pos.current_price:
-            is_long = pos.side.upper() == "LONG"
-            pnl_pct = ((pos.current_price - pos.entry_price) / pos.entry_price * 100)
-            if not is_long:
-                pnl_pct = -pnl_pct
-
         # Liquidation distance
         liq_distance = None
         if pos.liquidation_price and pos.current_price and pos.liquidation_price > 0:
             liq_distance = abs(pos.current_price - pos.liquidation_price) / pos.current_price * 100
 
-        # Build position dict
-        position_data = {
-            "symbol": pos.symbol,
-            "side": pos.side,
-            "entry_price": pos.entry_price,
-            "current_price": pos.current_price,
-            "unrealized_pnl": pos.unrealized_pnl,
-            "pnl_percent": pnl_pct,
-            "leverage": pos.leverage or 1,
-            "liquidation_price": pos.liquidation_price,
-            "liq_distance_pct": liq_distance,
-        }
-
+        # Invalidation distance
+        inv_distance = None
         # Get market analysis for this symbol
         try:
             _, analysis = _compute_position_analysis(
                 pos.symbol, pos.side, pos.entry_price, pos.current_price
             )
+            inv_level = analysis.get("invalidation_level")
+            if inv_level and pos.current_price:
+                inv_distance = abs(pos.current_price - inv_level) / pos.current_price * 100
         except Exception as e:
             logger.error(f"Error computing position analysis: {e}")
             analysis = {}
 
-        # Build market state for AI
+        # Build position dict
+        position_data = {
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "liq_distance_pct": liq_distance,
+            "inv_distance_pct": inv_distance,
+        }
+
+        # Build market state for AI (discrete states)
         market_state = {
             "htf_bias": analysis.get("htf_bias", "neutral"),
             "htf_structure": analysis.get("htf_structure", "unknown"),
             "ltf_momentum": analysis.get("ltf_momentum", "neutral"),
             "coherence": analysis.get("coherence", "neutral"),
-            "coherence_text": analysis.get("coherence_text", ""),
             "volatility": analysis.get("volatility_state", "normal"),
             "rsi": analysis.get("rsi"),
+            "scenario": analysis.get("scenario", "wait"),
         }
 
         # Get AI analysis
@@ -2246,9 +2231,10 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
 
         return {
             "symbol": pos.symbol,
-            "recommendation": result["recommendation"],
-            "best_scenario": result["best_scenario"],
-            "worst_scenario": result["worst_scenario"],
+            "lectura": result["lectura"],
+            "fragilidad": result["fragilidad"],
+            "si_favorece": result["si_favorece"],
+            "si_contra": result["si_contra"],
             "cached": result["cached"],
             "generated_at": result["generated_at"],
         }

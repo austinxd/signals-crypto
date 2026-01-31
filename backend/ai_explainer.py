@@ -513,124 +513,148 @@ def get_cache_stats() -> Dict[str, Any]:
 _position_ai_cache: Dict[str, Dict[str, Any]] = {}
 POSITION_CACHE_TTL = 15 * 60  # 15 minutes for position analysis
 
-POSITION_SYSTEM_PROMPT = """Eres un asistente de gestion de posiciones de trading.
+POSITION_SYSTEM_PROMPT = """Eres un analista de gestion de posiciones. Tu rol es dar contexto operativo sin dar ordenes.
 
-CONTEXTO:
-El usuario tiene una posicion abierta. Tienes acceso a:
-- Datos de la posicion (lado, entrada, PnL actual, leverage, liquidacion)
-- Contexto de mercado (sesgo HTF, estructura, momentum LTF)
-- Indicadores tecnicos (RSI, MACD, volumen)
+OBJETIVO:
+Generar un resumen tipo "tesis / fragilidad / gatillos" para gestion de posicion (no para abrir trades).
 
-TU TAREA:
-Analizar la posicion en funcion del contexto actual y dar:
-1. Una RECOMENDACION clara y accionable (1-2 lineas)
-2. El MEJOR ESCENARIO realista (que pasaria si el mercado favorece)
-3. El PEOR ESCENARIO realista (que pasaria si el mercado va en contra)
+REGLAS DE CONTENIDO:
+- NO repitas datos visibles (par, lado, entrada, PnL exacto)
+- USA niveles relativos permitidos:
+  * "cierre 4H por encima/debajo de EMA200"
+  * "ruptura del ultimo lower high / higher low"
+  * "zona de invalidacion"
+  * Distancias en % (a invalidacion, a liquidacion)
+- NO des precios exactos
+
+DEBES INCLUIR 3 COSAS:
+
+1. LECTURA (1-2 lineas): Por que la posicion esta a favor/contra contexto y que tension hay.
+   Ejemplo: "Sesgo bajista pero RSI extremo → rebotes cortos probables antes de continuar"
+
+2. FRAGILIDAD (1-2 lineas): Donde suele fallar la mayoria en este contexto.
+   Ejemplo: "En este entorno, los stops cercanos suelen barrerse antes de la continuation"
+
+3. ESCENARIOS CONDICIONALES (2 bloques):
+   - Si favorece: que cambios tecnicos deberian verse para confirmar
+   - Si contra: que senales invalidan o aumentan peligro
+
+FORMATO OBLIGATORIO (max 6 lineas, sin bullets):
+Lectura: [por que esta alineada/desalineada + tension actual]
+Fragilidad: [donde falla la mayoria en este contexto]
+Si favorece: [que deberia verse tecnicamente]
+Si contra: [que invalida o aumenta riesgo]
 
 ESTILO:
-- Directo y practico, sin rodeos
-- Basado en datos, no en predicciones
-- Reconoce cuando la posicion esta bien o mal posicionada
-- Si hay riesgo alto, dilo claramente
-- Si la posicion esta a favor del contexto, confirma
+- Directo, sin rodeos
+- Usa "suele", "tiende", "mientras" (no promesas)
+- Sin lenguaje emocional ni alarmista
 
-FORMATO OBLIGATORIO:
-**Recomendacion:** [accion sugerida basada en el estado actual]
-
-**Mejor escenario:** [que pasa si continua a favor - ser realista]
-
-**Peor escenario:** [que pasa si va en contra - incluir niveles criticos]
-
-PROHIBICIONES:
-- No des precios exactos de entrada/salida
-- No prometas resultados
-- No uses lenguaje emocional o alarmista innecesario
-- No repitas datos que el usuario ya ve en pantalla
+PROHIBICIONES ESTRICTAS:
+- NO "compra/vende/cierra/abre/pon stop"
+- NO precios exactos (ni entrada, ni targets)
+- NO promesas ("va a pasar")
+- NO repetir datos que el usuario ya ve
 
 Responde solo en espanol."""
 
 
+def _get_rsi_state(rsi: float) -> str:
+    """Convert RSI value to discrete state."""
+    if rsi is None:
+        return "neutral"
+    if rsi <= 20:
+        return "extreme_oversold"
+    elif rsi <= 30:
+        return "oversold"
+    elif rsi >= 80:
+        return "extreme_overbought"
+    elif rsi >= 70:
+        return "overbought"
+    return "neutral"
+
+
+def _get_alignment(side: str, htf_bias: str) -> str:
+    """Determine position alignment with context."""
+    side = side.upper()
+    bias = htf_bias.lower()
+    if (side == "LONG" and bias in ("alcista", "bullish")) or \
+       (side == "SHORT" and bias in ("bajista", "bearish")):
+        return "with_context"
+    elif (side == "LONG" and bias in ("bajista", "bearish")) or \
+         (side == "SHORT" and bias in ("alcista", "bullish")):
+        return "against_context"
+    return "neutral"
+
+
+def _get_structure_state(structure: str, side: str) -> str:
+    """Normalize structure to discrete state."""
+    s = (structure or "").lower()
+    if "ema200" in s:
+        if "above" in s or "encima" in s:
+            return "above_ema200"
+        elif "below" in s or "debajo" in s:
+            return "below_ema200"
+    if "lower_high" in s or "lh" in s:
+        return "lower_highs"
+    if "higher_low" in s or "hl" in s:
+        return "higher_lows"
+    if "rango" in s or "range" in s or "consolidat" in s:
+        return "consolidation"
+    return "trending"
+
+
 def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
     """
-    Generate cache key for position analysis.
-    Includes user_id to make it per-user.
+    Generate cache key for position analysis using discrete states.
+    Format: pos|u{id}|{symbol}|{alignment}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{rsi_state}|{scenario}
     """
-    symbol = position.get("symbol", "").replace("/", "").replace(":", "")
+    symbol = position.get("symbol", "").replace("/", "").replace(":", "").replace("USDT", "")
     side = position.get("side", "").upper()
 
-    # PnL bucket (to invalidate cache when PnL changes significantly)
-    pnl_pct = position.get("pnl_percent", 0)
-    if pnl_pct < -10:
-        pnl_bucket = "loss_big"
-    elif pnl_pct < -3:
-        pnl_bucket = "loss_med"
-    elif pnl_pct < 0:
-        pnl_bucket = "loss_small"
-    elif pnl_pct < 3:
-        pnl_bucket = "gain_small"
-    elif pnl_pct < 10:
-        pnl_bucket = "gain_med"
-    else:
-        pnl_bucket = "gain_big"
-
-    # Market state components
+    # Discrete states
     htf_bias = _normalize(market_state.get("htf_bias", "neutral"), _BIAS_MAP, "neutral")
-    coherence = market_state.get("coherence", "neutral")
-    momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
+    alignment = _get_alignment(side, market_state.get("htf_bias", "neutral"))
+    structure = _get_structure_state(market_state.get("htf_structure", ""), side)
+    ltf_momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
+    volatility = _normalize(market_state.get("volatility", "normal"), _VOLATILITY_MAP, "normal")
+    rsi_state = _get_rsi_state(market_state.get("rsi"))
+    scenario = market_state.get("scenario", "wait")
 
-    return f"pos|u{user_id}|{symbol}|{side}|{pnl_bucket}|{htf_bias}|{coherence}|{momentum}"
+    return f"pos|u{user_id}|{symbol}|{alignment}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{rsi_state}|{scenario}"
 
 
 def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
-    """Format the position data for the AI prompt."""
-    symbol = position.get("symbol", "?")
+    """Format position data as POSITION_STATE for AI prompt."""
     side = position.get("side", "?").upper()
-    entry = position.get("entry_price", 0)
-    current = position.get("current_price", 0)
-    pnl = position.get("unrealized_pnl", 0)
-    pnl_pct = position.get("pnl_percent", 0)
-    leverage = position.get("leverage", 1)
-    liq_price = position.get("liquidation_price")
+    inv_distance = position.get("inv_distance_pct")
     liq_distance = position.get("liq_distance_pct")
 
-    # Market context
-    htf_bias = market_state.get("htf_bias", "neutral")
-    htf_structure = market_state.get("htf_structure", "?")
-    ltf_momentum = market_state.get("ltf_momentum", "neutral")
-    coherence = market_state.get("coherence", "neutral")
-    coherence_text = market_state.get("coherence_text", "")
-    rsi = market_state.get("rsi")
-    volatility = market_state.get("volatility", "normal")
+    # Discrete states
+    htf_bias = _normalize(market_state.get("htf_bias", "neutral"), _BIAS_MAP, "neutral")
+    alignment = _get_alignment(side, market_state.get("htf_bias", "neutral"))
+    structure = _get_structure_state(market_state.get("htf_structure", ""), side)
+    ltf_momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
+    volatility = _normalize(market_state.get("volatility", "normal"), _VOLATILITY_MAP, "normal")
+    rsi_state = _get_rsi_state(market_state.get("rsi"))
+    scenario = market_state.get("scenario", "wait")
 
-    prompt = f"""POSICION ACTUAL:
-- Par: {symbol}
-- Lado: {side}
-- Entrada: ${entry:.2f} → Actual: ${current:.2f}
-- PnL: ${pnl:.2f} ({pnl_pct:+.2f}%)
-- Leverage: {leverage}x
-"""
+    prompt = f"""POSITION_STATE:
+side: {side}
+alignment: {alignment}
+htf_bias: {htf_bias}
+structure: {structure}
+ltf_momentum: {ltf_momentum}
+volatility: {volatility}
+rsi_state: {rsi_state}
+scenario: {scenario}"""
 
-    if liq_price and liq_distance:
-        prompt += f"- Liquidacion: ${liq_price:.2f} (a {liq_distance:.1f}% de distancia)\n"
+    if inv_distance is not None:
+        prompt += f"\ndistance_to_invalidation_pct: {inv_distance:.1f}"
+    if liq_distance is not None:
+        prompt += f"\ndistance_to_liquidation_pct: {liq_distance:.1f}"
 
-    prompt += f"""
-CONTEXTO DE MERCADO:
-- Sesgo HTF (4H): {htf_bias}
-- Estructura: {htf_structure}
-- Momentum LTF (15m): {ltf_momentum}
-- Coherencia posicion vs mercado: {coherence}
-- {coherence_text}
-- Volatilidad: {volatility}
-"""
-
-    if rsi:
-        prompt += f"- RSI: {rsi:.0f}\n"
-
-    # Position alignment
-    is_aligned = (side == "LONG" and htf_bias == "alcista") or (side == "SHORT" and htf_bias == "bajista")
-    prompt += f"\nALINEACION: La posicion {'ESTA' if is_aligned else 'NO esta'} alineada con el sesgo HTF.\n"
-
-    prompt += "\nAnaliza esta posicion y dame recomendacion + mejor/peor escenario:"
+    prompt += "\n\nAnaliza y responde con el formato: Lectura / Fragilidad / Si favorece / Si contra"
 
     return prompt
 
@@ -652,9 +676,10 @@ def get_position_ai_analysis(
 
     Returns:
         Dictionary with:
-        - recommendation: Main recommendation
-        - best_scenario: Best case scenario
-        - worst_scenario: Worst case scenario
+        - lectura: Thesis reading (alignment + tension)
+        - fragilidad: Where most fail in this context
+        - si_favorece: What to see if market favors
+        - si_contra: What invalidates or increases risk
         - cached: Whether this was cached
         - generated_at: Timestamp
     """
@@ -667,9 +692,10 @@ def get_position_ai_analysis(
         if age < POSITION_CACHE_TTL:
             logger.info(f"[AI-POS] Cache hit: {cache_key}")
             return {
-                "recommendation": entry["recommendation"],
-                "best_scenario": entry["best_scenario"],
-                "worst_scenario": entry["worst_scenario"],
+                "lectura": entry["lectura"],
+                "fragilidad": entry["fragilidad"],
+                "si_favorece": entry["si_favorece"],
+                "si_contra": entry["si_contra"],
                 "cached": True,
                 "generated_at": entry.get("generated_at"),
             }
@@ -692,61 +718,49 @@ def get_position_ai_analysis(
 
         response = client.messages.create(
             model=model,
-            max_tokens=500,
+            max_tokens=400,
             system=POSITION_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}]
         )
 
         text = response.content[0].text.strip()
 
-        # Parse the response
-        recommendation = ""
-        best_scenario = ""
-        worst_scenario = ""
+        # Parse the new format: Lectura / Fragilidad / Si favorece / Si contra
+        lectura = ""
+        fragilidad = ""
+        si_favorece = ""
+        si_contra = ""
 
         lines = text.split("\n")
-        current_section = None
-
         for line in lines:
             line_lower = line.lower().strip()
-            if "recomendacion" in line_lower or "recomendación" in line_lower:
-                current_section = "rec"
-                # Extract content after the colon if on same line
-                if ":" in line:
-                    recommendation = line.split(":", 1)[1].strip().lstrip("*").strip()
-            elif "mejor escenario" in line_lower:
-                current_section = "best"
-                if ":" in line:
-                    best_scenario = line.split(":", 1)[1].strip().lstrip("*").strip()
-            elif "peor escenario" in line_lower:
-                current_section = "worst"
-                if ":" in line:
-                    worst_scenario = line.split(":", 1)[1].strip().lstrip("*").strip()
-            elif line.strip() and current_section:
-                # Continuation of current section
-                clean_line = line.strip().lstrip("*- ").strip()
-                if current_section == "rec" and not recommendation:
-                    recommendation = clean_line
-                elif current_section == "best" and not best_scenario:
-                    best_scenario = clean_line
-                elif current_section == "worst" and not worst_scenario:
-                    worst_scenario = clean_line
+            if line_lower.startswith("lectura:"):
+                lectura = line.split(":", 1)[1].strip()
+            elif line_lower.startswith("fragilidad:"):
+                fragilidad = line.split(":", 1)[1].strip()
+            elif "si favorece:" in line_lower or "si favorece" in line_lower[:15]:
+                si_favorece = line.split(":", 1)[1].strip() if ":" in line else ""
+            elif "si contra:" in line_lower or "si contra" in line_lower[:12] or "si se gira" in line_lower:
+                si_contra = line.split(":", 1)[1].strip() if ":" in line else ""
 
         # Fallback if parsing failed
-        if not recommendation:
-            recommendation = "Monitorear la posicion de cerca"
-        if not best_scenario:
-            best_scenario = "El precio continua a favor de la posicion"
-        if not worst_scenario:
-            worst_scenario = "El precio revierte y activa stop loss"
+        if not lectura:
+            lectura = "Posicion requiere monitoreo del contexto actual"
+        if not fragilidad:
+            fragilidad = "Movimientos bruscos pueden barrer stops cercanos"
+        if not si_favorece:
+            si_favorece = "Continuation del momentum actual con volumen"
+        if not si_contra:
+            si_contra = "Ruptura de estructura invalida la tesis"
 
         generated_at = datetime.now(timezone.utc).isoformat()
 
         # Cache result
         _position_ai_cache[cache_key] = {
-            "recommendation": recommendation,
-            "best_scenario": best_scenario,
-            "worst_scenario": worst_scenario,
+            "lectura": lectura,
+            "fragilidad": fragilidad,
+            "si_favorece": si_favorece,
+            "si_contra": si_contra,
             "timestamp": time.time(),
             "generated_at": generated_at,
         }
@@ -755,9 +769,10 @@ def get_position_ai_analysis(
         _cleanup_position_cache()
 
         return {
-            "recommendation": recommendation,
-            "best_scenario": best_scenario,
-            "worst_scenario": worst_scenario,
+            "lectura": lectura,
+            "fragilidad": fragilidad,
+            "si_favorece": si_favorece,
+            "si_contra": si_contra,
             "cached": False,
             "generated_at": generated_at,
         }
@@ -770,37 +785,42 @@ def get_position_ai_analysis(
 def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str, Any]) -> Dict[str, Any]:
     """Generate fallback analysis when API is unavailable."""
     side = position.get("side", "").upper()
-    pnl_pct = position.get("pnl_percent", 0)
     htf_bias = market_state.get("htf_bias", "neutral")
-    coherence = market_state.get("coherence", "neutral")
+    rsi = market_state.get("rsi")
+    volatility = market_state.get("volatility", "normal")
+    alignment = _get_alignment(side, htf_bias)
 
-    is_aligned = (side == "LONG" and htf_bias == "alcista") or (side == "SHORT" and htf_bias == "bajista")
-
-    if pnl_pct > 5 and is_aligned:
-        recommendation = "Posicion en ganancia y alineada - considera asegurar parciales"
-        best = "Continuacion de tendencia HTF con expansion de ganancias"
-        worst = "Retroceso que borra ganancias - ajustar SL a breakeven"
-    elif pnl_pct > 0 and is_aligned:
-        recommendation = "Posicion alineada con contexto - mantener con SL definido"
-        best = "Impulso a favor que lleva a target"
-        worst = "Perdida de momentum que invalida la entrada"
-    elif pnl_pct < -5:
-        recommendation = "Posicion en perdida significativa - evaluar si la tesis sigue valida"
-        best = "Recuperacion que permite salir en breakeven"
-        worst = "Continuacion en contra hacia liquidacion"
-    elif not is_aligned:
-        recommendation = "Posicion contra el sesgo HTF - gestionar riesgo de cerca"
-        best = "Cambio de sesgo que valida la posicion"
-        worst = "Continuacion de tendencia HTF en contra"
+    # Build contextual fallback based on discrete states
+    if alignment == "with_context":
+        lectura = "Posicion alineada con el sesgo HTF, momentum a favor"
+        if rsi and rsi > 70:
+            lectura += " pero RSI elevado sugiere posible agotamiento"
+        elif rsi and rsi < 30:
+            lectura += " pero RSI bajo sugiere posible rebote"
+    elif alignment == "against_context":
+        lectura = "Posicion contra el sesgo HTF, dependiente de reversal o cambio de estructura"
     else:
-        recommendation = "Monitorear evolucion del precio respecto a niveles clave"
-        best = "Resolucion a favor de la posicion"
-        worst = "Invalidacion de la tesis de entrada"
+        lectura = "Contexto mixto, la posicion depende de resolucion de rango actual"
+
+    if volatility == "high":
+        fragilidad = "Volatilidad alta amplifica movimientos, stops cercanos suelen barrerse"
+    elif alignment == "against_context":
+        fragilidad = "Posiciones contra tendencia suelen sufrir continuation antes de reversar"
+    else:
+        fragilidad = "Retrocesos cortos pueden parecer reversiones, paciencia con la estructura"
+
+    if alignment == "with_context":
+        si_favorece = "Continuation con cierres 4H que mantienen estructura, volumen acompanando"
+        si_contra = "Ruptura de ultimo soporte/resistencia clave, cambio de estructura HTF"
+    else:
+        si_favorece = "Cambio de sesgo HTF con cierre confirmando nueva estructura"
+        si_contra = "Continuation de tendencia HTF, nuevos extremos en contra"
 
     return {
-        "recommendation": recommendation,
-        "best_scenario": best,
-        "worst_scenario": worst,
+        "lectura": lectura,
+        "fragilidad": fragilidad,
+        "si_favorece": si_favorece,
+        "si_contra": si_contra,
         "cached": False,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

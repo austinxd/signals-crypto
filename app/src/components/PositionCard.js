@@ -293,22 +293,28 @@ const PositionCard = ({ position }) => {
             </View>
           ) : aiData ? (
             <>
-              {/* Recommendation */}
+              {/* Lectura - Thesis reading */}
               <View style={[styles.aiSection, { borderLeftColor: '#00d4aa' }]}>
-                <Text style={styles.aiSectionTitle}>RECOMENDACI{'\u00D3'}N</Text>
-                <Text style={styles.aiSectionText}>{aiData.recommendation}</Text>
+                <Text style={styles.aiSectionTitle}>LECTURA</Text>
+                <Text style={styles.aiSectionText}>{aiData.lectura}</Text>
               </View>
 
-              {/* Best Scenario */}
-              <View style={[styles.aiSection, { borderLeftColor: '#00d4aa' }]}>
-                <Text style={styles.aiSectionTitle}>{'\u2191'} MEJOR ESCENARIO</Text>
-                <Text style={styles.aiSectionText}>{aiData.best_scenario}</Text>
+              {/* Fragilidad - Where most fail */}
+              <View style={[styles.aiSection, { borderLeftColor: '#ffd93d' }]}>
+                <Text style={styles.aiSectionTitle}>FRAGILIDAD</Text>
+                <Text style={styles.aiSectionText}>{aiData.fragilidad}</Text>
               </View>
 
-              {/* Worst Scenario */}
+              {/* Si favorece - If market favors */}
+              <View style={[styles.aiSection, { borderLeftColor: '#00d4aa' }]}>
+                <Text style={styles.aiSectionTitle}>{'\u2191'} SI FAVORECE</Text>
+                <Text style={styles.aiSectionText}>{aiData.si_favorece}</Text>
+              </View>
+
+              {/* Si contra - If market goes against */}
               <View style={[styles.aiSection, { borderLeftColor: '#ff4757' }]}>
-                <Text style={styles.aiSectionTitle}>{'\u2193'} PEOR ESCENARIO</Text>
-                <Text style={styles.aiSectionText}>{aiData.worst_scenario}</Text>
+                <Text style={styles.aiSectionTitle}>{'\u2193'} SI CONTRA</Text>
+                <Text style={styles.aiSectionText}>{aiData.si_contra}</Text>
               </View>
 
               {/* Timestamp */}
