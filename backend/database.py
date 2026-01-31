@@ -270,11 +270,8 @@ class UserNotification(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
-    # Use values_callable to store enum values (lowercase) instead of names (UPPERCASE)
-    notification_type = Column(
-        Enum(NotificationType, values_callable=lambda x: [e.value for e in x]),
-        nullable=False
-    )
+    # Use String instead of Enum to avoid MySQL ENUM sync issues
+    notification_type = Column(String(50), nullable=False)
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)
     symbol = Column(String(20), nullable=True)  # Optional: related symbol
@@ -390,19 +387,15 @@ def _run_migrations():
                 except Exception as e:
                     print(f"Migration warning ({table}.{column}): {e}")
 
-        # Migration: sync NotificationType enum with database
+        # Migration: change notification_type from ENUM to VARCHAR(50)
         try:
-            # Get all enum values from Python NotificationType
-            enum_values = [e.value for e in NotificationType]
-            enum_str = ",".join([f"'{v}'" for v in enum_values])
-            alter_sql = f"ALTER TABLE user_notifications MODIFY COLUMN notification_type ENUM({enum_str}) NOT NULL"
-            conn.execute(text(alter_sql))
+            conn.execute(text("ALTER TABLE user_notifications MODIFY COLUMN notification_type VARCHAR(50) NOT NULL"))
             conn.commit()
-            print(f"Migration: synced notification_type enum ({len(enum_values)} values)")
+            print("Migration: changed notification_type to VARCHAR(50)")
         except Exception as e:
-            # Table might not exist yet or other issue
+            # Table might not exist yet or column already VARCHAR
             if "doesn't exist" not in str(e).lower():
-                print(f"Migration warning (notification_type enum): {e}")
+                pass  # Silent - column might already be VARCHAR
 
         # Migration: rename subscriptions.user_id to account_id
         try:
@@ -920,9 +913,11 @@ class DBHelper:
         data: dict = None,
     ) -> UserNotification:
         """Create a new notification for a user."""
+        # Convert enum to string name for VARCHAR storage
+        type_str = notification_type.name if isinstance(notification_type, NotificationType) else str(notification_type)
         notification = UserNotification(
             user_id=user_id,
-            notification_type=notification_type,
+            notification_type=type_str,
             title=title,
             message=message,
             symbol=symbol,
