@@ -67,11 +67,17 @@ ESTILO OBLIGATORIO:
 - Usa: "suele", "es comun", "frecuentemente", "a menudo", "tipicamente"
 - 3-5 lineas maximo (menos es mas)
 - Concreto y practico, no abstracto
-- SIEMPRE termina con una conclusion simple de una linea que resuma el mensaje clave
+- SIEMPRE termina con una conclusion que conecte el comportamiento con el estado actual
 
 FORMATO:
 [Descripcion de comportamientos tipicos - 2-4 lineas]
-[Conclusion practica - 1 linea, empezando con "En resumen:" o "En este entorno:"]
+[Conclusion que conecte con el estado actual - 1 linea]
+
+La conclusion DEBE indicar donde esta el contexto ahora respecto al comportamiento descrito:
+- "...y actualmente no hay confirmacion estructural"
+- "...y por ahora el volumen no acompana"
+- "...mientras la estructura no ceda, esto sigue vigente"
+- "...y el momentum aun no muestra agotamiento"
 
 PROHIBICIONES:
 - No uses numeros ni precios
@@ -243,10 +249,10 @@ def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
 TENSION DETECTADA: {reason}
 COMPORTAMIENTOS TIPICOS: {behaviors}
 
-Estados actuales: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}
+ESTADO ACTUAL: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}
 
 Describe como suele moverse el precio y donde suelen fallar los participantes.
-Termina con UNA conclusion practica que resuma el mensaje clave (empieza con "En resumen:" o "En este entorno:").
+Termina conectando el comportamiento con el estado actual (ej: "...y actualmente no hay confirmacion", "...mientras el volumen no confirme", "...y por ahora la estructura se mantiene").
 3-5 lineas maximo."""
 
     return prompt
@@ -357,47 +363,85 @@ def get_ai_explanation(state: Dict[str, Any], reason: str, force_refresh: bool =
 def _generate_fallback_explanation(state: Dict[str, Any], reason: str) -> str:
     """Generate a reason-specific behavioral fallback when API is unavailable."""
 
-    # Reason-specific behavioral patterns with conclusions
-    fallbacks = {
+    # Get current state for contextual conclusion
+    momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
+    volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
+    rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+
+    # Reason-specific behavioral patterns
+    behaviors = {
         "momentum_extreme_against_trend": (
             "Cuando el momentum entra en zona extrema dentro de una tendencia definida, "
             "el precio suele mostrar rebotes breves y poco eficientes que se agotan rapido. "
             "Es comun ver falsas recuperaciones que atraen entradas tardias antes de que "
-            "la presion dominante retome el control.\n"
-            "En resumen: el precio castiga a quienes persiguen sin esperar confirmacion."
+            "la presion dominante retome el control."
         ),
         "htf_ltf_conflict": (
             "Cuando el timing se mueve contra la estructura principal, es frecuente ver "
             "retrocesos que parecen reversiones pero terminan siendo barridas de stops. "
             "Los participantes tardios suelen quedar atrapados antes de que el precio "
-            "retome la direccion del marco mayor.\n"
-            "En resumen: los movimientos contra tendencia suelen ser trampas."
+            "retome la direccion del marco mayor."
         ),
         "scenario_downgrade": (
             "Cuando el contexto pierde eficiencia, el precio suele entrar en fases de "
             "lateralizacion o pausas prolongadas. Los movimientos se vuelven menos limpios "
-            "y los falsos rompimientos mas frecuentes.\n"
-            "En resumen: el entorno requiere paciencia, la claridad se ha perdido temporalmente."
+            "y los falsos rompimientos mas frecuentes."
         ),
         "volatility_spike": (
             "Con volatilidad elevada, los movimientos se amplifican en ambas direcciones. "
             "Es frecuente ver barridas rapidas que sacan stops de compradores y vendedores "
-            "en poco tiempo. Las trampas son comunes.\n"
-            "En resumen: el precio se mueve de forma caotica y castiga posiciones apresuradas."
+            "en poco tiempo. Las trampas son comunes."
         ),
         "volume_divergence": (
             "Cuando el volumen no acompana el movimiento, los avances suelen perder fuerza "
-            "rapidamente. Es comun ver rechazos en zonas clave donde se esperaba continuacion.\n"
-            "En resumen: sin volumen que confirme, el movimiento carece de conviccion."
+            "rapidamente. Es comun ver rechazos en zonas clave donde se esperaba continuacion."
         ),
         "structural_friction": (
             "Cuando estructura y momentum no coinciden, el precio suele lateralizar con "
-            "barridas en ambas direcciones. Los movimientos son erraticos y sin direccion clara.\n"
-            "En resumen: el mercado esta indeciso, la resolucion llegara de forma explosiva."
+            "barridas en ambas direcciones. Los movimientos son erraticos y sin direccion clara."
         ),
     }
 
-    return fallbacks.get(reason, "Tension detectada. En resumen: comportamiento erratico probable.")
+    # State-aware conclusions
+    conclusions = {
+        "momentum_extreme_against_trend": {
+            "strong": "Actualmente el momentum sigue fuerte, aun no hay senal de agotamiento.",
+            "weakening": "El momentum ya muestra debilidad, posible inicio de correccion.",
+            "neutral": "Por ahora no hay confirmacion de cambio estructural.",
+        },
+        "htf_ltf_conflict": {
+            "buying": "El volumen comprador aun no confirma el giro.",
+            "selling": "El volumen vendedor aun no confirma el giro.",
+            "balanced": "Mientras la estructura mayor no ceda, los retrocesos siguen siendo tacticos.",
+        },
+        "scenario_downgrade": {
+            "default": "Por ahora el contexto sigue deteriorado, se requiere paciencia.",
+        },
+        "volatility_spike": {
+            "default": "Mientras la volatilidad se mantenga elevada, el riesgo de trampas persiste.",
+        },
+        "volume_divergence": {
+            "buying": "El volumen comprador no acompana, la subida carece de conviccion.",
+            "selling": "El volumen vendedor no acompana, la caida carece de conviccion.",
+            "balanced": "Sin volumen que confirme, el movimiento sigue siendo fragil.",
+        },
+        "structural_friction": {
+            "default": "Mientras no haya resolucion, el precio seguira erratico.",
+        },
+    }
+
+    behavior = behaviors.get(reason, "Tension detectada en el contexto.")
+
+    # Get appropriate conclusion based on reason and state
+    reason_conclusions = conclusions.get(reason, {"default": "El contexto sigue en tension."})
+    if reason in ["momentum_extreme_against_trend"]:
+        conclusion = reason_conclusions.get(momentum_state, reason_conclusions.get("neutral", ""))
+    elif reason in ["htf_ltf_conflict", "volume_divergence"]:
+        conclusion = reason_conclusions.get(volume_dom, reason_conclusions.get("balanced", ""))
+    else:
+        conclusion = reason_conclusions.get("default", "")
+
+    return f"{behavior}\n{conclusion}"
 
 
 def _cleanup_cache():
