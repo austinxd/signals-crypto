@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { getPositionAlerts } from '../services/api';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { getPositionAlerts, getPositionAIAnalysis } from '../services/api';
+
+// Format time ago in Spanish
+const formatTimeAgo = (isoDate) => {
+  if (!isoDate) return null;
+  const now = new Date();
+  const generated = new Date(isoDate);
+  const diffMs = now - generated;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffMins < 1) return 'hace un momento';
+  if (diffMins < 60) return `hace ${diffMins} min`;
+  if (diffHours < 24) return `hace ${diffHours}h`;
+  return `hace ${Math.floor(diffHours / 24)}d`;
+};
 
 const formatPrice = (p) => {
   if (p == null) return '-';
@@ -67,6 +82,11 @@ const PositionCard = ({ position }) => {
   const [expanded, setExpanded] = useState(true);
   const [showIndicators, setShowIndicators] = useState(false);
 
+  // AI Analysis state (collapsible, fetches on expand)
+  const [showAI, setShowAI] = useState(false);
+  const [aiData, setAiData] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
   const isLong = position.side?.toUpperCase() === 'LONG';
   const pnl = position.unrealized_pnl || 0;
   const pnlPercent = position.entry_price
@@ -95,6 +115,26 @@ const PositionCard = ({ position }) => {
         .catch(() => {});
     }
   }, [showAlerts]);
+
+  // Fetch AI analysis when expanded
+  useEffect(() => {
+    if (!showAI || !position.symbol) return;
+
+    const fetchAI = async () => {
+      try {
+        setAiLoading(true);
+        const result = await getPositionAIAnalysis(position.symbol);
+        setAiData(result);
+      } catch (err) {
+        console.error('Error fetching position AI:', err);
+        setAiData(null);
+      } finally {
+        setAiLoading(false);
+      }
+    };
+
+    fetchAI();
+  }, [showAI, position.symbol]);
 
   // Distance to liquidation
   const liqDistance = liqPrice && current
@@ -233,6 +273,56 @@ const PositionCard = ({ position }) => {
           {analysis.coherence_text || 'Sin datos de coherencia'}
         </Text>
       </View>
+
+      {/* 3.5 AI ANALYSIS - Collapsible */}
+      <TouchableOpacity
+        style={styles.aiToggle}
+        onPress={() => setShowAI(!showAI)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.aiToggleIcon}>{showAI ? '\u25BC' : '\u25B6'}</Text>
+        <Text style={styles.aiToggleText}>Explicaci{'\u00F3'}n Austin {'\uD83E\uDDE0'}</Text>
+      </TouchableOpacity>
+
+      {showAI && (
+        <View style={styles.aiContent}>
+          {aiLoading ? (
+            <View style={styles.aiLoading}>
+              <ActivityIndicator size="small" color="#00d4aa" />
+              <Text style={styles.aiLoadingText}>Analizando posici{'\u00F3'}n...</Text>
+            </View>
+          ) : aiData ? (
+            <>
+              {/* Recommendation */}
+              <View style={[styles.aiSection, { borderLeftColor: '#00d4aa' }]}>
+                <Text style={styles.aiSectionTitle}>RECOMENDACI{'\u00D3'}N</Text>
+                <Text style={styles.aiSectionText}>{aiData.recommendation}</Text>
+              </View>
+
+              {/* Best Scenario */}
+              <View style={[styles.aiSection, { borderLeftColor: '#00d4aa' }]}>
+                <Text style={styles.aiSectionTitle}>{'\u2191'} MEJOR ESCENARIO</Text>
+                <Text style={styles.aiSectionText}>{aiData.best_scenario}</Text>
+              </View>
+
+              {/* Worst Scenario */}
+              <View style={[styles.aiSection, { borderLeftColor: '#ff4757' }]}>
+                <Text style={styles.aiSectionTitle}>{'\u2193'} PEOR ESCENARIO</Text>
+                <Text style={styles.aiSectionText}>{aiData.worst_scenario}</Text>
+              </View>
+
+              {/* Timestamp */}
+              {aiData.generated_at && (
+                <Text style={styles.aiTimestamp}>
+                  Respuesta generada {formatTimeAgo(aiData.generated_at)}
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text style={styles.aiError}>No se pudo obtener an{'\u00E1'}lisis</Text>
+          )}
+        </View>
+      )}
 
       {/* 4. OBSERVACIONES FACTUALES */}
       {analysis.observations && analysis.observations.length > 0 && (
@@ -437,6 +527,54 @@ const styles = StyleSheet.create({
   // Coherence box
   coherenceBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },
   coherenceMainText: { fontSize: 13, fontWeight: '600' },
+
+  // AI Analysis
+  aiToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  aiToggleIcon: { color: '#666', fontSize: 10, marginRight: 8 },
+  aiToggleText: { color: '#888', fontSize: 12, fontWeight: '500' },
+  aiContent: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  aiLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+  },
+  aiLoadingText: { color: '#666', fontSize: 12 },
+  aiSection: {
+    borderLeftWidth: 3,
+    paddingLeft: 10,
+    marginBottom: 12,
+  },
+  aiSectionTitle: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  aiSectionText: { color: '#ccc', fontSize: 12, lineHeight: 18 },
+  aiTimestamp: {
+    color: '#555',
+    fontSize: 10,
+    textAlign: 'right',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  aiError: { color: '#ff4757', fontSize: 12, textAlign: 'center' },
 
   // Suggestion box
   suggestionBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },

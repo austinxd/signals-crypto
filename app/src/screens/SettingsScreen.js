@@ -12,8 +12,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  getApiUrl,
-  setApiUrl,
   registerPushToken,
   sendTestNotification,
   getProfile,
@@ -30,7 +28,6 @@ import {
 } from '../services/notifications';
 
 const SettingsScreen = ({ onLogout }) => {
-  const [apiUrl, setApiUrlState] = useState('');
   const [pushToken, setPushToken] = useState(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -58,9 +55,6 @@ const SettingsScreen = ({ onLogout }) => {
     try {
       setLoading(true);
 
-      const url = await getApiUrl();
-      setApiUrlState(url);
-
       const token = await getStoredPushToken();
       setPushToken(token);
       if (token) setIsRegistered(true);
@@ -79,15 +73,6 @@ const SettingsScreen = ({ onLogout }) => {
       console.error('Error loading settings:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveApiUrl = async () => {
-    try {
-      await setApiUrl(apiUrl);
-      Alert.alert('Guardado', 'URL del servidor actualizada');
-    } catch {
-      Alert.alert('Error', 'No se pudo guardar la URL');
     }
   };
 
@@ -449,24 +434,6 @@ const SettingsScreen = ({ onLogout }) => {
         </View>
       </View>
 
-      {/* Server / Infrastructure */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Servidor</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginBottom: 0, marginRight: 8 }]}
-            value={apiUrl}
-            onChangeText={setApiUrlState}
-            placeholder="http://localhost:8000"
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-          />
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveApiUrl}>
-            <Text style={styles.saveButtonText}>Guardar</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Data */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Datos</Text>
@@ -552,20 +519,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     marginBottom: 10,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  saveButton: {
-    backgroundColor: '#00d4aa',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  saveButtonText: {
-    color: '#0f0f1a',
-    fontWeight: '600',
   },
   buttonRow: {
     flexDirection: 'row',

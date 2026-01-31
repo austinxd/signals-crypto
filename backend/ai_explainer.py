@@ -498,3 +498,314 @@ def get_cache_stats() -> Dict[str, Any]:
         "cache_ttl_normal_hours": CACHE_TTL_NORMAL / 3600,
         "cache_ttl_high_vol_min": CACHE_TTL_HIGH_VOL / 60,
     }
+
+
+# ============================================================
+# POSITION AI ANALYSIS - Per user, per position
+# ============================================================
+
+# Separate cache for position analysis (per user)
+_position_ai_cache: Dict[str, Dict[str, Any]] = {}
+POSITION_CACHE_TTL = 15 * 60  # 15 minutes for position analysis
+
+POSITION_SYSTEM_PROMPT = """Eres un asistente de gestion de posiciones de trading.
+
+CONTEXTO:
+El usuario tiene una posicion abierta. Tienes acceso a:
+- Datos de la posicion (lado, entrada, PnL actual, leverage, liquidacion)
+- Contexto de mercado (sesgo HTF, estructura, momentum LTF)
+- Indicadores tecnicos (RSI, MACD, volumen)
+
+TU TAREA:
+Analizar la posicion en funcion del contexto actual y dar:
+1. Una RECOMENDACION clara y accionable (1-2 lineas)
+2. El MEJOR ESCENARIO realista (que pasaria si el mercado favorece)
+3. El PEOR ESCENARIO realista (que pasaria si el mercado va en contra)
+
+ESTILO:
+- Directo y practico, sin rodeos
+- Basado en datos, no en predicciones
+- Reconoce cuando la posicion esta bien o mal posicionada
+- Si hay riesgo alto, dilo claramente
+- Si la posicion esta a favor del contexto, confirma
+
+FORMATO OBLIGATORIO:
+**Recomendacion:** [accion sugerida basada en el estado actual]
+
+**Mejor escenario:** [que pasa si continua a favor - ser realista]
+
+**Peor escenario:** [que pasa si va en contra - incluir niveles criticos]
+
+PROHIBICIONES:
+- No des precios exactos de entrada/salida
+- No prometas resultados
+- No uses lenguaje emocional o alarmista innecesario
+- No repitas datos que el usuario ya ve en pantalla
+
+Responde solo en espanol."""
+
+
+def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
+    """
+    Generate cache key for position analysis.
+    Includes user_id to make it per-user.
+    """
+    symbol = position.get("symbol", "").replace("/", "").replace(":", "")
+    side = position.get("side", "").upper()
+
+    # PnL bucket (to invalidate cache when PnL changes significantly)
+    pnl_pct = position.get("pnl_percent", 0)
+    if pnl_pct < -10:
+        pnl_bucket = "loss_big"
+    elif pnl_pct < -3:
+        pnl_bucket = "loss_med"
+    elif pnl_pct < 0:
+        pnl_bucket = "loss_small"
+    elif pnl_pct < 3:
+        pnl_bucket = "gain_small"
+    elif pnl_pct < 10:
+        pnl_bucket = "gain_med"
+    else:
+        pnl_bucket = "gain_big"
+
+    # Market state components
+    htf_bias = _normalize(market_state.get("htf_bias", "neutral"), _BIAS_MAP, "neutral")
+    coherence = market_state.get("coherence", "neutral")
+    momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
+
+    return f"pos|u{user_id}|{symbol}|{side}|{pnl_bucket}|{htf_bias}|{coherence}|{momentum}"
+
+
+def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
+    """Format the position data for the AI prompt."""
+    symbol = position.get("symbol", "?")
+    side = position.get("side", "?").upper()
+    entry = position.get("entry_price", 0)
+    current = position.get("current_price", 0)
+    pnl = position.get("unrealized_pnl", 0)
+    pnl_pct = position.get("pnl_percent", 0)
+    leverage = position.get("leverage", 1)
+    liq_price = position.get("liquidation_price")
+    liq_distance = position.get("liq_distance_pct")
+
+    # Market context
+    htf_bias = market_state.get("htf_bias", "neutral")
+    htf_structure = market_state.get("htf_structure", "?")
+    ltf_momentum = market_state.get("ltf_momentum", "neutral")
+    coherence = market_state.get("coherence", "neutral")
+    coherence_text = market_state.get("coherence_text", "")
+    rsi = market_state.get("rsi")
+    volatility = market_state.get("volatility", "normal")
+
+    prompt = f"""POSICION ACTUAL:
+- Par: {symbol}
+- Lado: {side}
+- Entrada: ${entry:.2f} → Actual: ${current:.2f}
+- PnL: ${pnl:.2f} ({pnl_pct:+.2f}%)
+- Leverage: {leverage}x
+"""
+
+    if liq_price and liq_distance:
+        prompt += f"- Liquidacion: ${liq_price:.2f} (a {liq_distance:.1f}% de distancia)\n"
+
+    prompt += f"""
+CONTEXTO DE MERCADO:
+- Sesgo HTF (4H): {htf_bias}
+- Estructura: {htf_structure}
+- Momentum LTF (15m): {ltf_momentum}
+- Coherencia posicion vs mercado: {coherence}
+- {coherence_text}
+- Volatilidad: {volatility}
+"""
+
+    if rsi:
+        prompt += f"- RSI: {rsi:.0f}\n"
+
+    # Position alignment
+    is_aligned = (side == "LONG" and htf_bias == "alcista") or (side == "SHORT" and htf_bias == "bajista")
+    prompt += f"\nALINEACION: La posicion {'ESTA' if is_aligned else 'NO esta'} alineada con el sesgo HTF.\n"
+
+    prompt += "\nAnaliza esta posicion y dame recomendacion + mejor/peor escenario:"
+
+    return prompt
+
+
+def get_position_ai_analysis(
+    user_id: int,
+    position: Dict[str, Any],
+    market_state: Dict[str, Any],
+    force_refresh: bool = False
+) -> Dict[str, Any]:
+    """
+    Get AI analysis for a specific position.
+
+    Args:
+        user_id: User ID (for per-user caching)
+        position: Position data dict
+        market_state: Current market analysis for the symbol
+        force_refresh: Skip cache if True
+
+    Returns:
+        Dictionary with:
+        - recommendation: Main recommendation
+        - best_scenario: Best case scenario
+        - worst_scenario: Worst case scenario
+        - cached: Whether this was cached
+        - generated_at: Timestamp
+    """
+    cache_key = _generate_position_cache_key(user_id, position, market_state)
+
+    # Check cache
+    if not force_refresh and cache_key in _position_ai_cache:
+        entry = _position_ai_cache[cache_key]
+        age = time.time() - entry.get("timestamp", 0)
+        if age < POSITION_CACHE_TTL:
+            logger.info(f"[AI-POS] Cache hit: {cache_key}")
+            return {
+                "recommendation": entry["recommendation"],
+                "best_scenario": entry["best_scenario"],
+                "worst_scenario": entry["worst_scenario"],
+                "cached": True,
+                "generated_at": entry.get("generated_at"),
+            }
+
+    # Generate new analysis
+    logger.info(f"[AI-POS] Generating analysis: {cache_key}")
+
+    if not ANTHROPIC_AVAILABLE:
+        return _generate_position_fallback(position, market_state)
+
+    try:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return _generate_position_fallback(position, market_state)
+
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = _format_position_prompt(position, market_state)
+
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=500,
+            system=POSITION_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        text = response.content[0].text.strip()
+
+        # Parse the response
+        recommendation = ""
+        best_scenario = ""
+        worst_scenario = ""
+
+        lines = text.split("\n")
+        current_section = None
+
+        for line in lines:
+            line_lower = line.lower().strip()
+            if "recomendacion" in line_lower or "recomendación" in line_lower:
+                current_section = "rec"
+                # Extract content after the colon if on same line
+                if ":" in line:
+                    recommendation = line.split(":", 1)[1].strip().lstrip("*").strip()
+            elif "mejor escenario" in line_lower:
+                current_section = "best"
+                if ":" in line:
+                    best_scenario = line.split(":", 1)[1].strip().lstrip("*").strip()
+            elif "peor escenario" in line_lower:
+                current_section = "worst"
+                if ":" in line:
+                    worst_scenario = line.split(":", 1)[1].strip().lstrip("*").strip()
+            elif line.strip() and current_section:
+                # Continuation of current section
+                clean_line = line.strip().lstrip("*- ").strip()
+                if current_section == "rec" and not recommendation:
+                    recommendation = clean_line
+                elif current_section == "best" and not best_scenario:
+                    best_scenario = clean_line
+                elif current_section == "worst" and not worst_scenario:
+                    worst_scenario = clean_line
+
+        # Fallback if parsing failed
+        if not recommendation:
+            recommendation = "Monitorear la posicion de cerca"
+        if not best_scenario:
+            best_scenario = "El precio continua a favor de la posicion"
+        if not worst_scenario:
+            worst_scenario = "El precio revierte y activa stop loss"
+
+        generated_at = datetime.now(timezone.utc).isoformat()
+
+        # Cache result
+        _position_ai_cache[cache_key] = {
+            "recommendation": recommendation,
+            "best_scenario": best_scenario,
+            "worst_scenario": worst_scenario,
+            "timestamp": time.time(),
+            "generated_at": generated_at,
+        }
+
+        # Cleanup old entries
+        _cleanup_position_cache()
+
+        return {
+            "recommendation": recommendation,
+            "best_scenario": best_scenario,
+            "worst_scenario": worst_scenario,
+            "cached": False,
+            "generated_at": generated_at,
+        }
+
+    except Exception as e:
+        logger.error(f"[AI-POS] Error calling API: {e}")
+        return _generate_position_fallback(position, market_state)
+
+
+def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate fallback analysis when API is unavailable."""
+    side = position.get("side", "").upper()
+    pnl_pct = position.get("pnl_percent", 0)
+    htf_bias = market_state.get("htf_bias", "neutral")
+    coherence = market_state.get("coherence", "neutral")
+
+    is_aligned = (side == "LONG" and htf_bias == "alcista") or (side == "SHORT" and htf_bias == "bajista")
+
+    if pnl_pct > 5 and is_aligned:
+        recommendation = "Posicion en ganancia y alineada - considera asegurar parciales"
+        best = "Continuacion de tendencia HTF con expansion de ganancias"
+        worst = "Retroceso que borra ganancias - ajustar SL a breakeven"
+    elif pnl_pct > 0 and is_aligned:
+        recommendation = "Posicion alineada con contexto - mantener con SL definido"
+        best = "Impulso a favor que lleva a target"
+        worst = "Perdida de momentum que invalida la entrada"
+    elif pnl_pct < -5:
+        recommendation = "Posicion en perdida significativa - evaluar si la tesis sigue valida"
+        best = "Recuperacion que permite salir en breakeven"
+        worst = "Continuacion en contra hacia liquidacion"
+    elif not is_aligned:
+        recommendation = "Posicion contra el sesgo HTF - gestionar riesgo de cerca"
+        best = "Cambio de sesgo que valida la posicion"
+        worst = "Continuacion de tendencia HTF en contra"
+    else:
+        recommendation = "Monitorear evolucion del precio respecto a niveles clave"
+        best = "Resolucion a favor de la posicion"
+        worst = "Invalidacion de la tesis de entrada"
+
+    return {
+        "recommendation": recommendation,
+        "best_scenario": best,
+        "worst_scenario": worst,
+        "cached": False,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _cleanup_position_cache():
+    """Remove expired position cache entries."""
+    now = time.time()
+    expired = [k for k, v in _position_ai_cache.items() if now - v.get("timestamp", 0) > POSITION_CACHE_TTL]
+    for k in expired:
+        del _position_ai_cache[k]
+    if expired:
+        logger.info(f"[AI-POS] Cleaned {len(expired)} expired entries")

@@ -1,5 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { getAIExplanation } from '../services/api';
 
 // Scenario classification styles
 const SCENARIO_STYLES = {
@@ -24,8 +25,58 @@ const MOMENTUM_STYLES = {
   neutral: { label: 'Neutral', color: '#888', icon: '−' },
 };
 
+// AI reason translations to Spanish
+const REASON_LABELS = {
+  momentum_extreme_against_trend: 'Momentum extremo',
+  htf_ltf_conflict: 'Conflicto HTF/LTF',
+  scenario_downgrade: 'Escenario degradado',
+  volatility_spike: 'Pico volatilidad',
+  volume_divergence: 'Divergencia volumen',
+  structural_friction: 'Fricción estructural',
+};
+
+// Format time ago in Spanish
+const formatTimeAgo = (isoDate) => {
+  if (!isoDate) return null;
+  const now = new Date();
+  const generated = new Date(isoDate);
+  const diffMs = now - generated;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffMins < 1) return 'hace un momento';
+  if (diffMins < 60) return `hace ${diffMins} min`;
+  if (diffHours < 24) return `hace ${diffHours}h`;
+  return `hace ${Math.floor(diffHours / 24)}d`;
+};
+
 const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) => {
   const cardStyle = embedded ? styles.cardEmbedded : styles.card;
+
+  // AI explanation state (collapsible, fetches on expand)
+  const [showAI, setShowAI] = useState(false);
+  const [aiData, setAiData] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Fetch AI explanation when expanded
+  useEffect(() => {
+    if (!showAI || !pair) return;
+
+    const fetchAI = async () => {
+      try {
+        setAiLoading(true);
+        const result = await getAIExplanation(pair);
+        setAiData(result);
+      } catch (err) {
+        console.error('Error fetching AI:', err);
+        setAiData(null);
+      } finally {
+        setAiLoading(false);
+      }
+    };
+
+    fetchAI();
+  }, [showAI, pair]);
 
   if (!data) {
     return (
@@ -118,6 +169,45 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
             )}
             <Text style={styles.scenarioReason}>{analysis.scenario_reason}</Text>
           </View>
+
+          {/* AI INTERPRETATION - Collapsible */}
+          <TouchableOpacity
+            style={styles.aiToggle}
+            onPress={() => setShowAI(!showAI)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.aiToggleIcon}>{showAI ? '▼' : '▶'}</Text>
+            <Text style={styles.aiToggleText}>Explicación Austin 🧠</Text>
+            {aiData?.reason && (
+              <View style={styles.aiReasonBadge}>
+                <Text style={styles.aiReasonText}>
+                  {REASON_LABELS[aiData.reason] || aiData.reason.replace(/_/g, ' ')}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {showAI && (
+            <View style={styles.aiContent}>
+              {aiLoading ? (
+                <View style={styles.aiLoading}>
+                  <ActivityIndicator size="small" color="#00d4aa" />
+                  <Text style={styles.aiLoadingText}>Analizando contexto...</Text>
+                </View>
+              ) : aiData?.explanation ? (
+                <>
+                  <Text style={styles.aiExplanation}>{aiData.explanation}</Text>
+                  {aiData.generated_at && (
+                    <Text style={styles.aiTimestamp}>
+                      Respuesta generada {formatTimeAgo(aiData.generated_at)}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.aiAligned}>Contexto alineado - sin tension detectada</Text>
+              )}
+            </View>
+          )}
 
           {/* TWO-LAYER ANALYSIS: Context (4H) + Timing (15m) */}
           <View style={styles.layersContainer}>
@@ -357,6 +447,78 @@ const styles = StyleSheet.create({
   directionText: {
     fontSize: 12,
     fontWeight: 'bold',
+  },
+
+  // AI Collapsible Section
+  aiToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  aiToggleIcon: {
+    color: '#666',
+    fontSize: 10,
+    marginRight: 8,
+  },
+  aiToggleText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  aiReasonBadge: {
+    marginLeft: 'auto',
+    backgroundColor: '#ff9f4320',
+    borderWidth: 1,
+    borderColor: '#ff9f43',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  aiReasonText: {
+    color: '#ff9f43',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  aiContent: {
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: -8,
+    marginBottom: 12,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  aiLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  aiLoadingText: {
+    color: '#666',
+    fontSize: 12,
+  },
+  aiExplanation: {
+    color: '#ccc',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  aiAligned: {
+    color: '#666',
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  aiTimestamp: {
+    color: '#555',
+    fontSize: 10,
+    marginTop: 8,
+    textAlign: 'right',
+    fontStyle: 'italic',
   },
 
   // Two-Layer Analysis Container

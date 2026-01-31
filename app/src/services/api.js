@@ -549,6 +549,11 @@ export async function getPositionAlerts(symbol) {
   return apiRequest(`/api/positions/${s}/alerts`);
 }
 
+export async function getPositionAIAnalysis(symbol) {
+  const s = symbol.replace('/', '-').replace(':USDT', '');
+  return apiRequest(`/api/positions/${s}/ai-analysis`);
+}
+
 export async function getExitAlerts(limit = 50) {
   return apiRequest(`/api/exit-alerts?limit=${limit}`);
 }
