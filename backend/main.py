@@ -2513,6 +2513,16 @@ async def get_ai_market_explanation(pair: str):
                     else:
                         resistance_levels.append(round(price, 2))
 
+        # Determine volume dominance from LTF indicators if available
+        volume_dominance = "balanced"
+        if ltf_indicators:
+            vol_ratio = ltf_indicators.get("volume_ratio", 1.0)
+            macd_hist = ltf_indicators.get("macd_histogram", 0)
+            if vol_ratio > 1.5 and macd_hist > 0:
+                volume_dominance = "buying"
+            elif vol_ratio > 1.5 and macd_hist < 0:
+                volume_dominance = "selling"
+
         ai_state = {
             "pair": pair_formatted,
             "price": htf_indicators.get("price") if htf_indicators else 0,
@@ -2520,19 +2530,16 @@ async def get_ai_market_explanation(pair: str):
             "htf_bias": analysis.get("context", {}).get("htf_bias", "neutral"),
             "structure": analysis.get("context", {}).get("htf_structure", "unknown"),
             "scenario": analysis.get("scenario", "espera"),
+            "volatility": analysis.get("context", {}).get("volatility_state", "normal"),
+            "volume_dominance": volume_dominance,
             "momentum": {
                 "rsi": htf_indicators.get("rsi") if htf_indicators else None,
                 "macd": analysis.get("context", {}).get("macd_momentum", "neutral"),
             },
-            "volatility": analysis.get("context", {}).get("volatility_state", "normal"),
             "key_levels": {
                 "support": sorted(support_levels)[-3:] if support_levels else [],
                 "resistance": sorted(resistance_levels)[:3] if resistance_levels else [],
             },
-            "volume_executed": {
-                "delta": 0,  # Could be populated from volume profile
-                "dominance": "balanced",
-            }
         }
 
         # Get AI explanation (uses cache if state hasn't changed)
@@ -2542,13 +2549,14 @@ async def get_ai_market_explanation(pair: str):
             "pair": pair_formatted,
             "explanation": result["text"],
             "cached": result["cached"],
-            "state_hash": result["state_hash"],
+            "cache_key": result["cache_key"],
             "generated_at": result["generated_at"],
             "current_state": {
                 "htf_bias": ai_state["htf_bias"],
                 "scenario": ai_state["scenario"],
                 "structure": ai_state["structure"],
                 "volatility": ai_state["volatility"],
+                "volume_dominance": ai_state["volume_dominance"],
             }
         }
 

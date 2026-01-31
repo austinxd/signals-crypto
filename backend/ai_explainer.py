@@ -13,7 +13,6 @@ Key principles:
 
 import os
 import time
-import hashlib
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
@@ -61,18 +60,25 @@ FORMATO DE RESPUESTA (maximo 6-8 lineas):
 Responde SOLO en espanol. Se conciso y claro."""
 
 
-def _generate_state_hash(state: Dict[str, Any]) -> str:
-    """Generate a hash based on the market state for caching."""
-    key_parts = [
-        state.get("pair", ""),
-        state.get("htf_bias", ""),
-        state.get("scenario", ""),
-        state.get("structure", ""),
-        state.get("volatility", ""),
-        state.get("momentum", {}).get("macd", ""),
-    ]
-    key_string = "|".join(str(p) for p in key_parts)
-    return hashlib.md5(key_string.encode()).hexdigest()
+def _generate_cache_key(state: Dict[str, Any]) -> str:
+    """
+    Generate explicit cache key based on market state.
+
+    Format: {PAIR}|{HTF_TIMEFRAME}|{HTF_BIAS}|{SCENARIO}|{STRUCTURE}|{VOLATILITY}|{VOLUME_DOMINANCE}
+    Example: BTCUSDT|4H|bearish|operable|below_ema200|expanding|selling
+
+    Any field change invalidates cache automatically.
+    """
+    pair = state.get("pair", "UNKNOWN").replace("/", "").replace(":", "")
+    htf_tf = state.get("htf_timeframe", "4H")
+    htf_bias = state.get("htf_bias", "neutral")
+    scenario = state.get("scenario", "espera")
+    structure = state.get("structure", "unknown")
+    volatility = state.get("volatility", "normal")
+    volume_dominance = state.get("volume_dominance", "balanced")
+
+    cache_key = f"{pair}|{htf_tf}|{htf_bias}|{scenario}|{structure}|{volatility}|{volume_dominance}"
+    return cache_key
 
 
 def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
@@ -170,25 +176,24 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
         - state_hash: The state hash used for caching
         - generated_at: When the explanation was generated
     """
-    state_hash = _generate_state_hash(state)
+    cache_key = _generate_cache_key(state)
     pair = state.get("pair", "Unknown")
     volatility = state.get("volatility", "normal")
 
     # Check cache first (shorter TTL for high volatility)
-    cache_key = f"{pair}_{state_hash}"
     if not force_refresh and cache_key in _ai_cache:
         cache_entry = _ai_cache[cache_key]
         if _is_cache_valid(cache_entry, volatility):
-            logger.info(f"[AI] Cache hit for {pair} (hash: {state_hash[:8]}, vol: {volatility})")
+            logger.info(f"[AI] Cache hit: {cache_key}")
             return {
                 "text": cache_entry["text"],
                 "cached": True,
-                "state_hash": state_hash,
+                "cache_key": cache_key,
                 "generated_at": cache_entry.get("generated_at"),
             }
 
     # Generate new explanation
-    logger.info(f"[AI] Generating new explanation for {pair} (hash: {state_hash[:8]})")
+    logger.info(f"[AI] Generating new explanation: {cache_key}")
 
     prompt = _format_input_for_ai(state)
     explanation = _call_claude_api(prompt)
@@ -197,22 +202,24 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
         # Fallback to a generic explanation based on state
         explanation = _generate_fallback_explanation(state)
 
-    # Cache the result
+    # Cache the result (shared across all users with same market state)
     generated_at = datetime.now(timezone.utc).isoformat()
     _ai_cache[cache_key] = {
         "text": explanation,
         "timestamp": time.time(),
-        "state": state,
+        "volatility": volatility,
         "generated_at": generated_at,
     }
 
     # Clean old cache entries
     _cleanup_cache()
 
+    logger.info(f"[AI] Cached new explanation: {cache_key}")
+
     return {
         "text": explanation,
         "cached": False,
-        "state_hash": state_hash,
+        "cache_key": cache_key,
         "generated_at": generated_at,
     }
 
@@ -286,20 +293,18 @@ def _cleanup_cache():
         logger.info(f"[AI] Cleaned up {len(expired_keys)} expired cache entries")
 
 
-def check_state_changed(pair: str, new_state: Dict[str, Any]) -> bool:
+def check_state_changed(new_state: Dict[str, Any]) -> bool:
     """
     Check if the market state has changed significantly enough to warrant
     a new AI explanation.
 
     Returns True if:
-    - HTF bias changed
-    - Scenario changed
-    - Structure changed
-    - Volatility state changed significantly
+    - Any cache key component changed (htf_bias, scenario, structure, volatility, volume_dominance)
     - Cache expired (30min for high vol, 2h for normal)
+
+    Cache key format: {PAIR}|{HTF_TIMEFRAME}|{HTF_BIAS}|{SCENARIO}|{STRUCTURE}|{VOLATILITY}|{VOLUME_DOMINANCE}
     """
-    new_hash = _generate_state_hash(new_state)
-    cache_key = f"{pair}_{new_hash}"
+    cache_key = _generate_cache_key(new_state)
     volatility = new_state.get("volatility", "normal")
 
     # If we don't have this state cached, it's a new state
