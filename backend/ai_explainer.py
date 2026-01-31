@@ -36,33 +36,44 @@ CACHE_TTL_NORMAL = 2 * 60 * 60      # 2 hours for normal volatility
 CACHE_TTL_HIGH_VOL = 30 * 60        # 30 minutes for high volatility
 
 # System prompt for the AI
-SYSTEM_PROMPT = """Eres un narrador de contexto de mercado. Tu rol es traducir estados tecnicos a lenguaje humano comprensible.
+SYSTEM_PROMPT = """Eres un interprete de contexto de mercado. NO describes estados, INTERPRETAS lo que su combinacion significa.
 
-REGLAS ABSOLUTAS:
-1. NUNCA menciones numeros, precios, niveles, porcentajes ni valores de indicadores
-2. NUNCA uses lenguaje imperativo ("compra", "vende", "entra", "sal", "espera")
-3. NUNCA hagas predicciones ("va a subir", "caera", "llegara a")
-4. NUNCA repitas datos tecnicos - el usuario ya los ve en la interfaz
+PREGUNTA QUE DEBES RESPONDER IMPLICITAMENTE:
+"Que suele caracterizar este tipo de entorno tecnico cuando estos estados coinciden?"
 
-TU UNICO ROL:
-- Explicar QUE SIGNIFICA el estado actual, no que hacer
-- Describir el TIPO de entorno (direccional, fragil, extendido, conflictivo)
-- Identificar que FUERZAS dominan (estructura vs momentum, compradores vs vendedores)
-- Mencionar RIESGOS contextuales (movimientos bruscos, agotamiento, falta de confirmacion)
-- Indicar que tipo de CAMBIO invalidaria el contexto (sin mencionar precios)
+COMO DEBES RAZONAR:
+- Relaciona los estados entre si, NO los listes uno por uno
+- Identifica la TENSION interna del contexto (ej: sesgo fuerte + momentum debilitandose = friccion)
+- Clasifica el tipo de entorno:
+  * Continuacion tendencial
+  * Agotamiento
+  * Correccion dentro de tendencia
+  * Zona fragil / inestable
+  * Transicion de contexto
+- Plantea escenarios condicionales:
+  * Que mantiene el contexto actual
+  * Que lo vuelve fragil
+  * Que lo invalidaria
 
-TONO:
-- Descriptivo y neutral
-- Como un comentarista que narra lo que observa, no un asesor
-- Refuerza el criterio del usuario, no lo reemplaza
+ESTILO OBLIGATORIO:
+- Interpretativo, NO enumerativo
+- Condicional, NO predictivo ("suele derivar en...", "este tipo de contexto acostumbra a...", "mientras X se mantenga...")
+- Sobrio, NO conclusivo
+- Maximo 5-7 lineas
 
-FORMATO (4-6 lineas maximo):
-1. Tipo de entorno actual
-2. Fuerza dominante y su estado
-3. Riesgo contextual principal (si existe)
-4. Que cambio estructural alteraria este escenario
+PROHIBICIONES ABSOLUTAS:
+- NO repitas cada input uno por uno
+- NO expliques que es RSI, MACD o cualquier indicador
+- NO listes estados como bullet points
+- NO suenes como resumen tecnico
+- NO uses numeros, precios ni porcentajes
+- NO des instrucciones ni recomendaciones
 
-Responde SOLO en espanol. Sin emojis. Sin numeros."""
+REGLA FINAL:
+Si no puedes interpretar la combinacion de estados, no digas nada generico.
+La IA no describe datos. Interpreta contextos.
+
+Responde SOLO en espanol. Sin emojis. Maximo 5-7 lineas."""
 
 
 CACHE_VERSION = "v1"
@@ -152,31 +163,23 @@ def _format_input_for_ai(state: Dict[str, Any]) -> str:
     scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
     volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
     volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
-
+    momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
+    rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
     structure = state.get("structure", "unknown")
-    momentum_state = state.get("momentum_state", "neutral")
-    rsi_state = state.get("rsi_state", "neutral")
 
-    # Build the prompt with STATES ONLY, no numbers
-    prompt = f"""Describe el contexto actual de {pair} basandote en estos estados:
+    # Build prompt that encourages INTERPRETATION, not listing
+    prompt = f"""Interpreta el contexto de {pair}.
 
-ESTADOS DEL MERCADO:
-- Sesgo principal (4H): {htf_bias}
-- Estructura: {structure}
-- Estado del momentum: {momentum_state}
-- Estado del RSI: {rsi_state}
-- Volatilidad: {volatility}
-- Dominancia de volumen: {volume_dom}
-- Escenario clasificado: {scenario}
+COMBINACION DE ESTADOS:
+sesgo={htf_bias}, estructura={structure}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, escenario={scenario}
 
-INSTRUCCIONES:
-1. Describe el tipo de entorno actual (direccional, consolidacion, extendido, fragil, etc.)
-2. Explica que fuerza domina ahora (estructura o momentum, compradores o vendedores)
-3. Menciona el riesgo contextual si existe (agotamiento, confusion, falta de confirmacion)
-4. Indica que tipo de cambio estructural alteraria este contexto
+RESPONDE EN 5-7 LINEAS:
+- Que tipo de entorno representa esta combinacion (continuacion, agotamiento, transicion, zona fragil, etc.)
+- Que tension o alineacion existe entre los estados
+- Que mantiene este contexto, que lo debilita, que lo invalidaria
+- Usa lenguaje condicional ("suele", "acostumbra", "mientras se mantenga")
 
-NO menciones numeros, precios ni niveles. El usuario ya los ve en la interfaz.
-Narra el contexto como un observador neutral."""
+NO listes los estados. NO repitas los inputs. INTERPRETA su significado conjunto."""
 
     return prompt
 
@@ -281,7 +284,7 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
 
 
 def _generate_fallback_explanation(state: Dict[str, Any]) -> str:
-    """Generate a narrative explanation without AI when API is unavailable."""
+    """Generate an interpretive explanation without AI when API is unavailable."""
     pair = state.get("pair", "Unknown").replace("/USDT", "").replace(":USDT", "")
 
     # Normalize all states
@@ -289,49 +292,44 @@ def _generate_fallback_explanation(state: Dict[str, Any]) -> str:
     scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
     volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
     volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
-    momentum_state = state.get("momentum_state", "neutral")
-    rsi_state = state.get("rsi_state", "neutral")
+    momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
+    rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+
+    # Interpret the COMBINATION of states
+    is_trending = htf_bias in ["bullish", "bearish"]
+    is_exhausted = rsi_state in ["extreme_overbought", "extreme_oversold"]
+    is_weakening = momentum_state == "weakening"
+    is_volatile = volatility == "high"
+    has_tension = (is_trending and is_weakening) or (is_trending and is_exhausted)
 
     lines = []
 
-    # Line 1: Type of environment
-    if htf_bias == "bullish":
-        lines.append(f"{pair} se encuentra en un entorno direccional alcista en el marco principal.")
-    elif htf_bias == "bearish":
-        lines.append(f"{pair} se encuentra en un entorno direccional bajista en el marco principal.")
+    # Interpret context type based on combination
+    if is_trending and not has_tension and momentum_state == "strong":
+        direction = "alcista" if htf_bias == "bullish" else "bajista"
+        lines.append(f"La combinacion de sesgo {direction} con momentum sostenido sugiere un entorno de continuacion tendencial.")
+        lines.append("Este tipo de contexto suele favorecer la persistencia del movimiento mientras la estructura se mantenga.")
+    elif is_trending and is_exhausted:
+        lines.append("La combinacion de tendencia definida con momentum en zona extrema caracteriza un entorno de posible agotamiento.")
+        lines.append("Este tipo de contextos suele derivar en pausas o retrocesos tecnicos, aunque la tendencia puede continuar.")
+    elif is_trending and is_weakening:
+        lines.append("El sesgo direccional coexiste con momentum debilitandose, lo que genera tension interna.")
+        lines.append("Mientras la estructura no ceda, el contexto se mantiene, pero con mayor fragilidad ante movimientos bruscos.")
     elif htf_bias == "mixed":
-        lines.append(f"{pair} presenta un entorno conflictivo donde estructura y momentum no coinciden.")
+        lines.append("La falta de alineacion entre estructura y momentum define un entorno de transicion o indefinicion.")
+        lines.append("Este tipo de contextos suele resolverse cuando una de las fuerzas toma control claro.")
     else:
-        lines.append(f"{pair} se encuentra en un entorno sin direccion clara, en fase de definicion.")
+        lines.append("El contexto actual no muestra una direccion predominante clara.")
+        lines.append("Suele requerirse definicion estructural antes de que emerja un escenario direccional.")
 
-    # Line 2: Dominant force
-    if volume_dom == "buying":
-        lines.append("La fuerza compradora domina el flujo reciente de volumen.")
-    elif volume_dom == "selling":
-        lines.append("La fuerza vendedora domina el flujo reciente de volumen.")
-    elif momentum_state == "strong":
-        lines.append("El momentum muestra fuerza sostenida en la direccion predominante.")
-    elif momentum_state == "weakening":
-        lines.append("El momentum muestra signos de debilitamiento respecto a la tendencia.")
-    else:
-        lines.append("No hay una fuerza claramente dominante en este momento.")
+    # Add volatility context if relevant
+    if is_volatile:
+        lines.append("La volatilidad elevada amplifica tanto continuaciones como reversiones en este entorno.")
 
-    # Line 3: Contextual risk
-    if rsi_state in ["extreme_overbought", "extreme_oversold"]:
-        lines.append("El momentum se encuentra en zona extrema, lo que refleja un entorno emocionalmente cargado con mayor riesgo de movimientos erraticos.")
-    elif volatility == "high":
-        lines.append("La volatilidad elevada incrementa el riesgo de movimientos bruscos e impredecibles.")
-    elif scenario == "high_risk":
-        lines.append("Multiples factores de riesgo confluyen en el contexto actual.")
-    elif htf_bias == "mixed":
-        lines.append("La falta de alineacion entre estructura y momentum genera un contexto fragil.")
-
-    # Line 4: What would invalidate
-    if htf_bias in ["bullish", "bearish"]:
-        opposite = "bajista" if htf_bias == "bullish" else "alcista"
-        lines.append(f"Un cambio estructural hacia sesgo {opposite} invalidaria el contexto actual.")
-    else:
-        lines.append("Se requiere definicion estructural clara para establecer un escenario direccional.")
+    # What would invalidate
+    if is_trending:
+        opposite = "alcista" if htf_bias == "bearish" else "bajista"
+        lines.append(f"Un giro estructural hacia sesgo {opposite} alteraria completamente este escenario.")
 
     return "\n".join(lines)
 
