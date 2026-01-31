@@ -386,6 +386,20 @@ def _run_migrations():
                 except Exception as e:
                     print(f"Migration warning ({table}.{column}): {e}")
 
+        # Migration: sync NotificationType enum with database
+        try:
+            # Get all enum values from Python NotificationType
+            enum_values = [e.value for e in NotificationType]
+            enum_str = ",".join([f"'{v}'" for v in enum_values])
+            alter_sql = f"ALTER TABLE user_notifications MODIFY COLUMN notification_type ENUM({enum_str}) NOT NULL"
+            conn.execute(text(alter_sql))
+            conn.commit()
+            print(f"Migration: synced notification_type enum ({len(enum_values)} values)")
+        except Exception as e:
+            # Table might not exist yet or other issue
+            if "doesn't exist" not in str(e).lower():
+                print(f"Migration warning (notification_type enum): {e}")
+
         # Migration: rename subscriptions.user_id to account_id
         try:
             # Check if old column exists
