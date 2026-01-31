@@ -60,25 +60,57 @@ FORMATO DE RESPUESTA (maximo 6-8 lineas):
 Responde SOLO en espanol. Se conciso y claro."""
 
 
+CACHE_VERSION = "v1"
+
+# Normalization maps (Spanish → English, lowercase)
+_BIAS_MAP = {
+    "alcista": "bullish", "bullish": "bullish",
+    "bajista": "bearish", "bearish": "bearish",
+    "mixto": "mixed", "mixed": "mixed",
+    "neutral": "neutral",
+}
+_SCENARIO_MAP = {
+    "favorable": "favorable",
+    "operable": "operable",
+    "alto_riesgo": "high_risk", "high_risk": "high_risk",
+    "espera": "wait", "wait": "wait",
+}
+_VOLATILITY_MAP = {
+    "alta": "high", "high": "high",
+    "normal": "normal",
+    "baja": "low", "low": "low",
+}
+_DOMINANCE_MAP = {
+    "buying": "buying", "compradora": "buying",
+    "selling": "selling", "vendedora": "selling",
+    "balanced": "balanced", "equilibrada": "balanced",
+}
+
+
+def _normalize(value: str, mapping: Dict[str, str], default: str) -> str:
+    """Normalize value using mapping, fallback to default."""
+    return mapping.get(value.lower() if value else "", default)
+
+
 def _generate_cache_key(state: Dict[str, Any]) -> str:
     """
     Generate explicit cache key based on market state.
 
-    Format: {PAIR}|{HTF_TIMEFRAME}|{HTF_BIAS}|{SCENARIO}|{STRUCTURE}|{VOLATILITY}|{VOLUME_DOMINANCE}
-    Example: BTCUSDT|4H|bearish|operable|below_ema200|expanding|selling
+    Format: v1|{PAIR}|{HTF_TF}|{BIAS}|{SCENARIO}|{STRUCTURE}|{VOLATILITY}|{VOLUME_DOMINANCE}
+    Example: v1|BTCUSDT|4H|bearish|operable|below_ema200|high|selling
 
+    All values normalized to lowercase English enums.
     Any field change invalidates cache automatically.
     """
-    pair = state.get("pair", "UNKNOWN").replace("/", "").replace(":", "")
-    htf_tf = state.get("htf_timeframe", "4H")
-    htf_bias = state.get("htf_bias", "neutral")
-    scenario = state.get("scenario", "espera")
-    structure = state.get("structure", "unknown")
-    volatility = state.get("volatility", "normal")
-    volume_dominance = state.get("volume_dominance", "balanced")
+    pair = state.get("pair", "UNKNOWN").replace("/", "").replace(":", "").upper()
+    htf_tf = state.get("htf_timeframe", "4H").upper()
+    htf_bias = _normalize(state.get("htf_bias", ""), _BIAS_MAP, "neutral")
+    scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
+    structure = state.get("structure", "unknown").lower().replace(" ", "_")
+    volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
+    volume_dominance = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
 
-    cache_key = f"{pair}|{htf_tf}|{htf_bias}|{scenario}|{structure}|{volatility}|{volume_dominance}"
-    return cache_key
+    return f"{CACHE_VERSION}|{pair}|{htf_tf}|{htf_bias}|{scenario}|{structure}|{volatility}|{volume_dominance}"
 
 
 def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
@@ -86,7 +118,9 @@ def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> 
     if not cache_entry:
         return False
     age = time.time() - cache_entry.get("timestamp", 0)
-    ttl = CACHE_TTL_HIGH_VOL if volatility == "alta" else CACHE_TTL_NORMAL
+    # Normalize volatility for TTL check
+    vol_normalized = _normalize(volatility, _VOLATILITY_MAP, "normal")
+    ttl = CACHE_TTL_HIGH_VOL if vol_normalized == "high" else CACHE_TTL_NORMAL
     return age < ttl
 
 
@@ -181,9 +215,10 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
     volatility = state.get("volatility", "normal")
 
     # Check cache first (shorter TTL for high volatility)
+    vol_normalized = _normalize(volatility, _VOLATILITY_MAP, "normal")
     if not force_refresh and cache_key in _ai_cache:
         cache_entry = _ai_cache[cache_key]
-        if _is_cache_valid(cache_entry, volatility):
+        if _is_cache_valid(cache_entry, vol_normalized):
             logger.info(f"[AI] Cache hit: {cache_key}")
             return {
                 "text": cache_entry["text"],
@@ -193,7 +228,7 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
             }
 
     # Generate new explanation
-    logger.info(f"[AI] Generating new explanation: {cache_key}")
+    logger.info(f"[AI] Cache miss → IA ejecutada: {cache_key}")
 
     prompt = _format_input_for_ai(state)
     explanation = _call_claude_api(prompt)
@@ -213,8 +248,6 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
 
     # Clean old cache entries
     _cleanup_cache()
-
-    logger.info(f"[AI] Cached new explanation: {cache_key}")
 
     return {
         "text": explanation,
