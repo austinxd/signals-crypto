@@ -92,6 +92,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
 
   // Fetch fresh data when modal opens
   useEffect(() => {
@@ -102,6 +103,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
       setVolumeData(null);
       setShowAIExplanation(false);
       setAiData(null);
+      setAiError(null);
       return;
     }
 
@@ -152,10 +154,12 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
     const fetchAI = async () => {
       try {
         setAiLoading(true);
+        setAiError(null);
         const data = await getAIExplanation(pair);
         setAiData(data);
       } catch (err) {
         console.error('Error fetching AI explanation:', err);
+        setAiError(err.message || 'Error al obtener explicacion');
         setAiData(null);
       } finally {
         setAiLoading(false);
@@ -596,16 +600,29 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               <View style={styles.aiSection}>
                 {aiLoading ? (
                   <View style={styles.aiLoading}>
-                    <ActivityIndicator color="#888" size="small" />
-                    <Text style={styles.aiLoadingText}>Analizando contexto...</Text>
+                    <ActivityIndicator color="#6c5ce7" size="small" />
+                    <Text style={styles.aiLoadingText}>Consultando IA...</Text>
+                  </View>
+                ) : aiError ? (
+                  <View style={styles.aiErrorBox}>
+                    <Text style={styles.aiErrorIcon}>⚠</Text>
+                    <Text style={styles.aiErrorText}>{aiError}</Text>
+                    <Text style={styles.aiErrorHint}>Verifica ANTHROPIC_API_KEY en el servidor</Text>
                   </View>
                 ) : aiData?.explanation ? (
                   <>
                     <Text style={styles.aiExplanationText}>{aiData.explanation}</Text>
                     <View style={styles.aiMeta}>
-                      {aiData.cached && (
-                        <Text style={styles.aiCachedBadge}>Respuesta en cache</Text>
-                      )}
+                      <View style={styles.aiStatusRow}>
+                        {aiData.cached ? (
+                          <Text style={styles.aiCachedBadge}>Cache</Text>
+                        ) : (
+                          <Text style={styles.aiFreshBadge}>IA ejecutada</Text>
+                        )}
+                        {aiData.cache_key && (
+                          <Text style={styles.aiCacheKey}>{aiData.cache_key.split('|').slice(0, 3).join('|')}...</Text>
+                        )}
+                      </View>
                       <Text style={styles.aiDisclaimer}>
                         La IA describe el contexto actual. No genera senales ni predicciones.
                       </Text>
@@ -1384,16 +1401,59 @@ const styles = StyleSheet.create({
     borderTopColor: '#2a2a4a',
     gap: 6,
   },
+  aiStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
   aiCachedBadge: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '600',
+    backgroundColor: '#2a2a4a',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  aiFreshBadge: {
     color: '#6c5ce7',
     fontSize: 10,
     fontWeight: '600',
+    backgroundColor: '#6c5ce720',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  aiCacheKey: {
+    color: '#444',
+    fontSize: 9,
+    fontFamily: 'monospace',
   },
   aiDisclaimer: {
     color: '#555',
     fontSize: 10,
     fontStyle: 'italic',
     lineHeight: 14,
+  },
+  aiErrorBox: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  aiErrorIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  aiErrorText: {
+    color: '#ff4757',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  aiErrorHint: {
+    color: '#666',
+    fontSize: 11,
+    textAlign: 'center',
   },
   aiNoData: {
     color: '#555',
