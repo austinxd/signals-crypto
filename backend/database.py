@@ -270,7 +270,11 @@ class UserNotification(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user_accounts.id"), nullable=False, index=True)
-    notification_type = Column(Enum(NotificationType), nullable=False)
+    # Use values_callable to store enum values (lowercase) instead of names (UPPERCASE)
+    notification_type = Column(
+        Enum(NotificationType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False
+    )
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=False)
     symbol = Column(String(20), nullable=True)  # Optional: related symbol
