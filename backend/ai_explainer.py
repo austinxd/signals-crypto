@@ -35,44 +35,45 @@ _ai_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_NORMAL = 2 * 60 * 60      # 2 hours for normal volatility
 CACHE_TTL_HIGH_VOL = 30 * 60        # 30 minutes for high volatility
 
-# Reason-to-focus mapping for AI interpretation
+# Reason-to-behavior mapping for AI interpretation
 REASON_FOCUS = {
-    "momentum_extreme_against_trend": "agotamiento, rebotes fallidos, riesgo de persecucion de extension",
-    "htf_ltf_conflict": "friccion entre marcos temporales, movimientos tacticos contra estructura principal",
-    "scenario_downgrade": "perdida de eficiencia del contexto, entorno menos favorable que antes",
-    "volatility_spike": "riesgo asimetrico, movimientos amplificados, trampas de volatilidad",
-    "volume_divergence": "fragilidad estructural, absorcion, falta de confirmacion en volumen",
-    "structural_friction": "tension entre estructura y momentum, zona de decision",
+    "momentum_extreme_against_trend": "rebotes breves que se agotan rapido, falsas recuperaciones que atraen entradas tardias, movimiento erratico que castiga a quienes persiguen sin confirmacion",
+    "htf_ltf_conflict": "movimientos tacticos que confunden, retrocesos que parecen reversiones, barridas de stops antes de retomar direccion principal",
+    "scenario_downgrade": "lateralizacion o pausas prolongadas, movimientos menos limpios, mayor frecuencia de falsos rompimientos",
+    "volatility_spike": "movimientos amplificados en ambas direcciones, trampas frecuentes, barridas rapidas que sacan stops de ambos lados",
+    "volume_divergence": "avances que pierden fuerza rapido, rechazos en zonas clave, absorcion silenciosa antes de giro",
+    "structural_friction": "lateralizacion con barridas, movimientos erraticos sin direccion clara, resolucion explosiva cuando una fuerza toma control",
 }
 
 # System prompt for the AI
-SYSTEM_PROMPT = """Eres un interprete de tension de mercado.
+SYSTEM_PROMPT = """Eres un observador de comportamiento de mercado.
 
-REGLA PRINCIPAL:
-Solo debes interpretar el contexto DESDE el motivo de activacion (reason).
-No expliques todo el contexto.
-No cubras todos los estados.
-Enfocate UNICAMENTE en la tension asociada al motivo.
+TU TAREA PRINCIPAL:
+Describir patrones de comportamiento tipicos del precio y los participantes cuando esta tension aparece.
+NO expliques que significa el contexto.
+DESCRIBE que suele pasar en la practica.
 
-Mapa de enfoque segun motivo:
-- momentum_extreme_against_trend → agotamiento, rebotes fallidos, riesgo de persecucion
-- htf_ltf_conflict → friccion, movimientos tacticos contra estructura
-- scenario_downgrade → perdida de eficiencia, entorno menos favorable
-- volatility_spike → riesgo asimetrico, movimientos amplificados
-- volume_divergence → fragilidad estructural, absorcion
-- structural_friction → tension estructura vs momentum, zona de decision
+PIENSA EN:
+- Como suele moverse el precio (rebotes, compresion, barridas, continuacion)
+- Que tipo de movimientos predominan (erraticos, limpios, lentos, explosivos)
+- Donde suele fallar la mayoria (entradas tardias, stops muy cercanos, persecucion)
+- Que tipo de reaccion es comun (rebote debil, falsa ruptura, lateralizacion, absorcion)
 
-Estilo obligatorio:
-- Interpreta SOLO desde el motivo dado.
-- Condicional, no predictivo ("suele producir", "tiende a generar").
-- Maximo 2-3 frases.
-- Si el motivo no permite lectura clara, UNA frase o silencio.
+ESTO NO ES PREDICCION.
+Es memoria de comportamiento de mercado.
 
-Prohibiciones:
-- No repitas estados.
-- No expliques indicadores.
-- No des recomendaciones.
-- No uses numeros.
+ESTILO OBLIGATORIO:
+- Habla de dinamicas observadas frecuentemente
+- Usa: "suele", "es comun", "frecuentemente", "a menudo", "tipicamente"
+- 3-5 lineas maximo (menos es mas)
+- Concreto y practico, no abstracto
+
+PROHIBICIONES:
+- No uses numeros ni precios
+- No digas "podria subir / bajar"
+- No recomiendes acciones
+- No repitas los estados tecnicos
+- No expliques indicadores
 
 Responde solo en espanol."""
 
@@ -229,20 +230,19 @@ def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
 
-    # Get focus description for this reason
-    focus = REASON_FOCUS.get(reason, "tension del contexto")
+    # Get behavioral focus for this reason
+    behaviors = REASON_FOCUS.get(reason, "comportamiento tipico del precio")
 
-    prompt = f"""Interpreta el contexto de {pair}.
+    prompt = f"""Describe que suele pasar con el precio en {pair} cuando aparece esta tension.
 
-MOTIVO DE ACTIVACION: {reason}
-ENFOQUE: {focus}
+TENSION DETECTADA: {reason}
+COMPORTAMIENTOS TIPICOS: {behaviors}
 
-Estados: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, escenario={scenario}
+Estados actuales: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}
 
-Interpreta SOLO desde el motivo indicado.
-No describas el contexto completo.
-No repitas estados visibles en la UI.
-Maximo 2-3 frases."""
+Describe como suele moverse el precio y donde suelen fallar los participantes.
+NO expliques el contexto. DESCRIBE comportamientos recurrentes.
+3-5 lineas maximo."""
 
     return prompt
 
@@ -350,39 +350,48 @@ def get_ai_explanation(state: Dict[str, Any], reason: str, force_refresh: bool =
 
 
 def _generate_fallback_explanation(state: Dict[str, Any], reason: str) -> str:
-    """Generate a reason-specific fallback explanation when API is unavailable."""
+    """Generate a reason-specific behavioral fallback when API is unavailable."""
 
-    # Reason-specific fallback messages
+    # Reason-specific behavioral patterns
     fallbacks = {
         "momentum_extreme_against_trend": (
-            "El momentum en zona extrema dentro de una tendencia definida suele producir "
-            "rebotes cortos que no alteran la estructura principal. "
-            "El riesgo de perseguir extension aumenta en este tipo de entornos."
+            "Cuando el momentum entra en zona extrema dentro de una tendencia definida, "
+            "el precio suele mostrar rebotes breves y poco eficientes que se agotan rapido. "
+            "Es comun ver falsas recuperaciones que atraen entradas tardias antes de que "
+            "la presion dominante retome el control. El movimiento se vuelve erratico y "
+            "castiga a quienes persiguen el precio sin confirmacion estructural."
         ),
         "htf_ltf_conflict": (
-            "La friccion entre el marco principal y el timing genera movimientos tacticos "
-            "que pueden confundir. Mientras la estructura mayor no ceda, "
-            "los movimientos contrarios suelen ser correcciones."
+            "Cuando el timing se mueve contra la estructura principal, es frecuente ver "
+            "retrocesos que parecen reversiones pero terminan siendo barridas de stops. "
+            "Los participantes tardios suelen quedar atrapados en estos movimientos tacticos "
+            "antes de que el precio retome la direccion del marco mayor."
         ),
         "scenario_downgrade": (
-            "El contexto ha perdido eficiencia respecto a su estado anterior. "
-            "Este tipo de transiciones suelen requerir pausa antes de retomar direccionalidad."
+            "Cuando el contexto pierde eficiencia, el precio suele entrar en fases de "
+            "lateralizacion o pausas prolongadas. Los movimientos se vuelven menos limpios "
+            "y los falsos rompimientos mas frecuentes. Es comun ver frustacion en ambos lados "
+            "antes de que emerja nueva direccionalidad."
         ),
         "volatility_spike": (
-            "La volatilidad elevada amplifica movimientos en ambas direcciones. "
-            "Los falsos rompimientos y las trampas son mas frecuentes en este entorno."
+            "Con volatilidad elevada, los movimientos se amplifican en ambas direcciones. "
+            "Es frecuente ver barridas rapidas que sacan stops de compradores y vendedores "
+            "en poco tiempo. Las trampas son comunes y el precio suele moverse de forma "
+            "caotica antes de definir direccion."
         ),
         "volume_divergence": (
-            "El volumen no confirma el movimiento estructural, lo que genera fragilidad. "
-            "Este tipo de divergencias suele anticipar pausas o reversiones."
+            "Cuando el volumen no acompana el movimiento, los avances suelen perder fuerza "
+            "rapidamente. Es comun ver rechazos en zonas clave donde se esperaba continuacion. "
+            "Este tipo de divergencia frecuentemente precede giros o pausas significativas."
         ),
         "structural_friction": (
-            "Estructura y momentum no coinciden, creando una zona de decision. "
-            "El contexto suele resolverse cuando una fuerza toma control claro."
+            "Cuando estructura y momentum no coinciden, el precio suele lateralizar con "
+            "barridas en ambas direcciones. Los movimientos son erraticos y sin direccion clara. "
+            "La resolucion tipicamente llega de forma explosiva cuando una fuerza toma control."
         ),
     }
 
-    return fallbacks.get(reason, "Tension detectada en el contexto actual.")
+    return fallbacks.get(reason, "Tension detectada. Comportamiento erratico probable.")
 
 
 def _cleanup_cache():
