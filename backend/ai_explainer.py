@@ -513,48 +513,66 @@ def get_cache_stats() -> Dict[str, Any]:
 _position_ai_cache: Dict[str, Dict[str, Any]] = {}
 POSITION_CACHE_TTL = 15 * 60  # 15 minutes for position analysis
 
-POSITION_SYSTEM_PROMPT = """Eres un analista de gestion de posiciones. Tu rol es dar contexto operativo sin dar ordenes.
+POSITION_SYSTEM_PROMPT = """Eres un analista de gestion de posiciones de trading.
+
+TU ROL:
+Dar contexto operativo y evaluar la TESIS de una posicion abierta.
+No analizas el mercado en general. No abres trades.
+Evaluas si la tesis sigue siendo defendible dadas las condiciones actuales.
 
 OBJETIVO:
-Generar un resumen tipo "tesis / fragilidad / gatillos" para gestion de posicion (no para abrir trades).
+Generar un resumen tipo "tesis / fragilidad / gatillos" para gestion de posicion,
+no para tomar nuevas entradas.
 
 REGLAS DE CONTENIDO:
-- NO repitas datos visibles (par, lado, entrada, PnL exacto)
-- USA niveles relativos permitidos:
-  * "cierre 4H por encima/debajo de EMA200"
-  * "ruptura del ultimo lower high / higher low"
-  * "zona de invalidacion"
-  * Distancias en % (a invalidacion, a liquidacion)
-- NO des precios exactos
+- NO repitas datos visibles (par, lado, entrada, PnL exacto).
+- NO expliques indicadores (RSI, MACD, EMA).
+- NO des precios exactos.
+- NO des ordenes (compra, vende, cierra, stop).
+- NO prometas resultados.
 
-DEBES INCLUIR 3 COSAS:
+USA SOLO NIVELES RELATIVOS PERMITIDOS:
+- "cierre 4H por encima/debajo de EMA200"
+- "ruptura del ultimo higher low / lower high"
+- "zona de invalidacion"
+- distancias porcentuales (a invalidacion / a liquidacion)
 
-1. LECTURA (1-2 lineas): Por que la posicion esta a favor/contra contexto y que tension hay.
-   Ejemplo: "Sesgo bajista pero RSI extremo → rebotes cortos probables antes de continuar"
+OBLIGACION CLAVE:
+Evalua explicitamente la ASIMETRIA DE RIESGO.
+- Considera la distancia a invalidacion vs distancia a liquidacion.
+- Si el margen de error es estrecho, reflejalo en la fragilidad.
+- Si el riesgo restante domina sobre el beneficio potencial, indicalo de forma descriptiva.
+No uses numeros exactos salvo porcentajes ya provistos.
 
-2. FRAGILIDAD (1-2 lineas): Donde suele fallar la mayoria en este contexto.
-   Ejemplo: "En este entorno, los stops cercanos suelen barrerse antes de la continuation"
+DEBES INCLUIR SIEMPRE 3 COSAS:
 
-3. ESCENARIOS CONDICIONALES (2 bloques):
-   - Si favorece: que cambios tecnicos deberian verse para confirmar
-   - Si contra: que senales invalidan o aumentan peligro
+1) LECTURA (1-2 lineas)
+Evalua que tan defendible es la TESIS actual considerando alineacion, estructura,
+momentum y riesgo implicito.
 
-FORMATO OBLIGATORIO (max 6 lineas, sin bullets):
-Lectura: [por que esta alineada/desalineada + tension actual]
-Fragilidad: [donde falla la mayoria en este contexto]
-Si favorece: [que deberia verse tecnicamente]
-Si contra: [que invalida o aumenta riesgo]
+2) FRAGILIDAD (1-2 lineas)
+Describe donde suele fallar la mayoria en este contexto
+(squeezes, whipsaws, falsas rupturas, poco margen de error).
+
+3) ESCENARIOS CONDICIONALES (2 bloques)
+- Si favorece: que cambios tecnicos deberian verse para que la tesis se fortalezca.
+- Si contra: que eventos aumentan el peligro o invalidan la tesis.
+
+FORMATO OBLIGATORIO (max. 6 lineas, sin bullets):
+
+Lectura: ...
+Fragilidad: ...
+Si favorece: ...
+Si contra: ...
 
 ESTILO:
-- Directo, sin rodeos
-- Usa "suele", "tiende", "mientras" (no promesas)
-- Sin lenguaje emocional ni alarmista
+- Directo, sobrio.
+- Lenguaje condicional: "suele", "tiende", "mientras".
+- Enfocado en gestion de riesgo, no en prediccion.
 
-PROHIBICIONES ESTRICTAS:
-- NO "compra/vende/cierra/abre/pon stop"
-- NO precios exactos (ni entrada, ni targets)
-- NO promesas ("va a pasar")
-- NO repetir datos que el usuario ya ve
+REGLA FINAL:
+No describas el mercado.
+Evalua si esta posicion, con este riesgo, sigue siendo racional.
 
 Responde solo en espanol."""
 
@@ -639,7 +657,12 @@ def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, An
     rsi_state = _get_rsi_state(market_state.get("rsi"))
     scenario = market_state.get("scenario", "wait")
 
+    # Format distances (use "N/A" if not available)
+    inv_str = f"{inv_distance:.1f}" if inv_distance is not None else "N/A"
+    liq_str = f"{liq_distance:.1f}" if liq_distance is not None else "N/A"
+
     prompt = f"""POSITION_STATE:
+
 side: {side}
 alignment: {alignment}
 htf_bias: {htf_bias}
@@ -647,14 +670,12 @@ structure: {structure}
 ltf_momentum: {ltf_momentum}
 volatility: {volatility}
 rsi_state: {rsi_state}
-scenario: {scenario}"""
+scenario: {scenario}
+distance_to_invalidation_pct: {inv_str}
+distance_to_liquidation_pct: {liq_str}
 
-    if inv_distance is not None:
-        prompt += f"\ndistance_to_invalidation_pct: {inv_distance:.1f}"
-    if liq_distance is not None:
-        prompt += f"\ndistance_to_liquidation_pct: {liq_distance:.1f}"
-
-    prompt += "\n\nAnaliza y responde con el formato: Lectura / Fragilidad / Si favorece / Si contra"
+Analiza esta posicion y responde SOLO con el formato:
+Lectura / Fragilidad / Si favorece / Si contra"""
 
     return prompt
 
@@ -783,38 +804,46 @@ def get_position_ai_analysis(
 
 
 def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate fallback analysis when API is unavailable."""
+    """Generate fallback analysis when API is unavailable - focused on thesis evaluation."""
     side = position.get("side", "").upper()
     htf_bias = market_state.get("htf_bias", "neutral")
-    rsi = market_state.get("rsi")
     volatility = market_state.get("volatility", "normal")
     alignment = _get_alignment(side, htf_bias)
+    inv_distance = position.get("inv_distance_pct")
+    liq_distance = position.get("liq_distance_pct")
 
-    # Build contextual fallback based on discrete states
+    # Evaluate asymmetry of risk
+    tight_margin = inv_distance is not None and inv_distance < 5
+    liq_risk = liq_distance is not None and liq_distance < 15
+
+    # Build thesis-focused fallback
     if alignment == "with_context":
-        lectura = "Posicion alineada con el sesgo HTF, momentum a favor"
-        if rsi and rsi > 70:
-            lectura += " pero RSI elevado sugiere posible agotamiento"
-        elif rsi and rsi < 30:
-            lectura += " pero RSI bajo sugiere posible rebote"
+        lectura = "Tesis alineada con contexto HTF, defendible mientras estructura se mantenga"
     elif alignment == "against_context":
-        lectura = "Posicion contra el sesgo HTF, dependiente de reversal o cambio de estructura"
+        lectura = "Tesis contra contexto dominante, requiere cambio estructural para validarse"
     else:
-        lectura = "Contexto mixto, la posicion depende de resolucion de rango actual"
+        lectura = "Tesis en zona neutral, depende de resolucion direccional"
 
-    if volatility == "high":
-        fragilidad = "Volatilidad alta amplifica movimientos, stops cercanos suelen barrerse"
+    # Fragilidad based on asymmetry
+    if tight_margin and liq_risk:
+        fragilidad = "Margen de error estrecho con liquidacion cercana, asimetria desfavorable"
+    elif tight_margin:
+        fragilidad = "Poco margen hasta invalidacion, movimientos erraticos suelen activar salidas prematuras"
+    elif liq_risk:
+        fragilidad = "Liquidacion relativamente cercana, volatilidad puede comprometer la posicion"
+    elif volatility == "high":
+        fragilidad = "Alta volatilidad amplifica riesgo de barridas antes de continuation"
     elif alignment == "against_context":
-        fragilidad = "Posiciones contra tendencia suelen sufrir continuation antes de reversar"
+        fragilidad = "Posiciones contra tendencia suelen sufrir squeezes antes de cualquier reversal"
     else:
-        fragilidad = "Retrocesos cortos pueden parecer reversiones, paciencia con la estructura"
+        fragilidad = "Retrocesos normales pueden parecer cambios de tendencia, la estructura define"
 
     if alignment == "with_context":
-        si_favorece = "Continuation con cierres 4H que mantienen estructura, volumen acompanando"
-        si_contra = "Ruptura de ultimo soporte/resistencia clave, cambio de estructura HTF"
+        si_favorece = "Cierres 4H manteniendo estructura, momentum sostenido sin divergencias"
+        si_contra = "Ruptura de ultimo pivot estructural, perdida de alineacion con HTF"
     else:
-        si_favorece = "Cambio de sesgo HTF con cierre confirmando nueva estructura"
-        si_contra = "Continuation de tendencia HTF, nuevos extremos en contra"
+        si_favorece = "Quiebre de estructura HTF confirmado con cierre, cambio de sesgo"
+        si_contra = "Continuation del sesgo dominante, nuevos extremos en contra de la posicion"
 
     return {
         "lectura": lectura,
