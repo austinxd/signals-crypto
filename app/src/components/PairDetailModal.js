@@ -88,7 +88,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [volumeLoading, setVolumeLoading] = useState(false);
   const [volumeTf, setVolumeTf] = useState('4h');
 
-  // AI explanation state
+  // AI explanation state (collapsible, fetches on expand)
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -147,7 +147,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
     fetchVolume();
   }, [showVolumeProfile, pair, volumeTf]);
 
-  // Fetch AI explanation when expanded
+  // Fetch AI explanation when section is expanded
   useEffect(() => {
     if (!showAIExplanation || !pair) return;
 
@@ -323,6 +323,50 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 <Text style={styles.additionalReason}>{analysis.scenario_reason}</Text>
               )}
             </View>
+
+            {/* AI Context Interpretation - Collapsible */}
+            <TouchableOpacity
+              style={styles.aiToggle}
+              onPress={() => setShowAIExplanation(!showAIExplanation)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.aiToggleText}>
+                {showAIExplanation ? '▼' : '▶'} Interpretacion IA
+              </Text>
+            </TouchableOpacity>
+
+            {showAIExplanation && (
+              <View style={styles.aiSection}>
+                {aiLoading ? (
+                  <View style={styles.aiLoading}>
+                    <ActivityIndicator color="#6c5ce7" size="small" />
+                    <Text style={styles.aiLoadingText}>Evaluando contexto...</Text>
+                  </View>
+                ) : aiError ? (
+                  <View style={styles.aiErrorBox}>
+                    <Text style={styles.aiErrorIcon}>⚠</Text>
+                    <Text style={styles.aiErrorText}>{aiError}</Text>
+                  </View>
+                ) : aiData?.explanation ? (
+                  <>
+                    {aiData.reason && (
+                      <Text style={styles.aiReasonBadge}>
+                        {aiData.reason.replace(/_/g, ' ')}
+                      </Text>
+                    )}
+                    <Text style={styles.aiExplanationText}>{aiData.explanation}</Text>
+                  </>
+                ) : aiData && !aiData.explanation ? (
+                  <View style={styles.aiNoTension}>
+                    <Text style={styles.aiNoTensionIcon}>✓</Text>
+                    <Text style={styles.aiNoTensionText}>Contexto alineado</Text>
+                    <Text style={styles.aiNoTensionHint}>
+                      Sin tension relevante.
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
 
             {/* b) Contexto HTF (4H) + c) Timing LTF (15m) */}
             <View style={styles.twoLayerContainer}>
@@ -584,65 +628,6 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 </View>
               </View>
             </View>
-
-            {/* AI Explanation - Collapsible */}
-            <TouchableOpacity
-              style={styles.advancedToggle}
-              onPress={() => setShowAIExplanation(!showAIExplanation)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.advancedToggleText}>
-                {showAIExplanation ? '▼' : '▶'} 🤖 Explicacion IA del Contexto
-              </Text>
-            </TouchableOpacity>
-
-            {showAIExplanation && (
-              <View style={styles.aiSection}>
-                {aiLoading ? (
-                  <View style={styles.aiLoading}>
-                    <ActivityIndicator color="#6c5ce7" size="small" />
-                    <Text style={styles.aiLoadingText}>Evaluando contexto...</Text>
-                  </View>
-                ) : aiError ? (
-                  <View style={styles.aiErrorBox}>
-                    <Text style={styles.aiErrorIcon}>⚠</Text>
-                    <Text style={styles.aiErrorText}>{aiError}</Text>
-                    <Text style={styles.aiErrorHint}>Verifica ANTHROPIC_API_KEY en el servidor</Text>
-                  </View>
-                ) : aiData?.explanation ? (
-                  <>
-                    {aiData.reason && (
-                      <Text style={styles.aiReasonBadge}>
-                        {aiData.reason.replace(/_/g, ' ')}
-                      </Text>
-                    )}
-                    <Text style={styles.aiExplanationText}>{aiData.explanation}</Text>
-                    <View style={styles.aiMeta}>
-                      <View style={styles.aiStatusRow}>
-                        {aiData.cached ? (
-                          <Text style={styles.aiCachedBadge}>Cache</Text>
-                        ) : (
-                          <Text style={styles.aiFreshBadge}>IA ejecutada</Text>
-                        )}
-                      </View>
-                      <Text style={styles.aiDisclaimer}>
-                        Interpretacion de tension detectada. No es recomendacion.
-                      </Text>
-                    </View>
-                  </>
-                ) : aiData && !aiData.explanation ? (
-                  <View style={styles.aiNoTension}>
-                    <Text style={styles.aiNoTensionIcon}>✓</Text>
-                    <Text style={styles.aiNoTensionText}>Contexto alineado</Text>
-                    <Text style={styles.aiNoTensionHint}>
-                      No se detecta tension relevante. Los estados tecnicos estan en armonia.
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.aiNoData}>No hay datos disponibles</Text>
-                )}
-              </View>
-            )}
 
             {/* Volumen Ejecutado (Avanzado) - Collapsible */}
             <TouchableOpacity
@@ -1380,6 +1365,17 @@ const styles = StyleSheet.create({
   },
 
   // AI Explanation Section
+  aiToggle: {
+    backgroundColor: '#151525',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  aiToggleText: {
+    color: '#6c5ce7',
+    fontSize: 13,
+    fontWeight: '500',
+  },
   aiSection: {
     backgroundColor: '#0f0f1a',
     borderRadius: 12,
