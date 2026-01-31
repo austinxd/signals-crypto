@@ -119,6 +119,11 @@ _MOMENTUM_STATE_MAP = {
     "weakening": "weakening", "debilitando": "weakening",
     "neutral": "neutral",
 }
+_MOMENTUM_MAP = {
+    "alcista": "bullish", "bullish": "bullish",
+    "bajista": "bearish", "bearish": "bearish",
+    "neutral": "neutral",
+}
 _RSI_STATE_MAP = {
     "extreme_overbought": "extreme_overbought",
     "overbought": "overbought", "sobrecompra": "overbought",
