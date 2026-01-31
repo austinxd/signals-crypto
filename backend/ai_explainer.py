@@ -32,8 +32,9 @@ except ImportError:
 # Key: state_hash, Value: {"text": str, "timestamp": float, "state": dict}
 _ai_cache: Dict[str, Dict[str, Any]] = {}
 
-# Cache TTL in seconds (2 hours default)
-CACHE_TTL = 2 * 60 * 60
+# Cache TTL in seconds
+CACHE_TTL_NORMAL = 2 * 60 * 60      # 2 hours for normal volatility
+CACHE_TTL_HIGH_VOL = 30 * 60        # 30 minutes for high volatility
 
 # System prompt for the AI
 SYSTEM_PROMPT = """Eres un analista tecnico que explica el contexto actual del mercado de criptomonedas.
@@ -74,12 +75,13 @@ def _generate_state_hash(state: Dict[str, Any]) -> str:
     return hashlib.md5(key_string.encode()).hexdigest()
 
 
-def _is_cache_valid(cache_entry: Dict[str, Any]) -> bool:
-    """Check if a cache entry is still valid."""
+def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
+    """Check if a cache entry is still valid based on volatility."""
     if not cache_entry:
         return False
     age = time.time() - cache_entry.get("timestamp", 0)
-    return age < CACHE_TTL
+    ttl = CACHE_TTL_HIGH_VOL if volatility == "alta" else CACHE_TTL_NORMAL
+    return age < ttl
 
 
 def _format_input_for_ai(state: Dict[str, Any]) -> str:
@@ -170,13 +172,14 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
     """
     state_hash = _generate_state_hash(state)
     pair = state.get("pair", "Unknown")
+    volatility = state.get("volatility", "normal")
 
-    # Check cache first
+    # Check cache first (shorter TTL for high volatility)
     cache_key = f"{pair}_{state_hash}"
     if not force_refresh and cache_key in _ai_cache:
         cache_entry = _ai_cache[cache_key]
-        if _is_cache_valid(cache_entry):
-            logger.info(f"[AI] Cache hit for {pair} (hash: {state_hash[:8]})")
+        if _is_cache_valid(cache_entry, volatility):
+            logger.info(f"[AI] Cache hit for {pair} (hash: {state_hash[:8]}, vol: {volatility})")
             return {
                 "text": cache_entry["text"],
                 "cached": True,
@@ -269,12 +272,12 @@ def _generate_fallback_explanation(state: Dict[str, Any]) -> str:
 
 
 def _cleanup_cache():
-    """Remove expired cache entries."""
+    """Remove expired cache entries (uses normal TTL for cleanup)."""
     global _ai_cache
     now = time.time()
     expired_keys = [
         key for key, entry in _ai_cache.items()
-        if now - entry.get("timestamp", 0) > CACHE_TTL
+        if now - entry.get("timestamp", 0) > CACHE_TTL_NORMAL
     ]
     for key in expired_keys:
         del _ai_cache[key]
@@ -293,16 +296,18 @@ def check_state_changed(pair: str, new_state: Dict[str, Any]) -> bool:
     - Scenario changed
     - Structure changed
     - Volatility state changed significantly
+    - Cache expired (30min for high vol, 2h for normal)
     """
     new_hash = _generate_state_hash(new_state)
     cache_key = f"{pair}_{new_hash}"
+    volatility = new_state.get("volatility", "normal")
 
     # If we don't have this state cached, it's a new state
     if cache_key not in _ai_cache:
         return True
 
     # If we have it cached but it's expired, regenerate
-    if not _is_cache_valid(_ai_cache[cache_key]):
+    if not _is_cache_valid(_ai_cache[cache_key], volatility):
         return True
 
     return False
@@ -312,12 +317,14 @@ def get_cache_stats() -> Dict[str, Any]:
     """Get statistics about the AI cache."""
     now = time.time()
     total = len(_ai_cache)
-    valid = sum(1 for entry in _ai_cache.values() if _is_cache_valid(entry))
+    # Count valid using normal TTL (conservative count)
+    valid = sum(1 for entry in _ai_cache.values() if _is_cache_valid(entry, "normal"))
     expired = total - valid
 
     return {
         "total_entries": total,
         "valid_entries": valid,
         "expired_entries": expired,
-        "cache_ttl_hours": CACHE_TTL / 3600,
+        "cache_ttl_normal_hours": CACHE_TTL_NORMAL / 3600,
+        "cache_ttl_high_vol_min": CACHE_TTL_HIGH_VOL / 60,
     }
