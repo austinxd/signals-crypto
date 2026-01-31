@@ -601,7 +601,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 {aiLoading ? (
                   <View style={styles.aiLoading}>
                     <ActivityIndicator color="#6c5ce7" size="small" />
-                    <Text style={styles.aiLoadingText}>Consultando IA...</Text>
+                    <Text style={styles.aiLoadingText}>Evaluando contexto...</Text>
                   </View>
                 ) : aiError ? (
                   <View style={styles.aiErrorBox}>
@@ -611,6 +611,11 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                   </View>
                 ) : aiData?.explanation ? (
                   <>
+                    {aiData.reason && (
+                      <Text style={styles.aiReasonBadge}>
+                        {aiData.reason.replace(/_/g, ' ')}
+                      </Text>
+                    )}
                     <Text style={styles.aiExplanationText}>{aiData.explanation}</Text>
                     <View style={styles.aiMeta}>
                       <View style={styles.aiStatusRow}>
@@ -619,17 +624,22 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                         ) : (
                           <Text style={styles.aiFreshBadge}>IA ejecutada</Text>
                         )}
-                        {aiData.cache_key && (
-                          <Text style={styles.aiCacheKey}>{aiData.cache_key.split('|').slice(0, 3).join('|')}...</Text>
-                        )}
                       </View>
                       <Text style={styles.aiDisclaimer}>
-                        La IA describe el contexto actual. No genera senales ni predicciones.
+                        Interpretacion de tension detectada. No es recomendacion.
                       </Text>
                     </View>
                   </>
+                ) : aiData && !aiData.explanation ? (
+                  <View style={styles.aiNoTension}>
+                    <Text style={styles.aiNoTensionIcon}>✓</Text>
+                    <Text style={styles.aiNoTensionText}>Contexto alineado</Text>
+                    <Text style={styles.aiNoTensionHint}>
+                      No se detecta tension relevante. Los estados tecnicos estan en armonia.
+                    </Text>
+                  </View>
                 ) : (
-                  <Text style={styles.aiNoData}>No hay explicacion disponible</Text>
+                  <Text style={styles.aiNoData}>No hay datos disponibles</Text>
                 )}
               </View>
             )}
@@ -1454,6 +1464,35 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 11,
     textAlign: 'center',
+  },
+  aiReasonBadge: {
+    color: '#6c5ce7',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  aiNoTension: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  aiNoTensionIcon: {
+    fontSize: 20,
+    color: '#00d4aa',
+    marginBottom: 8,
+  },
+  aiNoTensionText: {
+    color: '#00d4aa',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  aiNoTensionHint: {
+    color: '#666',
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
   },
   aiNoData: {
     color: '#555',

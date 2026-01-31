@@ -44,7 +44,7 @@ from alerts import (
     clear_position_state,
     send_signal_notification,
 )
-from ai_explainer import get_ai_explanation, check_state_changed, get_cache_stats
+from ai_explainer import get_ai_explanation, should_call_ai, check_state_changed, get_cache_stats
 
 
 # Available trading modes
@@ -2559,12 +2559,37 @@ async def get_ai_market_explanation(pair: str):
             "rsi_state": rsi_state,
         }
 
-        # Get AI explanation (uses cache if state hasn't changed)
-        result = get_ai_explanation(ai_state)
+        # Check if there's a relevant tension that warrants AI explanation
+        reason = should_call_ai(ai_state)
+
+        if not reason:
+            # No tension detected - silence is criteria
+            logger.info(f"[AI] No tension for {pair_formatted} - skipping AI")
+            return {
+                "pair": pair_formatted,
+                "explanation": None,
+                "reason": None,
+                "cached": False,
+                "cache_key": None,
+                "generated_at": None,
+                "current_state": {
+                    "htf_bias": ai_state["htf_bias"],
+                    "scenario": ai_state["scenario"],
+                    "structure": ai_state["structure"],
+                    "volatility": ai_state["volatility"],
+                    "volume_dominance": ai_state["volume_dominance"],
+                    "momentum_state": ai_state["momentum_state"],
+                    "rsi_state": ai_state["rsi_state"],
+                }
+            }
+
+        # Get AI explanation focused on the specific reason
+        result = get_ai_explanation(ai_state, reason)
 
         return {
             "pair": pair_formatted,
             "explanation": result["text"],
+            "reason": result["reason"],
             "cached": result["cached"],
             "cache_key": result["cache_key"],
             "generated_at": result["generated_at"],

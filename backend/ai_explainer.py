@@ -35,47 +35,44 @@ _ai_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_NORMAL = 2 * 60 * 60      # 2 hours for normal volatility
 CACHE_TTL_HIGH_VOL = 30 * 60        # 30 minutes for high volatility
 
+# Reason-to-focus mapping for AI interpretation
+REASON_FOCUS = {
+    "momentum_extreme_against_trend": "agotamiento, rebotes fallidos, riesgo de persecucion de extension",
+    "htf_ltf_conflict": "friccion entre marcos temporales, movimientos tacticos contra estructura principal",
+    "scenario_downgrade": "perdida de eficiencia del contexto, entorno menos favorable que antes",
+    "volatility_spike": "riesgo asimetrico, movimientos amplificados, trampas de volatilidad",
+    "volume_divergence": "fragilidad estructural, absorcion, falta de confirmacion en volumen",
+    "structural_friction": "tension entre estructura y momentum, zona de decision",
+}
+
 # System prompt for the AI
-SYSTEM_PROMPT = """Eres un interprete de contexto de mercado.
+SYSTEM_PROMPT = """Eres un interprete de tension de mercado.
 
-NO describes estados.
-NO resumes indicadores.
-INTERPRETAS solo cuando la combinacion genera friccion, fragilidad o asimetria.
+REGLA PRINCIPAL:
+Solo debes interpretar el contexto DESDE el motivo de activacion (reason).
+No expliques todo el contexto.
+No cubras todos los estados.
+Enfocate UNICAMENTE en la tension asociada al motivo.
 
-Pregunta implicita:
-"Cuando este tipo de contexto aparece, que suele ocurrir y donde esta la tension?"
-
-Reglas clave:
-- Habla SOLO de lo que es relevante o inusual en esta combinacion.
-- Si el contexto es obvio o alineado, responde en 1-2 frases.
-- Si no hay friccion, agotamiento ni transicion, puedes responder con UNA sola frase o no responder.
-
-Como razonar:
-- Detecta friccion interna (ej: tendencia clara + momentum extremo).
-- Identifica si el entorno es:
-  * Continuacion eficiente
-  * Agotamiento
-  * Pausa / correccion
-  * Zona fragil
-  * Transicion
-- Describe comportamientos tipicos, no estados.
+Mapa de enfoque segun motivo:
+- momentum_extreme_against_trend → agotamiento, rebotes fallidos, riesgo de persecucion
+- htf_ltf_conflict → friccion, movimientos tacticos contra estructura
+- scenario_downgrade → perdida de eficiencia, entorno menos favorable
+- volatility_spike → riesgo asimetrico, movimientos amplificados
+- volume_divergence → fragilidad estructural, absorcion
+- structural_friction → tension estructura vs momentum, zona de decision
 
 Estilo obligatorio:
-- Interpretativo, no explicativo.
-- Condicional, no predictivo.
-- Breve, sobrio, quirurgico.
-- Maximo 3-4 frases.
-- Menos es mejor.
+- Interpreta SOLO desde el motivo dado.
+- Condicional, no predictivo ("suele producir", "tiende a generar").
+- Maximo 2-3 frases.
+- Si el motivo no permite lectura clara, UNA frase o silencio.
 
 Prohibiciones:
-- No repitas inputs.
+- No repitas estados.
 - No expliques indicadores.
 - No des recomendaciones.
 - No uses numeros.
-- No fuerces longitud.
-
-Regla final:
-Si no hay una lectura interesante, di poco o no digas nada.
 
 Responde solo en espanol."""
 
@@ -124,27 +121,89 @@ def _normalize(value: str, mapping: Dict[str, str], default: str) -> str:
     return mapping.get(value.lower() if value else "", default)
 
 
-def _generate_cache_key(state: Dict[str, Any]) -> str:
+def should_call_ai(state: Dict[str, Any]) -> Optional[str]:
     """
-    Generate explicit cache key based on market state.
+    Evaluate if the state has a relevant tension that warrants AI explanation.
+    Returns a reason string if AI should be called, None otherwise.
 
-    Format: v1|{PAIR}|{TF}|{BIAS}|{SCENARIO}|{STRUCTURE}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}
-    Example: v1|BTCUSDT|4H|bearish|operable|below_ema200|high|selling|weakening|overbought
+    Silence = criteria. Only call AI when there's meaningful friction.
+    """
+    htf_bias = _normalize(state.get("htf_bias", ""), _BIAS_MAP, "neutral")
+    momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
+    rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+    volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
+    volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
+    scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
 
-    All values normalized to lowercase English enums.
-    Any field change invalidates cache automatically.
+    # Get previous scenario if available (for downgrade detection)
+    prev_scenario = state.get("prev_scenario")
+
+    # 1. Momentum extreme against trend
+    # RSI extreme + trend defined = potential exhaustion
+    if htf_bias in ["bullish", "bearish"]:
+        if htf_bias == "bullish" and rsi_state in ["overbought", "extreme_overbought"]:
+            return "momentum_extreme_against_trend"
+        if htf_bias == "bearish" and rsi_state in ["oversold", "extreme_oversold"]:
+            return "momentum_extreme_against_trend"
+
+    # 2. HTF/LTF conflict
+    # Trend defined but momentum weakening significantly
+    if htf_bias in ["bullish", "bearish"] and momentum_state == "weakening":
+        # Check if volume contradicts trend
+        if (htf_bias == "bullish" and volume_dom == "selling") or \
+           (htf_bias == "bearish" and volume_dom == "buying"):
+            return "htf_ltf_conflict"
+
+    # 3. Scenario downgrade
+    if prev_scenario:
+        scenario_order = ["favorable", "operable", "high_risk", "wait"]
+        prev_idx = scenario_order.index(prev_scenario) if prev_scenario in scenario_order else -1
+        curr_idx = scenario_order.index(scenario) if scenario in scenario_order else -1
+        if curr_idx > prev_idx and prev_idx >= 0:
+            return "scenario_downgrade"
+
+    # 4. Volatility spike
+    if volatility == "high":
+        # High volatility with extreme RSI = amplified risk
+        if rsi_state in ["extreme_overbought", "extreme_oversold"]:
+            return "volatility_spike"
+
+    # 5. Volume divergence
+    # Strong trend but volume not confirming
+    if htf_bias in ["bullish", "bearish"] and momentum_state == "strong":
+        if volume_dom == "balanced":
+            return "volume_divergence"
+        if (htf_bias == "bullish" and volume_dom == "selling") or \
+           (htf_bias == "bearish" and volume_dom == "buying"):
+            return "volume_divergence"
+
+    # 6. Structural friction
+    # Mixed bias = structure and momentum disagree
+    if htf_bias == "mixed":
+        return "structural_friction"
+
+    # No relevant tension found
+    return None
+
+
+def _generate_cache_key(state: Dict[str, Any], reason: str) -> str:
+    """
+    Generate explicit cache key based on market state AND reason.
+
+    Format: v1|{PAIR}|{REASON}|{BIAS}|{SCENARIO}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}
+    Example: v1|BTCUSDT|momentum_extreme_against_trend|bearish|operable|high|selling|weakening|overbought
+
+    Reason is part of the key because different reasons = different interpretations.
     """
     pair = state.get("pair", "UNKNOWN").replace("/", "").replace(":", "").upper()
-    htf_tf = state.get("htf_timeframe", "4H").upper()
     htf_bias = _normalize(state.get("htf_bias", ""), _BIAS_MAP, "neutral")
     scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
-    structure = state.get("structure", "unknown").lower().replace(" ", "_")
     volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
     volume_dominance = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
 
-    return f"{CACHE_VERSION}|{pair}|{htf_tf}|{htf_bias}|{scenario}|{structure}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}"
+    return f"{CACHE_VERSION}|{pair}|{reason}|{htf_bias}|{scenario}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}"
 
 
 def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
@@ -158,30 +217,32 @@ def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> 
     return age < ttl
 
 
-def _format_input_for_ai(state: Dict[str, Any]) -> str:
-    """Format the market state as a prompt for the AI (states only, no numbers)."""
+def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
+    """Format the market state as a prompt for the AI, focused on the reason."""
     pair = state.get("pair", "Unknown").replace("/USDT", "").replace(":USDT", "")
 
-    # Normalize states to descriptive terms
+    # Normalize states
     htf_bias = _normalize(state.get("htf_bias", ""), _BIAS_MAP, "neutral")
     scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
     volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
     volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
-    structure = state.get("structure", "unknown")
 
-    # Build prompt that encourages INTERPRETATION, not listing
-    prompt = f"""Interpreta el contexto de {pair} a partir de esta combinacion.
+    # Get focus description for this reason
+    focus = REASON_FOCUS.get(reason, "tension del contexto")
 
-Estados:
-sesgo={htf_bias}, estructura={structure}, momentum={momentum_state},
-rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom},
-escenario={scenario}
+    prompt = f"""Interpreta el contexto de {pair}.
 
-Describe SOLO la lectura dominante de este contexto.
-No expliques los estados.
-No fuerces longitud."""
+MOTIVO DE ACTIVACION: {reason}
+ENFOQUE: {focus}
+
+Estados: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, escenario={scenario}
+
+Interpreta SOLO desde el motivo indicado.
+No describas el contexto completo.
+No repitas estados visibles en la UI.
+Maximo 2-3 frases."""
 
     return prompt
 
@@ -220,25 +281,26 @@ def _call_claude_api(prompt: str) -> Optional[str]:
         return None
 
 
-def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
+def get_ai_explanation(state: Dict[str, Any], reason: str, force_refresh: bool = False) -> Dict[str, Any]:
     """
-    Get AI explanation for the current market state.
+    Get AI explanation for the current market state, focused on a specific reason.
 
-    Uses caching based on market state hash to avoid redundant API calls.
-    Only generates new explanations when market state actually changes.
+    Only call this if should_call_ai() returned a valid reason.
 
     Args:
         state: Market state dictionary with technical data
+        reason: The activation reason (e.g., "momentum_extreme_against_trend")
         force_refresh: Force regeneration even if cache is valid
 
     Returns:
         Dictionary with:
         - text: The AI explanation
         - cached: Whether this was a cached response
-        - state_hash: The state hash used for caching
+        - cache_key: The cache key used
+        - reason: The activation reason
         - generated_at: When the explanation was generated
     """
-    cache_key = _generate_cache_key(state)
+    cache_key = _generate_cache_key(state, reason)
     pair = state.get("pair", "Unknown")
     volatility = state.get("volatility", "normal")
 
@@ -252,25 +314,26 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
                 "text": cache_entry["text"],
                 "cached": True,
                 "cache_key": cache_key,
+                "reason": reason,
                 "generated_at": cache_entry.get("generated_at"),
             }
 
     # Generate new explanation
     logger.info(f"[AI] Cache miss → IA ejecutada: {cache_key}")
 
-    prompt = _format_input_for_ai(state)
+    prompt = _format_input_for_ai(state, reason)
     explanation = _call_claude_api(prompt)
 
     if not explanation:
-        # Fallback to a generic explanation based on state
-        explanation = _generate_fallback_explanation(state)
+        # Fallback to reason-specific explanation
+        explanation = _generate_fallback_explanation(state, reason)
 
-    # Cache the result (shared across all users with same market state)
+    # Cache the result (shared across all users with same state + reason)
     generated_at = datetime.now(timezone.utc).isoformat()
     _ai_cache[cache_key] = {
         "text": explanation,
         "timestamp": time.time(),
-        "volatility": volatility,
+        "reason": reason,
         "generated_at": generated_at,
     }
 
@@ -281,59 +344,45 @@ def get_ai_explanation(state: Dict[str, Any], force_refresh: bool = False) -> Di
         "text": explanation,
         "cached": False,
         "cache_key": cache_key,
+        "reason": reason,
         "generated_at": generated_at,
     }
 
 
-def _generate_fallback_explanation(state: Dict[str, Any]) -> str:
-    """Generate an interpretive explanation without AI when API is unavailable."""
-    pair = state.get("pair", "Unknown").replace("/USDT", "").replace(":USDT", "")
+def _generate_fallback_explanation(state: Dict[str, Any], reason: str) -> str:
+    """Generate a reason-specific fallback explanation when API is unavailable."""
 
-    # Normalize all states
-    htf_bias = _normalize(state.get("htf_bias", ""), _BIAS_MAP, "neutral")
-    scenario = _normalize(state.get("scenario", ""), _SCENARIO_MAP, "wait")
-    volatility = _normalize(state.get("volatility", ""), _VOLATILITY_MAP, "normal")
-    volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
-    momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
-    rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+    # Reason-specific fallback messages
+    fallbacks = {
+        "momentum_extreme_against_trend": (
+            "El momentum en zona extrema dentro de una tendencia definida suele producir "
+            "rebotes cortos que no alteran la estructura principal. "
+            "El riesgo de perseguir extension aumenta en este tipo de entornos."
+        ),
+        "htf_ltf_conflict": (
+            "La friccion entre el marco principal y el timing genera movimientos tacticos "
+            "que pueden confundir. Mientras la estructura mayor no ceda, "
+            "los movimientos contrarios suelen ser correcciones."
+        ),
+        "scenario_downgrade": (
+            "El contexto ha perdido eficiencia respecto a su estado anterior. "
+            "Este tipo de transiciones suelen requerir pausa antes de retomar direccionalidad."
+        ),
+        "volatility_spike": (
+            "La volatilidad elevada amplifica movimientos en ambas direcciones. "
+            "Los falsos rompimientos y las trampas son mas frecuentes en este entorno."
+        ),
+        "volume_divergence": (
+            "El volumen no confirma el movimiento estructural, lo que genera fragilidad. "
+            "Este tipo de divergencias suele anticipar pausas o reversiones."
+        ),
+        "structural_friction": (
+            "Estructura y momentum no coinciden, creando una zona de decision. "
+            "El contexto suele resolverse cuando una fuerza toma control claro."
+        ),
+    }
 
-    # Interpret the COMBINATION of states
-    is_trending = htf_bias in ["bullish", "bearish"]
-    is_exhausted = rsi_state in ["extreme_overbought", "extreme_oversold"]
-    is_weakening = momentum_state == "weakening"
-    is_volatile = volatility == "high"
-    has_tension = (is_trending and is_weakening) or (is_trending and is_exhausted)
-
-    lines = []
-
-    # Interpret context type based on combination
-    if is_trending and not has_tension and momentum_state == "strong":
-        direction = "alcista" if htf_bias == "bullish" else "bajista"
-        lines.append(f"La combinacion de sesgo {direction} con momentum sostenido sugiere un entorno de continuacion tendencial.")
-        lines.append("Este tipo de contexto suele favorecer la persistencia del movimiento mientras la estructura se mantenga.")
-    elif is_trending and is_exhausted:
-        lines.append("La combinacion de tendencia definida con momentum en zona extrema caracteriza un entorno de posible agotamiento.")
-        lines.append("Este tipo de contextos suele derivar en pausas o retrocesos tecnicos, aunque la tendencia puede continuar.")
-    elif is_trending and is_weakening:
-        lines.append("El sesgo direccional coexiste con momentum debilitandose, lo que genera tension interna.")
-        lines.append("Mientras la estructura no ceda, el contexto se mantiene, pero con mayor fragilidad ante movimientos bruscos.")
-    elif htf_bias == "mixed":
-        lines.append("La falta de alineacion entre estructura y momentum define un entorno de transicion o indefinicion.")
-        lines.append("Este tipo de contextos suele resolverse cuando una de las fuerzas toma control claro.")
-    else:
-        lines.append("El contexto actual no muestra una direccion predominante clara.")
-        lines.append("Suele requerirse definicion estructural antes de que emerja un escenario direccional.")
-
-    # Add volatility context if relevant
-    if is_volatile:
-        lines.append("La volatilidad elevada amplifica tanto continuaciones como reversiones en este entorno.")
-
-    # What would invalidate
-    if is_trending:
-        opposite = "alcista" if htf_bias == "bearish" else "bajista"
-        lines.append(f"Un giro estructural hacia sesgo {opposite} alteraria completamente este escenario.")
-
-    return "\n".join(lines)
+    return fallbacks.get(reason, "Tension detectada en el contexto actual.")
 
 
 def _cleanup_cache():
@@ -351,26 +400,25 @@ def _cleanup_cache():
         logger.info(f"[AI] Cleaned up {len(expired_keys)} expired cache entries")
 
 
-def check_state_changed(new_state: Dict[str, Any]) -> bool:
+def check_state_changed(new_state: Dict[str, Any], reason: str) -> bool:
     """
     Check if the market state has changed significantly enough to warrant
     a new AI explanation.
 
     Returns True if:
-    - Any cache key component changed (htf_bias, scenario, structure, volatility, volume_dominance)
+    - Cache key (state + reason) not found
     - Cache expired (30min for high vol, 2h for normal)
-
-    Cache key format: {PAIR}|{HTF_TIMEFRAME}|{HTF_BIAS}|{SCENARIO}|{STRUCTURE}|{VOLATILITY}|{VOLUME_DOMINANCE}
     """
-    cache_key = _generate_cache_key(new_state)
+    cache_key = _generate_cache_key(new_state, reason)
     volatility = new_state.get("volatility", "normal")
 
-    # If we don't have this state cached, it's a new state
+    # If we don't have this state+reason cached, it's new
     if cache_key not in _ai_cache:
         return True
 
     # If we have it cached but it's expired, regenerate
-    if not _is_cache_valid(_ai_cache[cache_key], volatility):
+    vol_normalized = _normalize(volatility, _VOLATILITY_MAP, "normal")
+    if not _is_cache_valid(_ai_cache[cache_key], vol_normalized):
         return True
 
     return False
