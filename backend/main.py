@@ -1967,8 +1967,39 @@ def _compute_position_analysis(symbol: str, side: str, entry_price: float, curre
             atr_pct = (htf_atr / current_price) * 100
             if atr_pct > 3:
                 obs.append(f"Alta volatilidad (ATR {atr_pct:.1f}% del precio)")
+                analysis["volatility_state"] = "alta"
             elif atr_pct < 1:
                 obs.append(f"Baja volatilidad (ATR {atr_pct:.1f}% del precio)")
+                analysis["volatility_state"] = "baja"
+            else:
+                analysis["volatility_state"] = "normal"
+        else:
+            analysis["volatility_state"] = "normal"
+
+        # Store RSI value for AI analysis
+        analysis["rsi"] = htf_rsi
+
+        # Determine scenario based on coherence and structure
+        coherence = analysis["coherence"]
+        htf_bias = analysis["htf_bias"]
+        ltf_mom = analysis["ltf_momentum"]
+
+        # Scenario logic for position management
+        if analysis.get("invalidation_breached"):
+            analysis["scenario"] = "alto_riesgo"
+        elif coherence == "a_favor" and htf_bias != "neutral":
+            # Position aligned with HTF context
+            if (is_long and ltf_mom == "alcista") or (not is_long and ltf_mom == "bajista"):
+                analysis["scenario"] = "favorable"
+            else:
+                analysis["scenario"] = "operable"
+        elif coherence == "contra":
+            # Position against HTF context
+            analysis["scenario"] = "alto_riesgo"
+        elif htf_bias == "mixto":
+            analysis["scenario"] = "espera"
+        else:
+            analysis["scenario"] = "operable"
 
         analysis["observations"] = obs
 
@@ -2249,8 +2280,12 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
             "coherence_text": analysis.get("coherence_text", ""),
             "volatility": analysis.get("volatility_state", "normal"),
             "rsi": analysis.get("rsi"),
-            "scenario": analysis.get("scenario", "wait"),
+            "scenario": analysis.get("scenario", "espera"),
         }
+
+        # Log the data being sent to AI for debugging
+        logger.info(f"[AI-POS] Position data: {position_data}")
+        logger.info(f"[AI-POS] Market state: htf_bias={market_state['htf_bias']}, coherence={market_state['coherence']}, volatility={market_state['volatility']}, scenario={market_state['scenario']}, rsi={market_state['rsi']}")
 
         # Get AI analysis
         result = get_position_ai_analysis(user.id, position_data, market_state)
