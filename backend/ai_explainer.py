@@ -54,11 +54,17 @@ COMO DEBES RAZONAR:
   * Que mantiene el contexto actual
   * Que lo vuelve fragil
   * Que lo invalidaria
+- Piensa en comportamientos recurrentes del mercado cuando esta combinacion aparece
+- Describe la asimetria de riesgo del entorno (que tipo de movimiento suele ser mas peligroso aqui)
+- Distingue entre:
+  * Que mantiene el contexto
+  * Que lo vuelve progresivamente mas fragil (antes de invalidarse)
 
 ESTILO OBLIGATORIO:
 - Interpretativo, NO enumerativo
 - Condicional, NO predictivo ("suele derivar en...", "este tipo de contexto acostumbra a...", "mientras X se mantenga...")
 - Sobrio, NO conclusivo
+- Enfocate en dinamica de mercado, no en descripcion tecnica
 - Maximo 5-7 lineas
 
 PROHIBICIONES ABSOLUTAS:
@@ -174,8 +180,9 @@ COMBINACION DE ESTADOS:
 sesgo={htf_bias}, estructura={structure}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, escenario={scenario}
 
 RESPONDE EN 5-7 LINEAS:
-- Que tipo de entorno representa esta combinacion (continuacion, agotamiento, transicion, zona fragil, etc.)
+- Que tipo de entorno dinamico representa esta combinacion y que comportamientos suele producir
 - Que tension o alineacion existe entre los estados
+- Donde se concentra la fragilidad o el riesgo dominante del entorno
 - Que mantiene este contexto, que lo debilita, que lo invalidaria
 - Usa lenguaje condicional ("suele", "acostumbra", "mientras se mantenga")
 
