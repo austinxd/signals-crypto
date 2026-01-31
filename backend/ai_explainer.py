@@ -67,6 +67,11 @@ ESTILO OBLIGATORIO:
 - Usa: "suele", "es comun", "frecuentemente", "a menudo", "tipicamente"
 - 3-5 lineas maximo (menos es mas)
 - Concreto y practico, no abstracto
+- SIEMPRE termina con una conclusion simple de una linea que resuma el mensaje clave
+
+FORMATO:
+[Descripcion de comportamientos tipicos - 2-4 lineas]
+[Conclusion practica - 1 linea, empezando con "En resumen:" o "En este entorno:"]
 
 PROHIBICIONES:
 - No uses numeros ni precios
@@ -241,7 +246,7 @@ COMPORTAMIENTOS TIPICOS: {behaviors}
 Estados actuales: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}
 
 Describe como suele moverse el precio y donde suelen fallar los participantes.
-NO expliques el contexto. DESCRIBE comportamientos recurrentes.
+Termina con UNA conclusion practica que resuma el mensaje clave (empieza con "En resumen:" o "En este entorno:").
 3-5 lineas maximo."""
 
     return prompt
@@ -352,46 +357,47 @@ def get_ai_explanation(state: Dict[str, Any], reason: str, force_refresh: bool =
 def _generate_fallback_explanation(state: Dict[str, Any], reason: str) -> str:
     """Generate a reason-specific behavioral fallback when API is unavailable."""
 
-    # Reason-specific behavioral patterns
+    # Reason-specific behavioral patterns with conclusions
     fallbacks = {
         "momentum_extreme_against_trend": (
             "Cuando el momentum entra en zona extrema dentro de una tendencia definida, "
             "el precio suele mostrar rebotes breves y poco eficientes que se agotan rapido. "
             "Es comun ver falsas recuperaciones que atraen entradas tardias antes de que "
-            "la presion dominante retome el control. El movimiento se vuelve erratico y "
-            "castiga a quienes persiguen el precio sin confirmacion estructural."
+            "la presion dominante retome el control.\n"
+            "En resumen: el precio castiga a quienes persiguen sin esperar confirmacion."
         ),
         "htf_ltf_conflict": (
             "Cuando el timing se mueve contra la estructura principal, es frecuente ver "
             "retrocesos que parecen reversiones pero terminan siendo barridas de stops. "
-            "Los participantes tardios suelen quedar atrapados en estos movimientos tacticos "
-            "antes de que el precio retome la direccion del marco mayor."
+            "Los participantes tardios suelen quedar atrapados antes de que el precio "
+            "retome la direccion del marco mayor.\n"
+            "En resumen: los movimientos contra tendencia suelen ser trampas."
         ),
         "scenario_downgrade": (
             "Cuando el contexto pierde eficiencia, el precio suele entrar en fases de "
             "lateralizacion o pausas prolongadas. Los movimientos se vuelven menos limpios "
-            "y los falsos rompimientos mas frecuentes. Es comun ver frustacion en ambos lados "
-            "antes de que emerja nueva direccionalidad."
+            "y los falsos rompimientos mas frecuentes.\n"
+            "En resumen: el entorno requiere paciencia, la claridad se ha perdido temporalmente."
         ),
         "volatility_spike": (
             "Con volatilidad elevada, los movimientos se amplifican en ambas direcciones. "
             "Es frecuente ver barridas rapidas que sacan stops de compradores y vendedores "
-            "en poco tiempo. Las trampas son comunes y el precio suele moverse de forma "
-            "caotica antes de definir direccion."
+            "en poco tiempo. Las trampas son comunes.\n"
+            "En resumen: el precio se mueve de forma caotica y castiga posiciones apresuradas."
         ),
         "volume_divergence": (
             "Cuando el volumen no acompana el movimiento, los avances suelen perder fuerza "
-            "rapidamente. Es comun ver rechazos en zonas clave donde se esperaba continuacion. "
-            "Este tipo de divergencia frecuentemente precede giros o pausas significativas."
+            "rapidamente. Es comun ver rechazos en zonas clave donde se esperaba continuacion.\n"
+            "En resumen: sin volumen que confirme, el movimiento carece de conviccion."
         ),
         "structural_friction": (
             "Cuando estructura y momentum no coinciden, el precio suele lateralizar con "
-            "barridas en ambas direcciones. Los movimientos son erraticos y sin direccion clara. "
-            "La resolucion tipicamente llega de forma explosiva cuando una fuerza toma control."
+            "barridas en ambas direcciones. Los movimientos son erraticos y sin direccion clara.\n"
+            "En resumen: el mercado esta indeciso, la resolucion llegara de forma explosiva."
         ),
     }
 
-    return fallbacks.get(reason, "Tension detectada. Comportamiento erratico probable.")
+    return fallbacks.get(reason, "Tension detectada. En resumen: comportamiento erratico probable.")
 
 
 def _cleanup_cache():
