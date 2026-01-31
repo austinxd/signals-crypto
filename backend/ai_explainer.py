@@ -273,7 +273,7 @@ def _call_claude_api(prompt: str) -> Optional[str]:
         logger.warning("ANTHROPIC_API_KEY not set. AI explanations disabled.")
         return None
 
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -753,7 +753,7 @@ def get_position_ai_analysis(
         # Log the prompt being sent
         logger.info(f"[AI-POS] Prompt:\n{prompt}")
 
-        model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
         response = client.messages.create(
             model=model,
