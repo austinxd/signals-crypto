@@ -738,15 +738,20 @@ def get_position_ai_analysis(
     logger.info(f"[AI-POS] Generating analysis: {cache_key}")
 
     if not ANTHROPIC_AVAILABLE:
+        logger.warning("[AI-POS] Anthropic not available, using fallback")
         return _generate_position_fallback(position, market_state)
 
     try:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
+            logger.warning("[AI-POS] No API key, using fallback")
             return _generate_position_fallback(position, market_state)
 
         client = anthropic.Anthropic(api_key=api_key)
         prompt = _format_position_prompt(position, market_state)
+
+        # Log the prompt being sent
+        logger.info(f"[AI-POS] Prompt:\n{prompt}")
 
         model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
@@ -758,6 +763,9 @@ def get_position_ai_analysis(
         )
 
         text = response.content[0].text.strip()
+
+        # Log the raw response
+        logger.info(f"[AI-POS] Raw response:\n{text}")
 
         # Parse the new format: Lectura / Fragilidad / Si favorece / Si contra
         lectura = ""
@@ -812,7 +820,8 @@ def get_position_ai_analysis(
         }
 
     except Exception as e:
-        logger.error(f"[AI-POS] Error calling API: {e}")
+        logger.error(f"[AI-POS] Error calling API: {e}", exc_info=True)
+        logger.info("[AI-POS] Using fallback due to API error")
         return _generate_position_fallback(position, market_state)
 
 
