@@ -2513,7 +2513,7 @@ async def get_ai_market_explanation(pair: str):
                     else:
                         resistance_levels.append(round(price, 2))
 
-        # Determine volume dominance from LTF indicators if available
+        # Determine volume dominance from LTF indicators
         volume_dominance = "balanced"
         if ltf_indicators:
             vol_ratio = ltf_indicators.get("volume_ratio", 1.0)
@@ -2523,23 +2523,40 @@ async def get_ai_market_explanation(pair: str):
             elif vol_ratio > 1.5 and macd_hist < 0:
                 volume_dominance = "selling"
 
+        # Determine momentum state (strong/weakening/neutral)
+        momentum_state = "neutral"
+        if htf_indicators:
+            macd_hist = htf_indicators.get("macd_histogram", 0)
+            macd_prev = htf_indicators.get("macd_histogram_prev", macd_hist)
+            if abs(macd_hist) > abs(macd_prev) * 1.1:
+                momentum_state = "strong"
+            elif abs(macd_hist) < abs(macd_prev) * 0.9:
+                momentum_state = "weakening"
+
+        # Determine RSI state (descriptive, no numbers)
+        rsi_state = "neutral"
+        if htf_indicators:
+            rsi = htf_indicators.get("rsi", 50)
+            if rsi >= 80:
+                rsi_state = "extreme_overbought"
+            elif rsi >= 70:
+                rsi_state = "overbought"
+            elif rsi <= 20:
+                rsi_state = "extreme_oversold"
+            elif rsi <= 30:
+                rsi_state = "oversold"
+
+        # Build AI state with STATES ONLY, no numeric values
         ai_state = {
             "pair": pair_formatted,
-            "price": htf_indicators.get("price") if htf_indicators else 0,
             "htf_timeframe": "4H",
             "htf_bias": analysis.get("context", {}).get("htf_bias", "neutral"),
             "structure": analysis.get("context", {}).get("htf_structure", "unknown"),
             "scenario": analysis.get("scenario", "espera"),
             "volatility": analysis.get("context", {}).get("volatility_state", "normal"),
             "volume_dominance": volume_dominance,
-            "momentum": {
-                "rsi": htf_indicators.get("rsi") if htf_indicators else None,
-                "macd": analysis.get("context", {}).get("macd_momentum", "neutral"),
-            },
-            "key_levels": {
-                "support": sorted(support_levels)[-3:] if support_levels else [],
-                "resistance": sorted(resistance_levels)[:3] if resistance_levels else [],
-            },
+            "momentum_state": momentum_state,
+            "rsi_state": rsi_state,
         }
 
         # Get AI explanation (uses cache if state hasn't changed)
@@ -2557,6 +2574,8 @@ async def get_ai_market_explanation(pair: str):
                 "structure": ai_state["structure"],
                 "volatility": ai_state["volatility"],
                 "volume_dominance": ai_state["volume_dominance"],
+                "momentum_state": ai_state["momentum_state"],
+                "rsi_state": ai_state["rsi_state"],
             }
         }
 
