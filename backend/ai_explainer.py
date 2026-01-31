@@ -130,7 +130,7 @@ def _call_claude_api(prompt: str) -> Optional[str]:
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-3-haiku-20240307",  # Using Haiku for speed and cost
+            model="claude-3-5-sonnet-20241022",  # Using Sonnet 3.5 for better reasoning
             max_tokens=500,
             system=SYSTEM_PROMPT,
             messages=[
