@@ -2188,6 +2188,28 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
         if not pos:
             raise HTTPException(status_code=404, detail="Position not found")
 
+        # Calculate PnL percent
+        pnl_pct = 0
+        if pos.entry_price and pos.current_price:
+            is_long = pos.side.upper() == "LONG"
+            pnl_pct = ((pos.current_price - pos.entry_price) / pos.entry_price * 100)
+            if not is_long:
+                pnl_pct = -pnl_pct
+
+        # PnL state bucket
+        if pnl_pct <= -10:
+            pnl_state = "deep_loss"
+        elif pnl_pct <= -3:
+            pnl_state = "loss"
+        elif pnl_pct < 0:
+            pnl_state = "small_loss"
+        elif pnl_pct < 3:
+            pnl_state = "breakeven"
+        elif pnl_pct < 10:
+            pnl_state = "profit"
+        else:
+            pnl_state = "strong_profit"
+
         # Liquidation distance
         liq_distance = None
         if pos.liquidation_price and pos.current_price and pos.liquidation_price > 0:
@@ -2207,10 +2229,13 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
             logger.error(f"Error computing position analysis: {e}")
             analysis = {}
 
-        # Build position dict
+        # Build position dict with PnL context
         position_data = {
             "symbol": pos.symbol,
             "side": pos.side,
+            "pnl_state": pnl_state,
+            "pnl_pct": pnl_pct,
+            "leverage": pos.leverage or 1,
             "liq_distance_pct": liq_distance,
             "inv_distance_pct": inv_distance,
         }
@@ -2221,6 +2246,7 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
             "htf_structure": analysis.get("htf_structure", "unknown"),
             "ltf_momentum": analysis.get("ltf_momentum", "neutral"),
             "coherence": analysis.get("coherence", "neutral"),
+            "coherence_text": analysis.get("coherence_text", ""),
             "volatility": analysis.get("volatility_state", "normal"),
             "rsi": analysis.get("rsi"),
             "scenario": analysis.get("scenario", "wait"),

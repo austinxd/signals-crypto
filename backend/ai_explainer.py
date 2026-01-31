@@ -625,10 +625,11 @@ def _get_structure_state(structure: str, side: str) -> str:
 def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
     """
     Generate cache key for position analysis using discrete states.
-    Format: pos|u{id}|{symbol}|{alignment}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{rsi_state}|{scenario}
+    Includes PnL state and coherence for position-specific caching.
     """
     symbol = position.get("symbol", "").replace("/", "").replace(":", "").replace("USDT", "")
     side = position.get("side", "").upper()
+    pnl_state = position.get("pnl_state", "breakeven")
 
     # Discrete states
     htf_bias = _normalize(market_state.get("htf_bias", "neutral"), _BIAS_MAP, "neutral")
@@ -636,25 +637,29 @@ def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_
     structure = _get_structure_state(market_state.get("htf_structure", ""), side)
     ltf_momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
     volatility = _normalize(market_state.get("volatility", "normal"), _VOLATILITY_MAP, "normal")
-    rsi_state = _get_rsi_state(market_state.get("rsi"))
+    coherence = market_state.get("coherence", "neutral")
     scenario = market_state.get("scenario", "wait")
 
-    return f"pos|u{user_id}|{symbol}|{alignment}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{rsi_state}|{scenario}"
+    return f"pos|u{user_id}|{symbol}|{pnl_state}|{alignment}|{coherence}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{scenario}"
 
 
 def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
     """Format position data as POSITION_STATE for AI prompt."""
     side = position.get("side", "?").upper()
+    pnl_state = position.get("pnl_state", "breakeven")
+    pnl_pct = position.get("pnl_pct", 0)
+    leverage = position.get("leverage", 1)
     inv_distance = position.get("inv_distance_pct")
     liq_distance = position.get("liq_distance_pct")
 
-    # Discrete states
+    # Discrete states from market
     htf_bias = _normalize(market_state.get("htf_bias", "neutral"), _BIAS_MAP, "neutral")
     alignment = _get_alignment(side, market_state.get("htf_bias", "neutral"))
     structure = _get_structure_state(market_state.get("htf_structure", ""), side)
     ltf_momentum = _normalize(market_state.get("ltf_momentum", "neutral"), _MOMENTUM_MAP, "neutral")
     volatility = _normalize(market_state.get("volatility", "normal"), _VOLATILITY_MAP, "normal")
     rsi_state = _get_rsi_state(market_state.get("rsi"))
+    coherence = market_state.get("coherence", "neutral")
     scenario = market_state.get("scenario", "wait")
 
     # Format distances (use "N/A" if not available)
@@ -664,17 +669,25 @@ def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, An
     prompt = f"""POSITION_STATE:
 
 side: {side}
+pnl_state: {pnl_state}
+pnl_pct: {pnl_pct:+.1f}%
+leverage: {leverage}x
 alignment: {alignment}
+coherence: {coherence}
+
+MARKET_CONTEXT:
 htf_bias: {htf_bias}
 structure: {structure}
 ltf_momentum: {ltf_momentum}
 volatility: {volatility}
 rsi_state: {rsi_state}
 scenario: {scenario}
+
+RISK:
 distance_to_invalidation_pct: {inv_str}
 distance_to_liquidation_pct: {liq_str}
 
-Analiza esta posicion y responde SOLO con el formato:
+Evalua esta posicion en relacion al mercado y responde SOLO con el formato:
 Lectura / Fragilidad / Si favorece / Si contra"""
 
     return prompt
@@ -806,7 +819,10 @@ def get_position_ai_analysis(
 def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str, Any]) -> Dict[str, Any]:
     """Generate fallback analysis when API is unavailable - focused on thesis evaluation."""
     side = position.get("side", "").upper()
+    pnl_state = position.get("pnl_state", "breakeven")
+    leverage = position.get("leverage", 1)
     htf_bias = market_state.get("htf_bias", "neutral")
+    coherence = market_state.get("coherence", "neutral")
     volatility = market_state.get("volatility", "normal")
     alignment = _get_alignment(side, htf_bias)
     inv_distance = position.get("inv_distance_pct")
@@ -815,35 +831,46 @@ def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str
     # Evaluate asymmetry of risk
     tight_margin = inv_distance is not None and inv_distance < 5
     liq_risk = liq_distance is not None and liq_distance < 15
+    high_leverage = leverage >= 10
 
-    # Build thesis-focused fallback
-    if alignment == "with_context":
-        lectura = "Tesis alineada con contexto HTF, defendible mientras estructura se mantenga"
+    # Build thesis-focused fallback considering PnL and coherence
+    if pnl_state in ("deep_loss", "loss") and coherence == "contra":
+        lectura = "Posicion en perdida y contra contexto, tesis debilitada significativamente"
+    elif pnl_state in ("deep_loss", "loss") and coherence == "a_favor":
+        lectura = "Posicion en perdida pero alineada con contexto, tesis aun puede recuperarse si estructura aguanta"
+    elif pnl_state in ("profit", "strong_profit") and coherence == "a_favor":
+        lectura = "Posicion en ganancia y alineada, tesis defendible mientras se mantenga estructura"
+    elif pnl_state in ("profit", "strong_profit") and coherence == "contra":
+        lectura = "Posicion en ganancia pero contra contexto, ganancias pueden revertirse rapidamente"
     elif alignment == "against_context":
         lectura = "Tesis contra contexto dominante, requiere cambio estructural para validarse"
     else:
-        lectura = "Tesis en zona neutral, depende de resolucion direccional"
+        lectura = "Tesis en zona neutral, depende de resolucion direccional del mercado"
 
-    # Fragilidad based on asymmetry
+    # Fragilidad based on asymmetry and leverage
     if tight_margin and liq_risk:
-        fragilidad = "Margen de error estrecho con liquidacion cercana, asimetria desfavorable"
+        fragilidad = "Margen de error minimo con liquidacion cercana, asimetria claramente desfavorable"
+    elif tight_margin and high_leverage:
+        fragilidad = "Poco margen hasta invalidacion con leverage alto, movimientos erraticos son criticos"
     elif tight_margin:
-        fragilidad = "Poco margen hasta invalidacion, movimientos erraticos suelen activar salidas prematuras"
+        fragilidad = "Poco margen hasta invalidacion, barridas de stops son frecuentes en este contexto"
+    elif liq_risk and high_leverage:
+        fragilidad = "Liquidacion cercana con leverage alto, volatilidad puede liquidar antes de reaccion"
     elif liq_risk:
-        fragilidad = "Liquidacion relativamente cercana, volatilidad puede comprometer la posicion"
+        fragilidad = "Liquidacion relativamente cercana, picos de volatilidad representan riesgo real"
     elif volatility == "high":
         fragilidad = "Alta volatilidad amplifica riesgo de barridas antes de continuation"
-    elif alignment == "against_context":
+    elif coherence == "contra":
         fragilidad = "Posiciones contra tendencia suelen sufrir squeezes antes de cualquier reversal"
     else:
         fragilidad = "Retrocesos normales pueden parecer cambios de tendencia, la estructura define"
 
     if alignment == "with_context":
-        si_favorece = "Cierres 4H manteniendo estructura, momentum sostenido sin divergencias"
-        si_contra = "Ruptura de ultimo pivot estructural, perdida de alineacion con HTF"
+        si_favorece = "Cierres 4H manteniendo estructura, momentum sostenido, volumen confirmando"
+        si_contra = "Ruptura de ultimo pivot estructural, cambio de coherencia posicion-mercado"
     else:
-        si_favorece = "Quiebre de estructura HTF confirmado con cierre, cambio de sesgo"
-        si_contra = "Continuation del sesgo dominante, nuevos extremos en contra de la posicion"
+        si_favorece = "Quiebre de estructura HTF confirmado con cierre, giro de momentum LTF"
+        si_contra = "Continuation del sesgo dominante, nuevos extremos en direccion opuesta"
 
     return {
         "lectura": lectura,
