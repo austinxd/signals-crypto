@@ -8,7 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { getUnifiedMarketData, getVolumeProfile } from '../services/api';
+import { getUnifiedMarketData, getVolumeProfile, getAIExplanation } from '../services/api';
 
 // Scenario classification styles
 const SCENARIO_STYLES = {
@@ -88,6 +88,11 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [volumeLoading, setVolumeLoading] = useState(false);
   const [volumeTf, setVolumeTf] = useState('4h');
 
+  // AI explanation state
+  const [showAIExplanation, setShowAIExplanation] = useState(false);
+  const [aiData, setAiData] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
   // Fetch fresh data when modal opens
   useEffect(() => {
     if (!visible || !pair) {
@@ -95,6 +100,8 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
       setLastUpdate(null);
       setShowVolumeProfile(false);
       setVolumeData(null);
+      setShowAIExplanation(false);
+      setAiData(null);
       return;
     }
 
@@ -137,6 +144,26 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 
     fetchVolume();
   }, [showVolumeProfile, pair, volumeTf]);
+
+  // Fetch AI explanation when expanded
+  useEffect(() => {
+    if (!showAIExplanation || !pair) return;
+
+    const fetchAI = async () => {
+      try {
+        setAiLoading(true);
+        const data = await getAIExplanation(pair);
+        setAiData(data);
+      } catch (err) {
+        console.error('Error fetching AI explanation:', err);
+        setAiData(null);
+      } finally {
+        setAiLoading(false);
+      }
+    };
+
+    fetchAI();
+  }, [showAIExplanation, pair]);
 
   const data = liveData || initialData;
 
@@ -553,6 +580,42 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 </View>
               </View>
             </View>
+
+            {/* AI Explanation - Collapsible */}
+            <TouchableOpacity
+              style={styles.advancedToggle}
+              onPress={() => setShowAIExplanation(!showAIExplanation)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.advancedToggleText}>
+                {showAIExplanation ? '▼' : '▶'} 🤖 Explicacion IA del Contexto
+              </Text>
+            </TouchableOpacity>
+
+            {showAIExplanation && (
+              <View style={styles.aiSection}>
+                {aiLoading ? (
+                  <View style={styles.aiLoading}>
+                    <ActivityIndicator color="#888" size="small" />
+                    <Text style={styles.aiLoadingText}>Analizando contexto...</Text>
+                  </View>
+                ) : aiData?.explanation ? (
+                  <>
+                    <Text style={styles.aiExplanationText}>{aiData.explanation}</Text>
+                    <View style={styles.aiMeta}>
+                      {aiData.cached && (
+                        <Text style={styles.aiCachedBadge}>Respuesta en cache</Text>
+                      )}
+                      <Text style={styles.aiDisclaimer}>
+                        La IA describe el contexto actual. No genera senales ni predicciones.
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.aiNoData}>No hay explicacion disponible</Text>
+                )}
+              </View>
+            )}
 
             {/* Volumen Ejecutado (Avanzado) - Collapsible */}
             <TouchableOpacity
@@ -1287,6 +1350,56 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'center',
     lineHeight: 14,
+  },
+
+  // AI Explanation Section
+  aiSection: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#6c5ce7',
+  },
+  aiLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 10,
+  },
+  aiLoadingText: {
+    color: '#666',
+    fontSize: 13,
+  },
+  aiExplanationText: {
+    color: '#ccc',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  aiMeta: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a4a',
+    gap: 6,
+  },
+  aiCachedBadge: {
+    color: '#6c5ce7',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  aiDisclaimer: {
+    color: '#555',
+    fontSize: 10,
+    fontStyle: 'italic',
+    lineHeight: 14,
+  },
+  aiNoData: {
+    color: '#555',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 
   // Close Button

@@ -44,6 +44,7 @@ from alerts import (
     clear_position_state,
     send_signal_notification,
 )
+from ai_explainer import get_ai_explanation, check_state_changed, get_cache_stats
 
 
 # Available trading modes
@@ -2461,6 +2462,105 @@ async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = F
         "total": len(result),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/api/ai-explanation/{pair}")
+async def get_ai_market_explanation(pair: str):
+    """
+    Get AI-generated explanation of current market context.
+
+    The AI explains what IS happening based on technical data.
+    It does NOT generate signals, predictions, or trading instructions.
+
+    Responses are cached based on market state (HTF bias, scenario, structure, volatility).
+    Cache TTL: 2 hours. New explanations only generated when state changes.
+    """
+    pair_formatted = pair.replace("-", "/").upper()
+    if not pair_formatted.endswith("/USDT"):
+        pair_formatted = f"{pair_formatted}/USDT"
+
+    # First, get the current market analysis
+    client = get_binance_client()
+
+    try:
+        # Fetch indicators
+        df_4h = client.fetch_ohlcv(pair_formatted, "4h")
+        htf_indicators = None
+        if df_4h is not None and len(df_4h) >= 200:
+            df_4h = add_all_indicators(df_4h)
+            htf_indicators = get_latest_indicators(df_4h)
+
+        df_15m = client.fetch_ohlcv(pair_formatted, "15m")
+        ltf_indicators = None
+        if df_15m is not None and len(df_15m) >= 200:
+            df_15m = add_all_indicators(df_15m)
+            ltf_indicators = get_latest_indicators(df_15m)
+
+        # Get unified analysis
+        analysis = _compute_unified_pair_analysis(pair_formatted, htf_indicators, ltf_indicators)
+
+        # Build state object for AI
+        htf_fib = htf_indicators.get("fibonacci", {}) if htf_indicators else {}
+        support_levels = []
+        resistance_levels = []
+
+        if htf_fib and htf_fib.get("levels"):
+            current_price = htf_indicators.get("price", 0) if htf_indicators else 0
+            for name, price in htf_fib["levels"].items():
+                if price and current_price:
+                    if price < current_price:
+                        support_levels.append(round(price, 2))
+                    else:
+                        resistance_levels.append(round(price, 2))
+
+        ai_state = {
+            "pair": pair_formatted,
+            "price": htf_indicators.get("price") if htf_indicators else 0,
+            "htf_timeframe": "4H",
+            "htf_bias": analysis.get("context", {}).get("htf_bias", "neutral"),
+            "structure": analysis.get("context", {}).get("htf_structure", "unknown"),
+            "scenario": analysis.get("scenario", "espera"),
+            "momentum": {
+                "rsi": htf_indicators.get("rsi") if htf_indicators else None,
+                "macd": analysis.get("context", {}).get("macd_momentum", "neutral"),
+            },
+            "volatility": analysis.get("context", {}).get("volatility_state", "normal"),
+            "key_levels": {
+                "support": sorted(support_levels)[-3:] if support_levels else [],
+                "resistance": sorted(resistance_levels)[:3] if resistance_levels else [],
+            },
+            "volume_executed": {
+                "delta": 0,  # Could be populated from volume profile
+                "dominance": "balanced",
+            }
+        }
+
+        # Get AI explanation (uses cache if state hasn't changed)
+        result = get_ai_explanation(ai_state)
+
+        return {
+            "pair": pair_formatted,
+            "explanation": result["text"],
+            "cached": result["cached"],
+            "state_hash": result["state_hash"],
+            "generated_at": result["generated_at"],
+            "current_state": {
+                "htf_bias": ai_state["htf_bias"],
+                "scenario": ai_state["scenario"],
+                "structure": ai_state["structure"],
+                "volatility": ai_state["volatility"],
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating AI explanation for {pair}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai-cache-stats")
+async def get_ai_cache_statistics():
+    """Get statistics about the AI explanation cache."""
+    return get_cache_stats()
 
 
 @app.get("/api/market/{pair}")

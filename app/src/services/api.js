@@ -240,6 +240,15 @@ export async function getVolumeProfile(pair, timeframe = '15m') {
 }
 
 /**
+ * Get AI explanation of market context for a pair
+ * Returns descriptive text about current market state (no signals, no predictions)
+ */
+export async function getAIExplanation(pair) {
+  const pairFormatted = pair.replace('/', '-').replace(':USDT', '');
+  return apiRequest(`/api/ai-explanation/${pairFormatted}`);
+}
+
+/**
  * Get recent signals (filtered by user subscriptions if token provided)
  */
 export async function getSignals(limit = 20, timeframe = null, token = null) {
