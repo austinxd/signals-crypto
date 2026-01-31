@@ -205,10 +205,10 @@ const HomeScreen = () => {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [expandedSubs, setExpandedSubs] = useState({});  // Track expanded subscriptions
 
-  const toggleExpanded = (subId) => {
+  const toggleExpanded = (subId, defaultExpanded = false) => {
     setExpandedSubs(prev => {
-      // Si es undefined, tratarlo como true (expandido por defecto)
-      const currentState = prev[subId] !== false;
+      // Si es undefined, usar el default (basado en cantidad de pares)
+      const currentState = prev[subId] !== undefined ? prev[subId] : defaultExpanded;
       return {
         ...prev,
         [subId]: !currentState
@@ -395,7 +395,10 @@ const HomeScreen = () => {
           {uniquePairs.map((pair) => {
             // Find the first subscription for this pair (for trading mode display)
             const sub = subscriptions.find(s => s.pair === pair);
-            const isExpanded = expandedSubs[pair] !== false; // Default expanded, key by pair
+            // Default: expanded if only 1 pair, collapsed if 2+
+            const isExpanded = expandedSubs[pair] !== undefined
+              ? expandedSubs[pair]
+              : uniquePairs.length <= 1;
             const pairData = marketData[pair];
             const price = pairData?.price;
             const analysis = pairData?.analysis;
@@ -418,7 +421,7 @@ const HomeScreen = () => {
                   {/* Compact header - always visible */}
                   <TouchableOpacity
                     style={styles.subscriptionHeader}
-                    onPress={() => toggleExpanded(pair)}
+                    onPress={() => toggleExpanded(pair, uniquePairs.length <= 1)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.subscriptionLeft}>

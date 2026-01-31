@@ -75,14 +75,15 @@ const RSIBar = ({ value }) => {
   );
 };
 
-const PositionCard = ({ position }) => {
+const PositionCard = ({ position, totalCount = 1 }) => {
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTF, setSelectedTF] = useState('4h');
-  const [expanded, setExpanded] = useState(true);
+  // Expand by default only if there's 1 position
+  const [expanded, setExpanded] = useState(totalCount <= 1);
   const [showIndicators, setShowIndicators] = useState(false);
 
-  // AI Analysis state (collapsible, fetches on expand)
+  // AI Analysis state (always collapsed, only opens on click)
   const [showAI, setShowAI] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);

@@ -100,7 +100,11 @@ const PositionsScreen = ({ navigation }) => {
           </View>
         ) : (
           positions.map((pos) => (
-            <PositionCard key={pos.id || pos.symbol} position={{ ...pos, mode }} />
+            <PositionCard
+              key={pos.id || pos.symbol}
+              position={{ ...pos, mode }}
+              totalCount={positions.length}
+            />
           ))
         )}
       </ScrollView>
