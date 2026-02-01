@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 logger = logging.getLogger("uvicorn.error")
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -25,6 +25,7 @@ from config import (
     DEFAULT_TIMEFRAME,
     POLL_INTERVAL,
     POSITION_POLL_INTERVAL,
+    REVENUECAT_WEBHOOK_SECRET,
 )
 from binance_client import get_binance_client, create_user_client
 from indicators import add_all_indicators, get_latest_indicators
@@ -657,6 +658,94 @@ async def sync_subscription(data: SyncSubscriptionRequest, user: UserAccount = D
             "subscription_status": account.subscription_status,
             "is_premium": account.is_premium(),
         }
+    finally:
+        db.close()
+
+
+@app.post("/api/webhooks/revenuecat")
+async def revenuecat_webhook(request: Request, authorization: str = Header(None)):
+    """
+    Webhook endpoint for RevenueCat subscription events.
+    Configure this URL in RevenueCat dashboard: https://app.revenuecat.com/
+    Set the Authorization header to match REVENUECAT_WEBHOOK_SECRET
+    """
+    # Verify authorization
+    if REVENUECAT_WEBHOOK_SECRET:
+        expected = f"Bearer {REVENUECAT_WEBHOOK_SECRET}"
+        if authorization != expected:
+            logger.warning("[REVENUECAT] Invalid webhook authorization")
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event_type = payload.get("event", {}).get("type")
+    app_user_id = payload.get("event", {}).get("app_user_id")
+
+    if not app_user_id:
+        logger.warning("[REVENUECAT] Webhook missing app_user_id")
+        return {"status": "ok"}
+
+    logger.info(f"[REVENUECAT] Webhook received: type={event_type}, user={app_user_id}")
+
+    db = get_db()
+    try:
+        # app_user_id is the user ID we passed to RevenueCat (user.id as string)
+        try:
+            user_id = int(app_user_id)
+        except ValueError:
+            logger.warning(f"[REVENUECAT] Invalid app_user_id: {app_user_id}")
+            return {"status": "ok"}
+
+        account = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not account:
+            logger.warning(f"[REVENUECAT] User not found: {user_id}")
+            return {"status": "ok"}
+
+        # Events that grant premium access
+        premium_events = [
+            "INITIAL_PURCHASE",
+            "RENEWAL",
+            "PRODUCT_CHANGE",
+            "UNCANCELLATION",
+        ]
+
+        # Events that revoke premium access
+        revoke_events = [
+            "EXPIRATION",
+            "BILLING_ISSUE",
+            "SUBSCRIPTION_PAUSED",
+        ]
+
+        # Cancellation is just intent - user keeps access until expiration
+        # So we don't revoke immediately on CANCELLATION
+
+        if event_type in premium_events:
+            account.subscription_status = "active"
+            # Get expiration from the event
+            expiration = payload.get("event", {}).get("expiration_at_ms")
+            if expiration:
+                account.subscription_expires_at = datetime.fromtimestamp(
+                    expiration / 1000, tz=timezone.utc
+                )
+            logger.info(f"[REVENUECAT] User {user_id} subscription activated")
+
+        elif event_type in revoke_events:
+            account.subscription_status = "expired"
+            logger.info(f"[REVENUECAT] User {user_id} subscription expired/revoked")
+
+        elif event_type == "CANCELLATION":
+            # Keep status as active but log the cancellation
+            logger.info(f"[REVENUECAT] User {user_id} cancelled (still active until expiry)")
+
+        db.commit()
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"[REVENUECAT] Webhook error: {e}")
+        return {"status": "error"}
     finally:
         db.close()
 

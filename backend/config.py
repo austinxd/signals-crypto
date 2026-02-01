@@ -74,3 +74,7 @@ ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
 
 # JWT Secret
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production-super-secret-key")
+
+# RevenueCat Webhook Authorization
+# Set this to match the Authorization header configured in RevenueCat dashboard
+REVENUECAT_WEBHOOK_SECRET = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
