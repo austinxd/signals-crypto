@@ -25,8 +25,22 @@
           <li><a href="contact.html">Contact</a></li>
         </ul>
       </nav>
+      <button class="menu-toggle" onclick="toggleMobileNav()" aria-label="Menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
     </div>
   </header>
+
+  <!-- Mobile Navigation -->
+  <nav class="mobile-nav" id="mobileNav">
+    <button class="mobile-nav-close" onclick="toggleMobileNav()" aria-label="Close">&times;</button>
+    <a href="index.html">Home</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="terms.html">Terms</a>
+    <a href="contact.html">Contact</a>
+  </nav>
 
   <main>
 
@@ -76,6 +90,12 @@
       </p>
     </div>
   </footer>
+
+  <script>
+    function toggleMobileNav() {
+      document.getElementById('mobileNav').classList.toggle('active');
+    }
+  </script>
 
 </body>
 </html>
