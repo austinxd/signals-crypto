@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSubscriptionStatus } from '../services/api';
+import {
+  initPurchases,
+  checkSubscriptionStatus as checkStoreSubscription,
+  syncSubscriptionWithBackend,
+  addPurchaseListener,
+} from '../services/purchases';
 
 const SubscriptionContext = createContext();
 
@@ -14,8 +21,51 @@ export function SubscriptionProvider({ children }) {
     loading: true,
   });
 
+  // Initialize RevenueCat when component mounts
+  useEffect(() => {
+    const init = async () => {
+      try {
+        // Get user ID from stored token
+        const token = await AsyncStorage.getItem('access_token');
+        if (token) {
+          // Decode user ID from token (simple extraction)
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            if (payload.sub) {
+              await initPurchases(payload.sub);
+            }
+          } catch (e) {
+            console.log('Could not decode token for RevenueCat init');
+          }
+        }
+      } catch (err) {
+        console.log('Error initializing purchases:', err);
+      }
+    };
+
+    init();
+  }, []);
+
+  // Set up listener for subscription changes from app store
+  useEffect(() => {
+    const removeListener = addPurchaseListener(async ({ isPremium }) => {
+      // Sync with backend
+      const token = await AsyncStorage.getItem('access_token');
+      if (token) {
+        await syncSubscriptionWithBackend(token);
+      }
+      // Refresh subscription state
+      refresh();
+    });
+
+    return () => {
+      if (removeListener) removeListener();
+    };
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
+      // Get status from backend (source of truth)
       const data = await getSubscriptionStatus();
       setSubscription({
         status: data.status || 'free',

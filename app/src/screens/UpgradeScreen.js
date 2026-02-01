@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,21 @@ import {
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useSubscription } from '../context/SubscriptionContext';
+import {
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+} from '../services/purchases';
 
 const FeatureRow = ({ included, text }) => (
   <View style={styles.featureRow}>
     <Text style={[styles.featureIcon, { color: included ? '#00d4aa' : '#555' }]}>
-      {included ? '✓' : '✕'}
+      {included ? '\u2713' : '\u2717'}
     </Text>
     <Text style={[styles.featureText, !included && styles.featureTextDisabled]}>
       {text}
@@ -21,17 +29,83 @@ const FeatureRow = ({ included, text }) => (
 );
 
 const UpgradeScreen = ({ navigation }) => {
-  const { isPremium, status } = useSubscription();
+  const { isPremium, refresh } = useSubscription();
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
-  const handleUpgrade = () => {
-    // TODO: Integrate with payment provider (App Store / Google Play)
-    console.log('Upgrade pressed - payment integration pending');
+  useEffect(() => {
+    loadOfferings();
+  }, []);
+
+  const loadOfferings = async () => {
+    setLoading(true);
+    try {
+      const pkgs = await getOfferings();
+      setPackages(pkgs);
+    } catch (err) {
+      console.error('Error loading offerings:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRestore = () => {
-    // TODO: Restore purchases from App Store / Google Play
-    console.log('Restore pressed - payment integration pending');
+  const handlePurchase = async (pkg) => {
+    setPurchasing(true);
+    try {
+      const result = await purchasePackage(pkg);
+
+      if (result.success) {
+        Alert.alert(
+          'Compra exitosa',
+          'Ahora tienes acceso a todas las funciones Premium.',
+          [{ text: 'OK', onPress: () => {
+            refresh();
+            navigation.goBack();
+          }}]
+        );
+      } else if (result.cancelled) {
+        // User cancelled, do nothing
+      } else {
+        Alert.alert('Error', result.error || 'No se pudo completar la compra');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Ocurrio un error al procesar la compra');
+    } finally {
+      setPurchasing(false);
+    }
   };
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    try {
+      const result = await restorePurchases();
+
+      if (result.success && result.isPremium) {
+        Alert.alert(
+          'Compra restaurada',
+          'Tu suscripcion Premium ha sido restaurada.',
+          [{ text: 'OK', onPress: () => {
+            refresh();
+            navigation.goBack();
+          }}]
+        );
+      } else if (result.success) {
+        Alert.alert('Sin compras', 'No se encontraron compras anteriores para restaurar.');
+      } else {
+        Alert.alert('Error', result.error || 'No se pudieron restaurar las compras');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Ocurrio un error al restaurar las compras');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  // Get the monthly package (or first available)
+  const monthlyPackage = packages.find(p => p.identifier === '$rc_monthly') || packages[0];
+  const priceString = monthlyPackage?.product?.priceString || '$4.99';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -42,7 +116,7 @@ const UpgradeScreen = ({ navigation }) => {
             style={styles.closeButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={styles.closeButtonText}>{'\u2715'}</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Premium</Text>
           <Text style={styles.subtitle}>Desbloquea todo el potencial</Text>
@@ -87,27 +161,56 @@ const UpgradeScreen = ({ navigation }) => {
               <FeatureRow included={true} text="Cancela cuando quieras" />
             </View>
             <View style={styles.priceContainer}>
-              <Text style={[styles.price, styles.premiumText]}>$4.99</Text>
+              <Text style={[styles.price, styles.premiumText]}>{priceString}</Text>
               <Text style={styles.pricePeriod}>/ mes</Text>
             </View>
           </View>
         </View>
 
+        {/* Loading */}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#00d4aa" />
+            <Text style={styles.loadingText}>Cargando opciones...</Text>
+          </View>
+        )}
+
         {/* Upgrade Button */}
-        {!isPremium && (
-          <TouchableOpacity style={styles.upgradeButton} onPress={handleUpgrade}>
-            <Text style={styles.upgradeButtonText}>Desbloquear Premium</Text>
+        {!isPremium && !loading && (
+          <TouchableOpacity
+            style={[styles.upgradeButton, purchasing && styles.upgradeButtonDisabled]}
+            onPress={() => monthlyPackage && handlePurchase(monthlyPackage)}
+            disabled={purchasing || !monthlyPackage}
+          >
+            {purchasing ? (
+              <ActivityIndicator size="small" color="#0a0a14" />
+            ) : (
+              <Text style={styles.upgradeButtonText}>
+                {monthlyPackage ? `Desbloquear Premium - ${priceString}/mes` : 'No disponible'}
+              </Text>
+            )}
           </TouchableOpacity>
         )}
 
         {/* Restore Purchases */}
-        <TouchableOpacity style={styles.restoreButton} onPress={handleRestore}>
-          <Text style={styles.restoreButtonText}>Restaurar compra</Text>
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          disabled={restoring}
+        >
+          {restoring ? (
+            <ActivityIndicator size="small" color="#888" />
+          ) : (
+            <Text style={styles.restoreButtonText}>Restaurar compra</Text>
+          )}
         </TouchableOpacity>
 
         {/* Terms */}
         <Text style={styles.terms}>
-          La suscripcion se renueva automaticamente. Puedes cancelar en cualquier momento desde la configuracion de tu cuenta de App Store o Google Play.
+          La suscripcion se renueva automaticamente cada mes. Puedes cancelar en cualquier momento
+          desde la configuracion de tu cuenta de {Platform.OS === 'ios' ? 'App Store' : 'Google Play'}.
+          {'\n\n'}
+          Al suscribirte, aceptas nuestros Terminos de Servicio y Politica de Privacidad.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -243,12 +346,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  loadingText: {
+    color: '#888',
+    fontSize: 14,
+  },
   upgradeButton: {
     backgroundColor: '#00d4aa',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 16,
+  },
+  upgradeButtonDisabled: {
+    backgroundColor: '#00d4aa80',
   },
   upgradeButtonText: {
     color: '#0a0a14',

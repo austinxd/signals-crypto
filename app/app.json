@@ -41,6 +41,12 @@
         {
           "color": "#00d4aa"
         }
+      ],
+      [
+        "react-native-purchases",
+        {
+          "iosEntitlement": "premium"
+        }
       ]
     ],
     "extra": {

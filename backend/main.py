@@ -623,6 +623,44 @@ async def get_subscription(user: UserAccount = Depends(get_current_user)):
     }
 
 
+class SyncSubscriptionRequest(BaseModel):
+    is_premium: bool
+    expires_at: Optional[str] = None
+    store: Optional[str] = None  # ios | android
+
+
+@app.post("/api/account/sync-subscription")
+async def sync_subscription(data: SyncSubscriptionRequest, user: UserAccount = Depends(get_current_user)):
+    """Sync subscription status from app store purchase."""
+    db = get_db()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+        if not account:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        if data.is_premium:
+            account.subscription_status = "active"
+            if data.expires_at:
+                try:
+                    account.subscription_expires_at = datetime.fromisoformat(data.expires_at.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+        else:
+            account.subscription_status = "free"
+            account.subscription_expires_at = None
+
+        db.commit()
+        logger.info(f"[SUBSCRIPTION] Synced user {user.id}: is_premium={data.is_premium}, store={data.store}")
+
+        return {
+            "status": "ok",
+            "subscription_status": account.subscription_status,
+            "is_premium": account.is_premium(),
+        }
+    finally:
+        db.close()
+
+
 @app.post("/api/account/verify-binance")
 async def verify_binance(user: UserAccount = Depends(get_current_user)):
     """Test Binance API connection."""
