@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Crypto Signals</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a14;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .login-box {
+            background: #1a1a2e;
+            padding: 40px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-box h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #00d4aa;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #888;
+            font-size: 14px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #00d4aa;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #00d4aa;
+            border: none;
+            border-radius: 8px;
+            color: #0a0a14;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #00b894;
+        }
+        .btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .error-msg {
+            color: #ff4757;
+            text-align: center;
+            margin-top: 16px;
+            font-size: 14px;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+        .dashboard.active {
+            display: block;
+        }
+        .header {
+            background: #1a1a2e;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .header h1 {
+            color: #00d4aa;
+            font-size: 20px;
+        }
+        .header .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header .user-email {
+            color: #888;
+            font-size: 14px;
+        }
+        .btn-logout {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid #ff4757;
+            color: #ff4757;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-logout:hover {
+            background: #ff475720;
+        }
+
+        .nav {
+            background: #1a1a2e;
+            padding: 0 24px;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .nav-item {
+            padding: 16px 20px;
+            color: #888;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .nav-item:hover {
+            color: #fff;
+        }
+        .nav-item.active {
+            color: #00d4aa;
+            border-bottom-color: #00d4aa;
+        }
+
+        .content {
+            padding: 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .stat-card .label {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .stat-card .value.green { color: #00d4aa; }
+        .stat-card .value.yellow { color: #ffd93d; }
+        .stat-card .value.red { color: #ff4757; }
+
+        /* Section */
+        .section {
+            display: none;
+        }
+        .section.active {
+            display: block;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .search-box {
+            padding: 10px 16px;
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            color: #fff;
+            width: 300px;
+        }
+        .search-box:focus {
+            outline: none;
+            border-color: #00d4aa;
+        }
+
+        /* Table */
+        .table-container {
+            background: #1a1a2e;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        th {
+            background: #0f0f1a;
+            color: #888;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        td {
+            font-size: 14px;
+        }
+        tr:hover {
+            background: #1f1f3a;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge.premium {
+            background: #00d4aa20;
+            color: #00d4aa;
+        }
+        .badge.free {
+            background: #88888820;
+            color: #888;
+        }
+        .badge.admin {
+            background: #ffd93d20;
+            color: #ffd93d;
+        }
+        .badge.long {
+            background: #00d4aa20;
+            color: #00d4aa;
+        }
+        .badge.short {
+            background: #ff475720;
+            color: #ff4757;
+        }
+        .pnl-positive { color: #00d4aa; }
+        .pnl-negative { color: #ff4757; }
+
+        .btn-action {
+            padding: 6px 12px;
+            background: #2a2a4a;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            margin-right: 4px;
+        }
+        .btn-action:hover {
+            background: #3a3a5a;
+        }
+        .btn-action.primary {
+            background: #00d4aa;
+            color: #0a0a14;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: #1a1a2e;
+            padding: 24px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .modal-close:hover {
+            color: #fff;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .detail-label {
+            color: #888;
+        }
+        .detail-value {
+            font-weight: 500;
+        }
+        .detail-section {
+            margin-top: 20px;
+        }
+        .detail-section-title {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 20px;
+        }
+        .pagination button {
+            padding: 8px 16px;
+            background: #2a2a4a;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+        }
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .pagination .page-info {
+            color: #888;
+            font-size: 14px;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        /* Summary cards for subscriptions */
+        .pair-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .pair-chip {
+            background: #2a2a4a;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+        }
+        .pair-chip .count {
+            color: #00d4aa;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login -->
+    <div class="login-container" id="loginContainer">
+        <div class="login-box">
+            <h1>Admin Panel</h1>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" required placeholder="admin@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" required placeholder="********">
+                </div>
+                <button type="submit" class="btn" id="loginBtn">Iniciar Sesion</button>
+                <div class="error-msg" id="loginError"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dashboard" id="dashboard">
+        <div class="header">
+            <h1>Admin Panel</h1>
+            <div class="user-info">
+                <span class="user-email" id="userEmail"></span>
+                <button class="btn-logout" onclick="logout()">Cerrar Sesion</button>
+            </div>
+        </div>
+
+        <div class="nav">
+            <div class="nav-item active" data-section="overview">Resumen</div>
+            <div class="nav-item" data-section="users">Usuarios</div>
+            <div class="nav-item" data-section="subscriptions">Mercados</div>
+            <div class="nav-item" data-section="positions">Posiciones</div>
+        </div>
+
+        <div class="content">
+            <!-- Overview Section -->
+            <div class="section active" id="section-overview">
+                <div class="stats-grid" id="statsGrid">
+                    <div class="stat-card">
+                        <div class="label">Total Usuarios</div>
+                        <div class="value" id="statTotalUsers">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Usuarios Premium</div>
+                        <div class="value green" id="statPremiumUsers">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Usuarios Free</div>
+                        <div class="value" id="statFreeUsers">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Con Binance</div>
+                        <div class="value yellow" id="statBinanceUsers">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Posiciones Abiertas</div>
+                        <div class="value" id="statOpenPositions">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Suscripciones Activas</div>
+                        <div class="value" id="statSubscriptions">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Section -->
+            <div class="section" id="section-users">
+                <div class="section-header">
+                    <h2 class="section-title">Usuarios</h2>
+                    <input type="text" class="search-box" placeholder="Buscar por email..." id="userSearch">
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Email</th>
+                                <th>Plan</th>
+                                <th>Binance</th>
+                                <th>AI Uso</th>
+                                <th>Creado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="usersPagination"></div>
+            </div>
+
+            <!-- Subscriptions Section -->
+            <div class="section" id="section-subscriptions">
+                <div class="section-header">
+                    <h2 class="section-title">Pares de Mercado</h2>
+                </div>
+                <div class="pair-summary" id="pairSummary"></div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Par</th>
+                                <th>Usuario</th>
+                                <th>Creado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="subscriptionsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="subscriptionsPagination"></div>
+            </div>
+
+            <!-- Positions Section -->
+            <div class="section" id="section-positions">
+                <div class="section-header">
+                    <h2 class="section-title">Posiciones Abiertas</h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Par</th>
+                                <th>Lado</th>
+                                <th>Entrada</th>
+                                <th>Actual</th>
+                                <th>PnL</th>
+                                <th>Leverage</th>
+                                <th>Abierta</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="positionsPagination"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div class="modal-overlay" id="userModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Detalles del Usuario</h3>
+                <button class="modal-close" onclick="closeUserModal()">&times;</button>
+            </div>
+            <div id="userModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let token = localStorage.getItem('admin_token');
+        let currentUser = null;
+
+        // Pagination state
+        let usersPage = 0;
+        let subscriptionsPage = 0;
+        let positionsPage = 0;
+        const PAGE_SIZE = 20;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            if (token) {
+                checkAuth();
+            }
+
+            // Login form
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+
+            // Navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const section = item.dataset.section;
+                    switchSection(section);
+                });
+            });
+
+            // User search
+            let searchTimeout;
+            document.getElementById('userSearch').addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    usersPage = 0;
+                    loadUsers(e.target.value);
+                }, 300);
+            });
+        });
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+            const btn = document.getElementById('loginBtn');
+
+            btn.disabled = true;
+            errorEl.textContent = '';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Login failed');
+                }
+
+                token = data.access_token;
+                localStorage.setItem('admin_token', token);
+                checkAuth();
+            } catch (err) {
+                errorEl.textContent = err.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function checkAuth() {
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/stats`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.status === 403) {
+                    throw new Error('No tienes permisos de administrador');
+                }
+                if (!res.ok) {
+                    throw new Error('Auth failed');
+                }
+
+                // Get user profile
+                const profileRes = await fetch(`${API_BASE}/api/account/profile`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (profileRes.ok) {
+                    currentUser = await profileRes.json();
+                    document.getElementById('userEmail').textContent = currentUser.email;
+                }
+
+                showDashboard();
+                loadStats();
+            } catch (err) {
+                localStorage.removeItem('admin_token');
+                token = null;
+                document.getElementById('loginError').textContent = err.message;
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('dashboard').classList.add('active');
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            token = null;
+            location.reload();
+        }
+
+        function switchSection(section) {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelector(`.nav-item[data-section="${section}"]`).classList.add('active');
+
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById(`section-${section}`).classList.add('active');
+
+            // Load data for section
+            if (section === 'overview') loadStats();
+            if (section === 'users') loadUsers();
+            if (section === 'subscriptions') loadSubscriptions();
+            if (section === 'positions') loadPositions();
+        }
+
+        async function apiRequest(url, options = {}) {
+            const res = await fetch(`${API_BASE}${url}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || 'Request failed');
+            }
+            return res.json();
+        }
+
+        async function loadStats() {
+            try {
+                const data = await apiRequest('/api/admin/stats');
+                document.getElementById('statTotalUsers').textContent = data.users.total;
+                document.getElementById('statPremiumUsers').textContent = data.users.premium;
+                document.getElementById('statFreeUsers').textContent = data.users.free;
+                document.getElementById('statBinanceUsers').textContent = data.users.with_binance;
+                document.getElementById('statOpenPositions').textContent = data.positions.total_open;
+                document.getElementById('statSubscriptions').textContent = data.subscriptions.total;
+            } catch (err) {
+                console.error('Error loading stats:', err);
+            }
+        }
+
+        async function loadUsers(search = '') {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({
+                    limit: PAGE_SIZE,
+                    offset: usersPage * PAGE_SIZE
+                });
+                if (search) params.append('search', search);
+
+                const data = await apiRequest(`/api/admin/users?${params}`);
+
+                tbody.innerHTML = data.users.map(u => `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td>
+                            ${u.email}
+                            ${u.is_admin ? '<span class="badge admin">Admin</span>' : ''}
+                        </td>
+                        <td>
+                            <span class="badge ${u.is_premium ? 'premium' : 'free'}">
+                                ${u.is_premium ? 'Premium' : 'Free'}
+                            </span>
+                        </td>
+                        <td>${u.has_binance_keys ? 'Si' : 'No'}</td>
+                        <td>${u.ai_usage_count} / ${u.ai_limit}</td>
+                        <td>${formatDate(u.created_at)}</td>
+                        <td>
+                            <button class="btn-action" onclick="viewUser(${u.id})">Ver</button>
+                            <button class="btn-action primary" onclick="togglePremium(${u.id}, ${!u.is_premium})">
+                                ${u.is_premium ? 'Quitar Premium' : 'Dar Premium'}
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                renderPagination('users', data.total, usersPage, (page) => {
+                    usersPage = page;
+                    loadUsers(search);
+                });
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="7" class="loading">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function loadSubscriptions() {
+            const tbody = document.getElementById('subscriptionsTableBody');
+            tbody.innerHTML = '<tr><td colspan="3" class="loading">Cargando...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({
+                    limit: PAGE_SIZE,
+                    offset: subscriptionsPage * PAGE_SIZE
+                });
+
+                const data = await apiRequest(`/api/admin/subscriptions?${params}`);
+
+                // Render pair summary
+                document.getElementById('pairSummary').innerHTML = data.pair_summary.map(p => `
+                    <div class="pair-chip">
+                        ${p.pair.replace('/USDT', '')}
+                        <span class="count">${p.subscriber_count}</span>
+                    </div>
+                `).join('');
+
+                tbody.innerHTML = data.subscriptions.map(s => `
+                    <tr>
+                        <td>${s.pair}</td>
+                        <td>${s.user_email}</td>
+                        <td>${formatDate(s.created_at)}</td>
+                    </tr>
+                `).join('');
+
+                renderPagination('subscriptions', data.total, subscriptionsPage, (page) => {
+                    subscriptionsPage = page;
+                    loadSubscriptions();
+                });
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="3" class="loading">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function loadPositions() {
+            const tbody = document.getElementById('positionsTableBody');
+            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando...</td></tr>';
+
+            try {
+                const params = new URLSearchParams({
+                    limit: PAGE_SIZE,
+                    offset: positionsPage * PAGE_SIZE
+                });
+
+                const data = await apiRequest(`/api/admin/positions?${params}`);
+
+                if (data.positions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="loading">No hay posiciones abiertas</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.positions.map(p => `
+                    <tr>
+                        <td>${p.user_email}</td>
+                        <td>${p.symbol}</td>
+                        <td><span class="badge ${p.side.toLowerCase()}">${p.side}</span></td>
+                        <td>${formatPrice(p.entry_price)}</td>
+                        <td>${formatPrice(p.current_price)}</td>
+                        <td class="${p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                            ${p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl?.toFixed(2) || '0.00'}
+                        </td>
+                        <td>${p.leverage}x</td>
+                        <td>${formatDate(p.opened_at)}</td>
+                    </tr>
+                `).join('');
+
+                renderPagination('positions', data.total, positionsPage, (page) => {
+                    positionsPage = page;
+                    loadPositions();
+                });
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="8" class="loading">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function viewUser(userId) {
+            try {
+                const user = await apiRequest(`/api/admin/users/${userId}`);
+                const modal = document.getElementById('userModal');
+                const content = document.getElementById('userModalContent');
+
+                content.innerHTML = `
+                    <div class="detail-row">
+                        <span class="detail-label">ID</span>
+                        <span class="detail-value">${user.id}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email</span>
+                        <span class="detail-value">${user.email}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Plan</span>
+                        <span class="detail-value">
+                            <span class="badge ${user.is_premium ? 'premium' : 'free'}">
+                                ${user.is_premium ? 'Premium' : 'Free'}
+                            </span>
+                            ${user.subscription_expires_at ? `(expira: ${formatDate(user.subscription_expires_at)})` : ''}
+                        </span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Binance Keys</span>
+                        <span class="detail-value">${user.has_binance_keys ? 'Configuradas' : 'No configuradas'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">AI Usage</span>
+                        <span class="detail-value">${user.ai_usage_count} / ${user.ai_limit}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Admin</span>
+                        <span class="detail-value">${user.is_admin ? 'Si' : 'No'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Creado</span>
+                        <span class="detail-value">${formatDate(user.created_at)}</span>
+                    </div>
+
+                    ${user.subscriptions.length > 0 ? `
+                        <div class="detail-section">
+                            <div class="detail-section-title">Pares Suscritos (${user.subscriptions.length})</div>
+                            <div class="pair-summary">
+                                ${user.subscriptions.map(s => `
+                                    <div class="pair-chip">${s.pair.replace('/USDT', '')}</div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${user.positions.length > 0 ? `
+                        <div class="detail-section">
+                            <div class="detail-section-title">Posiciones Abiertas (${user.positions.length})</div>
+                            ${user.positions.map(p => `
+                                <div class="detail-row">
+                                    <span class="detail-label">
+                                        ${p.symbol}
+                                        <span class="badge ${p.side.toLowerCase()}">${p.side}</span>
+                                    </span>
+                                    <span class="detail-value ${p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                                        ${p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl?.toFixed(2)} USDT
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+
+                    <div style="margin-top: 24px; display: flex; gap: 8px;">
+                        <button class="btn-action primary" onclick="togglePremium(${user.id}, ${!user.is_premium}); closeUserModal();">
+                            ${user.is_premium ? 'Quitar Premium' : 'Dar Premium'}
+                        </button>
+                        <button class="btn-action" onclick="toggleAdmin(${user.id}, ${!user.is_admin}); closeUserModal();">
+                            ${user.is_admin ? 'Quitar Admin' : 'Hacer Admin'}
+                        </button>
+                        <button class="btn-action" onclick="resetAIUsage(${user.id}); closeUserModal();">
+                            Reset AI
+                        </button>
+                    </div>
+                `;
+
+                modal.classList.add('active');
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('active');
+        }
+
+        async function togglePremium(userId, makePremium) {
+            try {
+                const data = {
+                    subscription_status: makePremium ? 'active' : 'free',
+                    subscription_expires_at: makePremium ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : 'null'
+                };
+                await apiRequest(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                });
+                loadUsers(document.getElementById('userSearch').value);
+                loadStats();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function toggleAdmin(userId, makeAdmin) {
+            try {
+                await apiRequest(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ is_admin: makeAdmin })
+                });
+                loadUsers(document.getElementById('userSearch').value);
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function resetAIUsage(userId) {
+            try {
+                await apiRequest(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ ai_usage_count: 0 })
+                });
+                loadUsers(document.getElementById('userSearch').value);
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function renderPagination(section, total, currentPage, onChange) {
+            const totalPages = Math.ceil(total / PAGE_SIZE);
+            const container = document.getElementById(`${section}Pagination`);
+
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = `
+                <button ${currentPage === 0 ? 'disabled' : ''} onclick="(${onChange})(${currentPage - 1})">Anterior</button>
+                <span class="page-info">Pagina ${currentPage + 1} de ${totalPages}</span>
+                <button ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="(${onChange})(${currentPage + 1})">Siguiente</button>
+            `;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
+        }
+
+        function formatPrice(price) {
+            if (price == null) return '-';
+            if (price < 0.01) return `$${price.toFixed(6)}`;
+            if (price < 1) return `$${price.toFixed(4)}`;
+            if (price < 10) return `$${price.toFixed(3)}`;
+            return `$${price.toFixed(2)}`;
+        }
+
+        // Close modal on outside click
+        document.getElementById('userModal').addEventListener('click', (e) => {
+            if (e.target.id === 'userModal') closeUserModal();
+        });
+    </script>
+</body>
+</html>

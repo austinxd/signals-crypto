@@ -13,7 +13,10 @@ logger = logging.getLogger("uvicorn.error")
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import os
 
 from config import (
     DEFAULT_PAIRS,
@@ -3277,6 +3280,292 @@ async def clear_notifications(data: ClearRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Admin Panel Endpoints
+# ============================================================
+
+def get_admin_user(user: UserAccount = Depends(get_current_user)) -> UserAccount:
+    """Dependency that requires admin privileges."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(admin: UserAccount = Depends(get_admin_user)):
+    """Get admin dashboard statistics."""
+    db = get_db()
+    try:
+        total_users = db.query(UserAccount).count()
+        premium_users = db.query(UserAccount).filter(UserAccount.subscription_status == "active").count()
+        free_users = total_users - premium_users
+        users_with_binance = db.query(UserAccount).filter(
+            UserAccount.binance_api_key.isnot(None),
+            UserAccount.binance_api_key != ""
+        ).count()
+        total_positions = db.query(ActivePosition).filter(ActivePosition.is_open == True).count()
+        total_subscriptions = db.query(Subscription).filter(Subscription.enabled == True).count()
+
+        return {
+            "users": {
+                "total": total_users,
+                "premium": premium_users,
+                "free": free_users,
+                "with_binance": users_with_binance,
+            },
+            "positions": {
+                "total_open": total_positions,
+            },
+            "subscriptions": {
+                "total": total_subscriptions,
+            },
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(
+    admin: UserAccount = Depends(get_admin_user),
+    limit: int = 50,
+    offset: int = 0,
+    search: str = None
+):
+    """List all users with pagination and search."""
+    db = get_db()
+    try:
+        query = db.query(UserAccount)
+        if search:
+            query = query.filter(UserAccount.email.ilike(f"%{search}%"))
+        total = query.count()
+        users = query.order_by(UserAccount.created_at.desc()).offset(offset).limit(limit).all()
+
+        return {
+            "users": [{
+                "id": u.id,
+                "email": u.email,
+                "subscription_status": u.subscription_status or "free",
+                "subscription_expires_at": u.subscription_expires_at.isoformat() if u.subscription_expires_at else None,
+                "is_premium": u.is_premium(),
+                "has_binance_keys": u.has_binance_keys(),
+                "ai_usage_count": u.ai_usage_count or 0,
+                "ai_limit": u.get_ai_limit(),
+                "is_admin": u.is_admin or False,
+                "enabled": u.enabled,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            } for u in users],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/users/{user_id}")
+async def admin_get_user(user_id: int, admin: UserAccount = Depends(get_admin_user)):
+    """Get detailed user information."""
+    db = get_db()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get user's subscriptions
+        subs = db.query(Subscription).filter(
+            Subscription.account_id == user_id,
+            Subscription.enabled == True
+        ).all()
+
+        # Get user's positions
+        positions = db.query(ActivePosition).filter(
+            ActivePosition.user_id == user_id,
+            ActivePosition.is_open == True
+        ).all()
+
+        return {
+            "id": user.id,
+            "email": user.email,
+            "subscription_status": user.subscription_status or "free",
+            "subscription_expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
+            "is_premium": user.is_premium(),
+            "has_binance_keys": user.has_binance_keys(),
+            "ai_usage_count": user.ai_usage_count or 0,
+            "ai_limit": user.get_ai_limit(),
+            "is_admin": user.is_admin or False,
+            "enabled": user.enabled,
+            "push_enabled": user.push_enabled,
+            "risk_percent": user.risk_percent,
+            "max_leverage": user.max_leverage,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "subscriptions": [{
+                "id": s.id,
+                "pair": s.pair,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            } for s in subs],
+            "positions": [{
+                "id": p.id,
+                "symbol": p.symbol,
+                "side": p.side,
+                "entry_price": p.entry_price,
+                "current_price": p.current_price,
+                "amount": p.amount,
+                "leverage": p.leverage,
+                "unrealized_pnl": p.unrealized_pnl,
+                "liquidation_price": p.liquidation_price,
+                "opened_at": p.opened_at.isoformat() if p.opened_at else None,
+            } for p in positions],
+        }
+    finally:
+        db.close()
+
+
+class AdminUserUpdate(BaseModel):
+    subscription_status: Optional[str] = None
+    subscription_expires_at: Optional[str] = None
+    is_admin: Optional[bool] = None
+    enabled: Optional[bool] = None
+    ai_usage_count: Optional[int] = None
+
+
+@app.put("/api/admin/users/{user_id}")
+async def admin_update_user(user_id: int, data: AdminUserUpdate, admin: UserAccount = Depends(get_admin_user)):
+    """Update user settings (subscription, admin status, etc)."""
+    db = get_db()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if data.subscription_status is not None:
+            user.subscription_status = data.subscription_status
+        if data.subscription_expires_at is not None:
+            if data.subscription_expires_at == "" or data.subscription_expires_at == "null":
+                user.subscription_expires_at = None
+            else:
+                user.subscription_expires_at = datetime.fromisoformat(data.subscription_expires_at.replace("Z", "+00:00"))
+        if data.is_admin is not None:
+            user.is_admin = data.is_admin
+        if data.enabled is not None:
+            user.enabled = data.enabled
+        if data.ai_usage_count is not None:
+            user.ai_usage_count = data.ai_usage_count
+
+        db.commit()
+        return {"status": "ok", "message": "User updated"}
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/positions")
+async def admin_list_positions(
+    admin: UserAccount = Depends(get_admin_user),
+    limit: int = 50,
+    offset: int = 0,
+    user_id: int = None
+):
+    """List all open positions."""
+    db = get_db()
+    try:
+        query = db.query(ActivePosition).filter(ActivePosition.is_open == True)
+        if user_id:
+            query = query.filter(ActivePosition.user_id == user_id)
+
+        total = query.count()
+        positions = query.order_by(ActivePosition.opened_at.desc()).offset(offset).limit(limit).all()
+
+        # Get user emails for display
+        user_ids = list(set(p.user_id for p in positions))
+        users = {u.id: u.email for u in db.query(UserAccount).filter(UserAccount.id.in_(user_ids)).all()}
+
+        return {
+            "positions": [{
+                "id": p.id,
+                "user_id": p.user_id,
+                "user_email": users.get(p.user_id, "Unknown"),
+                "symbol": p.symbol,
+                "side": p.side,
+                "entry_price": p.entry_price,
+                "current_price": p.current_price,
+                "amount": p.amount,
+                "leverage": p.leverage,
+                "unrealized_pnl": p.unrealized_pnl,
+                "liquidation_price": p.liquidation_price,
+                "opened_at": p.opened_at.isoformat() if p.opened_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            } for p in positions],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/admin/subscriptions")
+async def admin_list_subscriptions(
+    admin: UserAccount = Depends(get_admin_user),
+    limit: int = 100,
+    offset: int = 0
+):
+    """List all market subscriptions (pairs)."""
+    db = get_db()
+    try:
+        # Get subscription counts by pair
+        from sqlalchemy import func
+        pair_counts = db.query(
+            Subscription.pair,
+            func.count(Subscription.id).label('count')
+        ).filter(Subscription.enabled == True).group_by(Subscription.pair).all()
+
+        # Get all subscriptions with user info
+        query = db.query(Subscription).filter(Subscription.enabled == True)
+        total = query.count()
+        subs = query.order_by(Subscription.created_at.desc()).offset(offset).limit(limit).all()
+
+        # Get user emails
+        user_ids = list(set(s.account_id for s in subs))
+        users = {u.id: u.email for u in db.query(UserAccount).filter(UserAccount.id.in_(user_ids)).all()}
+
+        return {
+            "pair_summary": [{
+                "pair": pc.pair,
+                "subscriber_count": pc.count,
+            } for pc in sorted(pair_counts, key=lambda x: -x.count)],
+            "subscriptions": [{
+                "id": s.id,
+                "user_id": s.account_id,
+                "user_email": users.get(s.account_id, "Unknown"),
+                "pair": s.pair,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            } for s in subs],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    finally:
+        db.close()
+
+
+# Serve admin panel static files
+ADMIN_DIR = os.path.join(os.path.dirname(__file__), "admin")
+
+
+@app.get("/admin")
+async def admin_panel():
+    """Serve admin panel HTML."""
+    index_path = os.path.join(ADMIN_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Admin panel not found")
+
+
+# Mount static files for admin assets (CSS, JS)
+if os.path.exists(ADMIN_DIR):
+    app.mount("/admin/static", StaticFiles(directory=ADMIN_DIR), name="admin_static")
 
 
 if __name__ == "__main__":

@@ -194,6 +194,9 @@ class UserAccount(Base):
     ai_usage_count = Column(Integer, default=0)
     ai_usage_reset_at = Column(DateTime, nullable=True)
 
+    # Admin flag
+    is_admin = Column(Boolean, default=False)
+
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -416,6 +419,7 @@ def _run_migrations():
         ("user_accounts", "subscription_expires_at", "ALTER TABLE user_accounts ADD COLUMN subscription_expires_at DATETIME NULL"),
         ("user_accounts", "ai_usage_count", "ALTER TABLE user_accounts ADD COLUMN ai_usage_count INT DEFAULT 0"),
         ("user_accounts", "ai_usage_reset_at", "ALTER TABLE user_accounts ADD COLUMN ai_usage_reset_at DATETIME NULL"),
+        ("user_accounts", "is_admin", "ALTER TABLE user_accounts ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"),
     ]
     with engine.connect() as conn:
         for table, column, sql in migrations:
