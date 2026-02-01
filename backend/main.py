@@ -2354,7 +2354,7 @@ async def get_notifications(
             "notifications": [
                 {
                     "id": n.id,
-                    "type": n.notification_type.value if n.notification_type else None,
+                    "type": n.notification_type if n.notification_type else None,
                     "title": n.title,
                     "message": n.message,
                     "symbol": n.symbol,
