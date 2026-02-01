@@ -10,7 +10,7 @@ const REFRESH_TOKEN_KEY = '@refresh_token';
 
 // Default API URL (change this to your server's URL)
 // Use your computer's local IP when testing on physical device
-const DEFAULT_API_URL = 'http://149.56.23.98:8050';
+const DEFAULT_API_URL = 'http://api.criterio.trade';
 
 /**
  * Get the API URL
