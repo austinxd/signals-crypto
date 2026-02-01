@@ -46,7 +46,7 @@ const AuthScreen = ({ onAuthSuccess }) => {
       <View style={styles.inner}>
         <View style={styles.logoContainer}>
           <Text style={styles.logoIcon}>📈</Text>
-          <Text style={styles.logoTitle}>Señales Crypto</Text>
+          <Text style={styles.logoTitle}>Criterio Trading</Text>
           <Text style={styles.logoSubtitle}>Binance Futures USDT-M</Text>
         </View>
 

@@ -93,7 +93,7 @@ async function createSplash() {
       <circle cx="${width/2 + 100}" cy="${height * 0.4 - 60}" r="35" fill="#00d4aa" opacity="0.3"/>
 
       <!-- App name -->
-      <text x="${width/2}" y="${height * 0.55}" font-family="Arial, sans-serif" font-size="72" font-weight="bold" fill="#ffffff" text-anchor="middle">Señales Crypto</text>
+      <text x="${width/2}" y="${height * 0.55}" font-family="Arial, sans-serif" font-size="72" font-weight="bold" fill="#ffffff" text-anchor="middle">Criterio Trading</text>
       <text x="${width/2}" y="${height * 0.58}" font-family="Arial, sans-serif" font-size="32" fill="#00d4aa" text-anchor="middle">by austin</text>
     </svg>
   `;
