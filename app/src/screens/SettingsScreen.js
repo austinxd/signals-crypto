@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Switch,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   registerPushToken,
   sendTestNotification,
@@ -26,8 +26,12 @@ import {
   getStoredPushToken,
   clearNotificationHistory,
 } from '../services/notifications';
+import { useSubscription } from '../context/SubscriptionContext';
 
 const SettingsScreen = ({ onLogout }) => {
+  const navigation = useNavigation();
+  const { isPremium, status, aiUsage, aiLimit, aiRemaining } = useSubscription();
+
   const [pushToken, setPushToken] = useState(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -200,6 +204,31 @@ const SettingsScreen = ({ onLogout }) => {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Plan */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Plan</Text>
+        <View style={styles.planRow}>
+          <Text style={styles.planLabel}>Plan actual:</Text>
+          <Text style={[styles.planValue, isPremium && styles.planValuePremium]}>
+            {isPremium ? 'Premium mensual' : 'Free'}
+          </Text>
+        </View>
+        <View style={styles.planRow}>
+          <Text style={styles.planLabel}>Consultas IA:</Text>
+          <Text style={styles.planValue}>
+            {aiUsage} / {aiLimit} ({aiRemaining} restantes)
+          </Text>
+        </View>
+        {!isPremium && (
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => navigation.navigate('Upgrade')}
+          >
+            <Text style={styles.upgradeButtonText}>Desbloquear Premium</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Assistance Mode */}
       <View style={styles.section}>
@@ -561,6 +590,40 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginBottom: 4,
+  },
+
+  // Plan section
+  planRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a4a',
+  },
+  planLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  planValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  planValuePremium: {
+    color: '#00d4aa',
+  },
+  upgradeButton: {
+    backgroundColor: '#00d4aa',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  upgradeButtonText: {
+    color: '#0a0a14',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 
   // Disclaimer box

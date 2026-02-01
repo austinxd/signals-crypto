@@ -598,6 +598,25 @@ async def get_profile(user: UserAccount = Depends(get_current_user)):
         "push_token": user.push_token,
         "push_enabled": user.push_enabled,
         "trading_mode": user.trading_mode.value if user.trading_mode else "balanced",
+        # Subscription fields
+        "subscription_status": user.subscription_status or "free",
+        "is_premium": user.is_premium(),
+    }
+
+
+@app.get("/api/account/subscription")
+async def get_subscription(user: UserAccount = Depends(get_current_user)):
+    """Get user's subscription status and limits."""
+    # Ensure AI usage is reset if needed
+    user._reset_ai_usage_if_needed()
+
+    return {
+        "status": user.subscription_status or "free",  # free | active | expired
+        "is_premium": user.is_premium(),
+        "expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
+        "ai_usage": user.ai_usage_count or 0,
+        "ai_limit": user.get_ai_limit(),
+        "ai_remaining": max(0, user.get_ai_limit() - (user.ai_usage_count or 0)),
     }
 
 
@@ -2207,6 +2226,10 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
     Get AI-generated analysis for a specific position.
     Returns: lectura, fragilidad, si_favorece, si_contra.
     """
+    # Check AI usage limit
+    if not user.can_use_ai():
+        raise HTTPException(status_code=429, detail="AI limit reached")
+
     db = get_db()
     try:
         # Find position
@@ -2289,6 +2312,13 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
 
         # Get AI analysis
         result = get_position_ai_analysis(user.id, position_data, market_state)
+
+        # Increment AI usage only if not cached
+        if not result.get("cached"):
+            account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+            if account:
+                account.increment_ai_usage()
+                db.commit()
 
         return {
             "symbol": pos.symbol,
@@ -2604,7 +2634,7 @@ async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = F
 
 
 @app.get("/api/ai-explanation/{pair}")
-async def get_ai_market_explanation(pair: str):
+async def get_ai_market_explanation(pair: str, user: UserAccount = Depends(get_optional_user)):
     """
     Get AI-generated explanation of current market context.
 
@@ -2614,6 +2644,10 @@ async def get_ai_market_explanation(pair: str):
     Responses are cached based on market state (HTF bias, scenario, structure, volatility).
     Cache TTL: 2 hours. New explanations only generated when state changes.
     """
+    # Check AI usage limit if user is authenticated
+    if user and not user.can_use_ai():
+        raise HTTPException(status_code=429, detail="AI limit reached")
+
     pair_formatted = pair.replace("-", "/").upper()
     if not pair_formatted.endswith("/USDT"):
         pair_formatted = f"{pair_formatted}/USDT"
@@ -2724,6 +2758,17 @@ async def get_ai_market_explanation(pair: str):
 
         # Get AI explanation focused on the specific reason
         result = get_ai_explanation(ai_state, reason)
+
+        # Increment AI usage only if not cached and user is authenticated
+        if user and not result.get("cached"):
+            db = get_db()
+            try:
+                account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+                if account:
+                    account.increment_ai_usage()
+                    db.commit()
+            finally:
+                db.close()
 
         return {
             "pair": pair_formatted,

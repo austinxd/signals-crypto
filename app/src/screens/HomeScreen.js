@@ -11,6 +11,7 @@ import {
   Animated,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
+import { useNavigation } from '@react-navigation/native';
 import {
   getUnifiedMarketData,
   getSubscriptions,
@@ -24,6 +25,8 @@ import PairCard from '../components/PairCard';
 import PairDetailModal from '../components/PairDetailModal';
 import AddSubscriptionModal from '../components/AddSubscriptionModal';
 import NotificationsModal from '../components/NotificationsModal';
+import LockedPairCard from '../components/LockedPairCard';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // Alert type styles for AlertCard
 const ALERT_STYLES = {
@@ -190,6 +193,9 @@ const formatPrice = (p) => {
 };
 
 const HomeScreen = () => {
+  const navigation = useNavigation();
+  const { isPremium } = useSubscription();
+
   const [activeTab, setActiveTab] = useState('market');
   const [marketData, setMarketData] = useState({});
   const [notifications, setNotifications] = useState([]);
@@ -392,7 +398,20 @@ const HomeScreen = () => {
 
       return (
         <>
-          {uniquePairs.map((pair) => {
+          {uniquePairs.map((pair, index) => {
+            // Free users: only first pair is visible, others are locked
+            const isLocked = !isPremium && index > 0;
+
+            if (isLocked) {
+              return (
+                <LockedPairCard
+                  key={pair}
+                  pair={pair}
+                  onPress={() => navigation.navigate('Upgrade')}
+                />
+              );
+            }
+
             // Find the first subscription for this pair (for trading mode display)
             const sub = subscriptions.find(s => s.pair === pair);
             // Default: expanded if only 1 pair, collapsed if 2+

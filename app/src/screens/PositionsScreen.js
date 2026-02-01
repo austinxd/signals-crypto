@@ -7,11 +7,15 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getPositions } from '../services/api';
 import PositionCard from '../components/PositionCard';
+import LockedPositionCard from '../components/LockedPositionCard';
+import { useSubscription } from '../context/SubscriptionContext';
 
-const PositionsScreen = ({ navigation }) => {
+const PositionsScreen = () => {
+  const navigation = useNavigation();
+  const { isPremium } = useSubscription();
   const [positions, setPositions] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -99,13 +103,27 @@ const PositionsScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
         ) : (
-          positions.map((pos) => (
-            <PositionCard
-              key={pos.id || pos.symbol}
-              position={{ ...pos, mode }}
-              totalCount={positions.length}
-            />
-          ))
+          positions.map((pos, index) => {
+            // Free users: only first position is visible, others are locked
+            const isLocked = !isPremium && index > 0;
+
+            if (isLocked) {
+              return (
+                <LockedPositionCard
+                  key={pos.id || pos.symbol}
+                  onPress={() => navigation.navigate('Upgrade')}
+                />
+              );
+            }
+
+            return (
+              <PositionCard
+                key={pos.id || pos.symbol}
+                position={{ ...pos, mode }}
+                totalCount={positions.length}
+              />
+            );
+          })
         )}
       </ScrollView>
     </View>

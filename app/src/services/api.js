@@ -577,3 +577,11 @@ export async function markNotificationRead(notificationId) {
 export async function markAllNotificationsRead() {
   return apiRequest('/api/notifications/read-all', { method: 'POST' });
 }
+
+// ============================================================
+// Subscription endpoints
+// ============================================================
+
+export async function getSubscriptionStatus() {
+  return apiRequest('/api/account/subscription');
+}

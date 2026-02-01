@@ -186,6 +186,14 @@ class UserAccount(Base):
     # Legacy config
     trading_mode = Column(Enum(TradingMode), default=TradingMode.BALANCED)
 
+    # Subscription fields
+    subscription_status = Column(String(20), default="free")  # free | active | expired
+    subscription_expires_at = Column(DateTime, nullable=True)
+
+    # AI usage tracking (reset monthly)
+    ai_usage_count = Column(Integer, default=0)
+    ai_usage_reset_at = Column(DateTime, nullable=True)
+
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -202,6 +210,35 @@ class UserAccount(Base):
     def has_binance_keys(self) -> bool:
         """Check if user has Binance API keys configured."""
         return bool(self.binance_api_key and self.binance_api_secret)
+
+    def is_premium(self) -> bool:
+        """Check if user has active premium subscription."""
+        if self.subscription_status != "active":
+            return False
+        if self.subscription_expires_at and self.subscription_expires_at < datetime.utcnow():
+            return False
+        return True
+
+    def get_ai_limit(self) -> int:
+        """Get AI usage limit based on subscription."""
+        return 100 if self.is_premium() else 5  # Premium: 100/month, Free: 5/month
+
+    def can_use_ai(self) -> bool:
+        """Check if user can use AI features."""
+        self._reset_ai_usage_if_needed()
+        return self.ai_usage_count < self.get_ai_limit()
+
+    def increment_ai_usage(self):
+        """Increment AI usage counter."""
+        self._reset_ai_usage_if_needed()
+        self.ai_usage_count += 1
+
+    def _reset_ai_usage_if_needed(self):
+        """Reset AI usage count if a new month has started."""
+        now = datetime.utcnow()
+        if self.ai_usage_reset_at is None or now.month != self.ai_usage_reset_at.month or now.year != self.ai_usage_reset_at.year:
+            self.ai_usage_count = 0
+            self.ai_usage_reset_at = now
 
 
 # ============================================================
@@ -374,6 +411,11 @@ def _run_migrations():
     from sqlalchemy import text
     migrations = [
         ("active_positions", "liquidation_price", "ALTER TABLE active_positions ADD COLUMN liquidation_price FLOAT NULL"),
+        # Subscription columns
+        ("user_accounts", "subscription_status", "ALTER TABLE user_accounts ADD COLUMN subscription_status VARCHAR(20) DEFAULT 'free'"),
+        ("user_accounts", "subscription_expires_at", "ALTER TABLE user_accounts ADD COLUMN subscription_expires_at DATETIME NULL"),
+        ("user_accounts", "ai_usage_count", "ALTER TABLE user_accounts ADD COLUMN ai_usage_count INT DEFAULT 0"),
+        ("user_accounts", "ai_usage_reset_at", "ALTER TABLE user_accounts ADD COLUMN ai_usage_reset_at DATETIME NULL"),
     ]
     with engine.connect() as conn:
         for table, column, sql in migrations:

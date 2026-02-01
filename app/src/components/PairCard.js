@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { getAIExplanation } from '../services/api';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // Scenario classification styles
 const SCENARIO_STYLES = {
@@ -51,12 +53,26 @@ const formatTimeAgo = (isoDate) => {
 };
 
 const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) => {
+  const navigation = useNavigation();
+  const { aiRemaining, refresh: refreshSubscription } = useSubscription();
+
   const cardStyle = embedded ? styles.cardEmbedded : styles.card;
 
   // AI explanation state (collapsible, fetches on expand)
   const [showAI, setShowAI] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiLimitError, setAiLimitError] = useState(false);
+
+  // Handle AI toggle with limit check
+  const handleToggleAI = () => {
+    if (!showAI && aiRemaining <= 0) {
+      // Show upgrade screen if no AI remaining
+      navigation.navigate('Upgrade');
+      return;
+    }
+    setShowAI(!showAI);
+  };
 
   // Fetch AI explanation when expanded
   useEffect(() => {
@@ -65,10 +81,18 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
     const fetchAI = async () => {
       try {
         setAiLoading(true);
+        setAiLimitError(false);
         const result = await getAIExplanation(pair);
         setAiData(result);
+        // Refresh subscription status to update AI count
+        if (!result.cached) {
+          refreshSubscription();
+        }
       } catch (err) {
         console.error('Error fetching AI:', err);
+        if (err.status === 429) {
+          setAiLimitError(true);
+        }
         setAiData(null);
       } finally {
         setAiLoading(false);
@@ -76,7 +100,7 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
     };
 
     fetchAI();
-  }, [showAI, pair]);
+  }, [showAI, pair, refreshSubscription]);
 
   if (!data) {
     return (
@@ -173,7 +197,7 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
           {/* AI INTERPRETATION - Collapsible */}
           <TouchableOpacity
             style={styles.aiToggle}
-            onPress={() => setShowAI(!showAI)}
+            onPress={handleToggleAI}
             activeOpacity={0.7}
           >
             <Text style={styles.aiToggleIcon}>{showAI ? '▼' : '▶'}</Text>
@@ -185,6 +209,11 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
                 </Text>
               </View>
             )}
+            {!showAI && aiRemaining <= 3 && (
+              <View style={styles.aiCounterBadge}>
+                <Text style={styles.aiCounterText}>{aiRemaining}</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           {showAI && (
@@ -194,6 +223,10 @@ const PairCard = ({ pair, data, onPress, embedded = false, unified = false }) =>
                   <ActivityIndicator size="small" color="#00d4aa" />
                   <Text style={styles.aiLoadingText}>Analizando contexto...</Text>
                 </View>
+              ) : aiLimitError ? (
+                <TouchableOpacity onPress={() => navigation.navigate('Upgrade')}>
+                  <Text style={styles.aiLimitError}>Limite de consultas alcanzado. Toca para ver Premium.</Text>
+                </TouchableOpacity>
               ) : aiData?.explanation ? (
                 <>
                   <Text style={styles.aiExplanation}>{aiData.explanation}</Text>
@@ -512,6 +545,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  aiCounterBadge: {
+    marginLeft: 'auto',
+    backgroundColor: '#ffd93d20',
+    borderWidth: 1,
+    borderColor: '#ffd93d',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  aiCounterText: {
+    color: '#ffd93d',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  aiLimitError: {
+    color: '#ff9f43',
+    fontSize: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   aiTimestamp: {
     color: '#555',

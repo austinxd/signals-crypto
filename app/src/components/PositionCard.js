@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { getPositionAlerts, getPositionAIAnalysis } from '../services/api';
+import { useSubscription } from '../context/SubscriptionContext';
 
 // Format time ago in Spanish
 const formatTimeAgo = (isoDate) => {
@@ -76,6 +78,9 @@ const RSIBar = ({ value }) => {
 };
 
 const PositionCard = ({ position, totalCount = 1 }) => {
+  const navigation = useNavigation();
+  const { aiRemaining, refresh: refreshSubscription } = useSubscription();
+
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedTF, setSelectedTF] = useState('4h');
@@ -87,6 +92,17 @@ const PositionCard = ({ position, totalCount = 1 }) => {
   const [showAI, setShowAI] = useState(false);
   const [aiData, setAiData] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiLimitError, setAiLimitError] = useState(false);
+
+  // Handle AI toggle with limit check
+  const handleToggleAI = () => {
+    if (!showAI && aiRemaining <= 0) {
+      // Show upgrade screen if no AI remaining
+      navigation.navigate('Upgrade');
+      return;
+    }
+    setShowAI(!showAI);
+  };
 
   const isLong = position.side?.toUpperCase() === 'LONG';
   const pnl = position.unrealized_pnl || 0;
@@ -124,10 +140,18 @@ const PositionCard = ({ position, totalCount = 1 }) => {
     const fetchAI = async () => {
       try {
         setAiLoading(true);
+        setAiLimitError(false);
         const result = await getPositionAIAnalysis(position.symbol);
         setAiData(result);
+        // Refresh subscription status to update AI count
+        if (!result.cached) {
+          refreshSubscription();
+        }
       } catch (err) {
         console.error('Error fetching position AI:', err);
+        if (err.status === 429) {
+          setAiLimitError(true);
+        }
         setAiData(null);
       } finally {
         setAiLoading(false);
@@ -135,7 +159,7 @@ const PositionCard = ({ position, totalCount = 1 }) => {
     };
 
     fetchAI();
-  }, [showAI, position.symbol]);
+  }, [showAI, position.symbol, refreshSubscription]);
 
   // Distance to liquidation
   const liqDistance = liqPrice && current
@@ -278,11 +302,16 @@ const PositionCard = ({ position, totalCount = 1 }) => {
       {/* 3.5 AI ANALYSIS - Collapsible */}
       <TouchableOpacity
         style={styles.aiToggle}
-        onPress={() => setShowAI(!showAI)}
+        onPress={handleToggleAI}
         activeOpacity={0.7}
       >
         <Text style={styles.aiToggleIcon}>{showAI ? '\u25BC' : '\u25B6'}</Text>
         <Text style={styles.aiToggleText}>Explicaci{'\u00F3'}n Austin {'\uD83E\uDDE0'}</Text>
+        {!showAI && aiRemaining <= 3 && (
+          <View style={styles.aiCounterBadge}>
+            <Text style={styles.aiCounterText}>{aiRemaining}</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {showAI && (
@@ -292,6 +321,10 @@ const PositionCard = ({ position, totalCount = 1 }) => {
               <ActivityIndicator size="small" color="#00d4aa" />
               <Text style={styles.aiLoadingText}>Analizando posici{'\u00F3'}n...</Text>
             </View>
+          ) : aiLimitError ? (
+            <TouchableOpacity onPress={() => navigation.navigate('Upgrade')}>
+              <Text style={styles.aiLimitError}>Limite de consultas alcanzado. Toca para ver Premium.</Text>
+            </TouchableOpacity>
           ) : aiData ? (
             <>
               {/* Lectura - Thesis reading */}
@@ -582,6 +615,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   aiError: { color: '#ff4757', fontSize: 12, textAlign: 'center' },
+  aiCounterBadge: {
+    marginLeft: 'auto',
+    backgroundColor: '#ffd93d20',
+    borderWidth: 1,
+    borderColor: '#ffd93d',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  aiCounterText: {
+    color: '#ffd93d',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  aiLimitError: {
+    color: '#ff9f43',
+    fontSize: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingVertical: 12,
+  },
 
   // Suggestion box
   suggestionBox: { backgroundColor: '#0f0f1a', borderRadius: 10, padding: 12, marginBottom: 10, borderLeftWidth: 3 },

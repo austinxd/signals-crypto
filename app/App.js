@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Text, StyleSheet, ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
@@ -10,6 +11,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PositionsScreen from './src/screens/PositionsScreen';
 import AuthScreen from './src/screens/AuthScreen';
+import UpgradeScreen from './src/screens/UpgradeScreen';
+import { SubscriptionProvider } from './src/context/SubscriptionContext';
 import {
   getStoredPushToken,
   addNotificationListener,
@@ -19,6 +22,7 @@ import {
 import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated, setOnAuthFailed } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 const HomeIcon = ({ focused }) => (
   <Text style={[styles.icon, focused && styles.iconActive]}>📊</Text>
@@ -95,46 +99,59 @@ export default function App() {
     );
   }
 
+  const TabNavigator = () => (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: '#00d4aa',
+        tabBarInactiveTintColor: '#888',
+        tabBarLabelStyle: styles.tabLabel,
+      }}
+    >
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: 'Inicio',
+          tabBarIcon: ({ focused }) => <HomeIcon focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Positions"
+        component={PositionsScreen}
+        options={{
+          tabBarLabel: 'Posiciones',
+          tabBarIcon: ({ focused }) => <PositionsIcon focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Settings"
+        options={{
+          tabBarLabel: 'Ajustes',
+          tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
+        }}
+      >
+        {() => <SettingsScreen onLogout={() => setAuthed(false)} />}
+      </Tab.Screen>
+    </Tab.Navigator>
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <StatusBar style="light" />
-        <Tab.Navigator
-          screenOptions={{
-            headerShown: false,
-            tabBarStyle: styles.tabBar,
-            tabBarActiveTintColor: '#00d4aa',
-            tabBarInactiveTintColor: '#888',
-            tabBarLabelStyle: styles.tabLabel,
-          }}
-        >
-          <Tab.Screen
-            name="Home"
-            component={HomeScreen}
-            options={{
-              tabBarLabel: 'Inicio',
-              tabBarIcon: ({ focused }) => <HomeIcon focused={focused} />,
-            }}
-          />
-          <Tab.Screen
-            name="Positions"
-            component={PositionsScreen}
-            options={{
-              tabBarLabel: 'Posiciones',
-              tabBarIcon: ({ focused }) => <PositionsIcon focused={focused} />,
-            }}
-          />
-          <Tab.Screen
-            name="Settings"
-            options={{
-              tabBarLabel: 'Ajustes',
-              tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
-            }}
-          >
-            {() => <SettingsScreen onLogout={() => setAuthed(false)} />}
-          </Tab.Screen>
-        </Tab.Navigator>
-      </NavigationContainer>
+      <SubscriptionProvider>
+        <NavigationContainer>
+          <StatusBar style="light" />
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Main" component={TabNavigator} />
+            <Stack.Screen
+              name="Upgrade"
+              component={UpgradeScreen}
+              options={{ presentation: 'modal' }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SubscriptionProvider>
     </GestureHandlerRootView>
   );
 }
