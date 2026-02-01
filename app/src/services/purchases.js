@@ -1,11 +1,12 @@
 import Purchases from 'react-native-purchases';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { getApiUrl } from './api';
 
-// RevenueCat API Keys - Set these after creating your RevenueCat account
-// https://app.revenuecat.com/
-const REVENUECAT_IOS_KEY = 'appl_XXXXXXXXXXXXXXXXXXXXXXXXX'; // Replace with your iOS key
-const REVENUECAT_ANDROID_KEY = 'goog_XXXXXXXXXXXXXXXXXXXXXXXXX'; // Replace with your Android key
+// RevenueCat API Keys - Loaded from app.json extra config
+// Set these in app.json under extra.revenueCatIosKey and extra.revenueCatAndroidKey
+const REVENUECAT_IOS_KEY = Constants.expoConfig?.extra?.revenueCatIosKey || '';
+const REVENUECAT_ANDROID_KEY = Constants.expoConfig?.extra?.revenueCatAndroidKey || '';
 
 // Product identifiers (must match what you create in App Store Connect / Google Play Console)
 export const PRODUCT_IDS = {
@@ -30,8 +31,8 @@ export async function initPurchases(userId) {
     const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
     // Check if API key is configured
-    if (apiKey.includes('XXXXX')) {
-      console.log('[Purchases] RevenueCat API key not configured');
+    if (!apiKey || apiKey.length === 0) {
+      console.log('[Purchases] RevenueCat API key not configured - set in app.json extra');
       return;
     }
 
