@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Criterio Trading",
-    "slug": "criterio-trading",
+    "slug": "crypto-signals",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,7 +16,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.austinxd.criteriotrading",
+      "bundleIdentifier": "com.austinxd.signalscrypto",
       "infoPlist": {
         "UIBackgroundModes": [
           "remote-notification"
@@ -32,7 +32,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.austinxd.criteriotrading",
+      "package": "com.austinxd.signalscrypto",
       "useNextNotificationsApi": true
     },
     "plugins": [
