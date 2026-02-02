@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="es" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,33 +48,94 @@
 
   <main class="pt-32 pb-24 px-6">
     <div class="max-w-2xl mx-auto">
-      <h1 class="text-4xl font-bold mb-12">Privacy Policy</h1>
+      <!-- English -->
+      <div id="content-en">
+        <h1 class="text-4xl font-bold mb-12">Privacy Policy</h1>
 
-      <div class="space-y-6 text-gray-400 leading-relaxed">
-        <p>CRITERIO respects the privacy of its users.</p>
+        <div class="space-y-6 text-gray-400 leading-relaxed">
+          <p><strong class="text-white">1. Information We Collect</strong></p>
+          <p>CRITERIO collects the following information: email and encrypted password when you register, trading pairs you follow, positions you record, notification preferences, and push notification tokens.</p>
 
-        <p>The application may collect limited technical information such as device type and anonymous usage data strictly for performance and stability purposes.</p>
+          <p><strong class="text-white">2. How We Use Your Information</strong></p>
+          <p>We use your information to provide the signals and analysis service, send configured alert notifications, improve user experience, and process Premium subscriptions.</p>
 
-        <p>CRITERIO does not collect personal financial information.</p>
+          <p><strong class="text-white">3. Data Sharing</strong></p>
+          <p>We do not sell or share your personal information with third parties, except: RevenueCat (to process in-app subscriptions), Apple/Google (for subscription payments), and AI services (for generating analysis with anonymized data).</p>
 
-        <p>No data is sold, rented, or shared with third parties.</p>
+          <p><strong class="text-white">4. Security</strong></p>
+          <p>We protect your information through bcrypt password encryption, secure HTTPS connections, and JWT tokens for authentication.</p>
 
-        <p>The app may use analytics or crash-reporting services that collect anonymized data.</p>
+          <p><strong class="text-white">5. Your Rights</strong></p>
+          <p>You have the right to access your personal data, request account deletion, export your data, and disable notifications.</p>
 
-        <p>All trading decisions are made solely by the user.</p>
+          <p><strong class="text-white">6. Data Retention</strong></p>
+          <p>We maintain your data while your account is active. If you delete your account, we will delete your information within 30 days.</p>
+
+          <p><strong class="text-white">7. Minors</strong></p>
+          <p>This service is not directed at persons under 18 years of age. We do not intentionally collect information from minors.</p>
+
+          <p><strong class="text-white">8. Changes to This Policy</strong></p>
+          <p>We may update this policy occasionally. We will notify you of significant changes by email or within the app.</p>
+        </div>
+      </div>
+
+      <!-- Spanish -->
+      <div id="content-es" style="display: none;">
+        <h1 class="text-4xl font-bold mb-12">Política de Privacidad</h1>
+
+        <div class="space-y-6 text-gray-400 leading-relaxed">
+          <p><strong class="text-white">1. Información que Recopilamos</strong></p>
+          <p>CRITERIO recopila la siguiente información: email y contraseña encriptada al registrarte, pares de trading que sigues, posiciones que registras, preferencias de notificación y tokens de notificaciones push.</p>
+
+          <p><strong class="text-white">2. Cómo Usamos tu Información</strong></p>
+          <p>Usamos tu información para proporcionar el servicio de señales y análisis, enviar notificaciones de alertas configuradas, mejorar la experiencia de usuario y procesar suscripciones Premium.</p>
+
+          <p><strong class="text-white">3. Compartición de Datos</strong></p>
+          <p>No vendemos ni compartimos tu información personal con terceros, excepto: RevenueCat (para procesar suscripciones in-app), Apple/Google (para pagos de suscripciones), y servicios de IA (para generar análisis con datos anonimizados).</p>
+
+          <p><strong class="text-white">4. Seguridad</strong></p>
+          <p>Protegemos tu información mediante encriptación de contraseñas con bcrypt, conexiones HTTPS seguras y tokens JWT para autenticación.</p>
+
+          <p><strong class="text-white">5. Tus Derechos</strong></p>
+          <p>Tienes derecho a acceder a tus datos personales, solicitar la eliminación de tu cuenta, exportar tus datos y desactivar notificaciones.</p>
+
+          <p><strong class="text-white">6. Retención de Datos</strong></p>
+          <p>Mantenemos tus datos mientras tu cuenta esté activa. Si eliminas tu cuenta, borraremos tu información en un plazo de 30 días.</p>
+
+          <p><strong class="text-white">7. Menores de Edad</strong></p>
+          <p>Este servicio no está dirigido a menores de 18 años. No recopilamos intencionalmente información de menores.</p>
+
+          <p><strong class="text-white">8. Cambios a esta Política</strong></p>
+          <p>Podemos actualizar esta política ocasionalmente. Te notificaremos de cambios significativos por email o dentro de la app.</p>
+        </div>
       </div>
 
       <div class="mt-12 pt-8 border-t border-white/5">
-        <h2 class="text-lg font-semibold mb-4">Contact</h2>
-        <a href="mailto:contact@criterio.trade" class="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition">
+        <h2 class="text-lg font-semibold mb-4" id="contact-title">Contact</h2>
+        <a href="mailto:support@criteriotrading.com" class="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
           </svg>
-          contact@criterio.trade
+          support@criteriotrading.com
         </a>
       </div>
     </div>
   </main>
+
+  <script>
+    function detectLanguage() {
+      const stored = localStorage.getItem('lang');
+      if (stored) return stored;
+      const browserLang = navigator.language || navigator.userLanguage;
+      return browserLang.startsWith('es') ? 'es' : 'en';
+    }
+    const lang = detectLanguage();
+    if (lang === 'es') {
+      document.getElementById('content-en').style.display = 'none';
+      document.getElementById('content-es').style.display = 'block';
+      document.getElementById('contact-title').textContent = 'Contacto';
+    }
+  </script>
 
   <footer class="py-12 px-6 border-t border-white/5">
     <div class="max-w-6xl mx-auto">

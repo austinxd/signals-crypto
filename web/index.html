@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CRITERIO - Herramienta de analisis tecnico con riesgo definido para traders.">
+  <meta name="description" content="CRITERIO - Technical analysis tool with defined risk for traders.">
   <meta name="theme-color" content="#0f172a">
 
-  <title>CRITERIO - Analisis tecnico con riesgo definido</title>
+  <title>CRITERIO - Trading Analysis</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -147,9 +147,13 @@
       <div class="flex items-center justify-between">
         <a href="index.html" class="text-xl font-bold tracking-wider">CRITERIO</a>
         <div class="hidden md:flex items-center gap-8">
-          <a href="#features" class="text-sm text-gray-400 hover:text-white transition">Funciones</a>
-          <a href="#about" class="text-sm text-gray-400 hover:text-white transition">Acerca de</a>
-          <a href="contact.html" class="text-sm text-gray-400 hover:text-white transition">Contacto</a>
+          <a href="#features" class="text-sm text-gray-400 hover:text-white transition" data-i18n="nav.features">Features</a>
+          <a href="#about" class="text-sm text-gray-400 hover:text-white transition" data-i18n="nav.about">About</a>
+          <a href="contact.html" class="text-sm text-gray-400 hover:text-white transition" data-i18n="nav.contact">Contact</a>
+          <button id="langToggle" class="flex items-center gap-1 text-sm text-gray-400 hover:text-white transition px-2 py-1 rounded border border-white/10 hover:border-white/20">
+            <span id="langFlag">🇺🇸</span>
+            <span id="langCode">EN</span>
+          </button>
         </div>
         <button id="menuBtn" class="md:hidden text-gray-400">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,10 +172,14 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
-      <a href="index.html" class="text-2xl text-white">Inicio</a>
-      <a href="#features" class="text-2xl text-gray-400 hover:text-white">Funciones</a>
-      <a href="#about" class="text-2xl text-gray-400 hover:text-white">Acerca de</a>
-      <a href="contact.html" class="text-2xl text-gray-400 hover:text-white">Contacto</a>
+      <a href="index.html" class="text-2xl text-white" data-i18n="nav.home">Home</a>
+      <a href="#features" class="text-2xl text-gray-400 hover:text-white" data-i18n="nav.features">Features</a>
+      <a href="#about" class="text-2xl text-gray-400 hover:text-white" data-i18n="nav.about">About</a>
+      <a href="contact.html" class="text-2xl text-gray-400 hover:text-white" data-i18n="nav.contact">Contact</a>
+      <button id="langToggleMobile" class="flex items-center gap-2 text-xl text-primary">
+        <span id="langFlagMobile">🇺🇸</span>
+        <span id="langCodeMobile">EN</span>
+      </button>
     </div>
   </div>
 
@@ -437,19 +445,19 @@
     <div class="max-w-4xl mx-auto text-center relative z-10">
       <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-8">
         <span class="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
-        Trading Analysis Tool
+        <span data-i18n="hero.badge">Trading Analysis Tool</span>
       </div>
 
       <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
         CRITERIO
       </h1>
 
-      <p class="text-xl md:text-2xl text-gray-400 mb-4">
-        Analisis tecnico con riesgo definido
+      <p class="text-xl md:text-2xl text-gray-400 mb-4" data-i18n="hero.subtitle">
+        Technical analysis with defined risk
       </p>
 
-      <p class="text-gray-500 max-w-2xl mx-auto mb-12 leading-relaxed">
-        Herramienta de analisis diseñada para traders que priorizan el riesgo y el contexto antes de cualquier entrada. Sin señales garantizadas. Sin promesas de rentabilidad.
+      <p class="text-gray-500 max-w-2xl mx-auto mb-12 leading-relaxed" data-i18n="hero.description">
+        Analysis tool designed for traders who prioritize risk and context before any entry. No guaranteed signals. No profit promises.
       </p>
 
       <div class="flex flex-col sm:flex-row gap-4 justify-center">
@@ -468,10 +476,10 @@
   <!-- Problem -->
   <section class="py-24 px-6 border-t border-white/5">
     <div class="max-w-4xl mx-auto text-center">
-      <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">El Problema</p>
-      <h2 class="text-3xl md:text-4xl font-bold mb-6">No es la falta de señales</h2>
-      <p class="text-gray-400 text-lg leading-relaxed max-w-2xl mx-auto">
-        El mercado esta saturado de opiniones, ruido y señales sin contexto. Operar sin definir el riesgo primero lleva a decisiones emocionales y resultados inconsistentes.
+      <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4" data-i18n="problem.label">The Problem</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-6" data-i18n="problem.title">It's not the lack of signals</h2>
+      <p class="text-gray-400 text-lg leading-relaxed max-w-2xl mx-auto" data-i18n="problem.description">
+        The market is saturated with opinions, noise, and signals without context. Trading without defining risk first leads to emotional decisions and inconsistent results.
       </p>
     </div>
   </section>
@@ -480,8 +488,8 @@
   <section id="features" class="py-24 px-6 bg-dark/50">
     <div class="max-w-6xl mx-auto">
       <div class="text-center mb-16">
-        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Como Funciona</p>
-        <h2 class="text-3xl md:text-4xl font-bold">Analisis estructurado</h2>
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4" data-i18n="features.label">How It Works</p>
+        <h2 class="text-3xl md:text-4xl font-bold" data-i18n="features.title">Structured Analysis</h2>
       </div>
 
       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -491,8 +499,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2">Analisis Tecnico</h3>
-          <p class="text-sm text-gray-500">Indicadores y patrones estructurados para identificar contexto de mercado.</p>
+          <h3 class="font-semibold mb-2" data-i18n="features.technical.title">Technical Analysis</h3>
+          <p class="text-sm text-gray-500" data-i18n="features.technical.desc">Structured indicators and patterns to identify market context.</p>
         </div>
 
         <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
@@ -501,8 +509,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2">Escenarios</h3>
-          <p class="text-sm text-gray-500">Multiples escenarios posibles con niveles claros de invalidacion.</p>
+          <h3 class="font-semibold mb-2" data-i18n="features.scenarios.title">Scenarios</h3>
+          <p class="text-sm text-gray-500" data-i18n="features.scenarios.desc">Multiple possible scenarios with clear invalidation levels.</p>
         </div>
 
         <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
@@ -511,8 +519,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2">Riesgo Definido</h3>
-          <p class="text-sm text-gray-500">Cada analisis incluye niveles de stop loss y gestion de riesgo clara.</p>
+          <h3 class="font-semibold mb-2" data-i18n="features.risk.title">Defined Risk</h3>
+          <p class="text-sm text-gray-500" data-i18n="features.risk.desc">Each analysis includes stop loss levels and clear risk management.</p>
         </div>
 
         <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
@@ -521,8 +529,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2">Tu Decision</h3>
-          <p class="text-sm text-gray-500">La decision final siempre es del usuario. Informacion, no instrucciones.</p>
+          <h3 class="font-semibold mb-2" data-i18n="features.decision.title">Your Decision</h3>
+          <p class="text-sm text-gray-500" data-i18n="features.decision.desc">The final decision is always the user's. Information, not instructions.</p>
         </div>
       </div>
     </div>
@@ -532,8 +540,8 @@
   <section id="about" class="py-24 px-6 border-t border-white/5">
     <div class="max-w-4xl mx-auto">
       <div class="text-center mb-16">
-        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Importante</p>
-        <h2 class="text-3xl md:text-4xl font-bold">Que NO es CRITERIO</h2>
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4" data-i18n="not.label">Important</p>
+        <h2 class="text-3xl md:text-4xl font-bold" data-i18n="not.title">What CRITERIO is NOT</h2>
       </div>
 
       <div class="grid md:grid-cols-3 gap-6">
@@ -543,8 +551,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2 text-red-400">No es Copy Trading</h3>
-          <p class="text-sm text-gray-500">No ejecutamos operaciones por ti ni replicamos trades.</p>
+          <h3 class="font-semibold mb-2 text-red-400" data-i18n="not.copy.title">Not Copy Trading</h3>
+          <p class="text-sm text-gray-500" data-i18n="not.copy.desc">We don't execute trades for you or replicate trades.</p>
         </div>
 
         <div class="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
@@ -553,8 +561,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2 text-red-400">No es Asesoria</h3>
-          <p class="text-sm text-gray-500">Somos una herramienta informativa, no asesores de inversion.</p>
+          <h3 class="font-semibold mb-2 text-red-400" data-i18n="not.advice.title">Not Financial Advice</h3>
+          <p class="text-sm text-gray-500" data-i18n="not.advice.desc">We are an informational tool, not investment advisors.</p>
         </div>
 
         <div class="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
@@ -563,8 +571,8 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </div>
-          <h3 class="font-semibold mb-2 text-red-400">Sin Promesas</h3>
-          <p class="text-sm text-gray-500">El trading tiene riesgo. No garantizamos ganancias.</p>
+          <h3 class="font-semibold mb-2 text-red-400" data-i18n="not.promises.title">No Promises</h3>
+          <p class="text-sm text-gray-500" data-i18n="not.promises.desc">Trading has risk. We don't guarantee profits.</p>
         </div>
       </div>
     </div>
@@ -574,8 +582,8 @@
   <section class="py-24 px-6 bg-dark/50">
     <div class="max-w-4xl mx-auto">
       <div class="text-center mb-16">
-        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Audiencia</p>
-        <h2 class="text-3xl md:text-4xl font-bold">Para quien es CRITERIO</h2>
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4" data-i18n="audience.label">Audience</p>
+        <h2 class="text-3xl md:text-4xl font-bold" data-i18n="audience.title">Who is CRITERIO for</h2>
       </div>
 
       <div class="grid md:grid-cols-2 gap-8">
@@ -586,24 +594,24 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
               </svg>
             </div>
-            <h3 class="font-semibold text-primary">Si es para ti</h3>
+            <h3 class="font-semibold text-primary" data-i18n="audience.yes.title">It's for you</h3>
           </div>
           <ul class="space-y-3 text-gray-400">
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
-              Traders que entienden el riesgo
+              <span data-i18n="audience.yes.1">Traders who understand risk</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
-              Personas que buscan estructura
+              <span data-i18n="audience.yes.2">People who seek structure</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
-              Usuarios que prefieren contexto
+              <span data-i18n="audience.yes.3">Users who prefer context</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
-              Mentalidad a largo plazo
+              <span data-i18n="audience.yes.4">Long-term mindset</span>
             </li>
           </ul>
         </div>
@@ -615,24 +623,24 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
               </svg>
             </div>
-            <h3 class="font-semibold text-gray-400">No es para ti</h3>
+            <h3 class="font-semibold text-gray-400" data-i18n="audience.no.title">Not for you</h3>
           </div>
           <ul class="space-y-3 text-gray-500">
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
-              Buscas ganancias rapidas
+              <span data-i18n="audience.no.1">Looking for quick profits</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
-              Delegas decisiones
+              <span data-i18n="audience.no.2">Delegate decisions</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
-              Trading automatico sin control
+              <span data-i18n="audience.no.3">Automated trading without control</span>
             </li>
             <li class="flex items-center gap-3">
               <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
-              Buscas "señales seguras"
+              <span data-i18n="audience.no.4">Looking for "safe signals"</span>
             </li>
           </ul>
         </div>
@@ -655,13 +663,13 @@
         </svg>
       </div>
 
-      <h2 class="text-3xl md:text-4xl font-bold mb-4">
-        CRITERIO no elimina el riesgo.
+      <h2 class="text-3xl md:text-4xl font-bold mb-4" data-i18n="cta.title">
+        CRITERIO doesn't eliminate risk.
       </h2>
-      <p class="text-xl text-primary mb-8">Te ayuda a entenderlo.</p>
+      <p class="text-xl text-primary mb-8" data-i18n="cta.subtitle">It helps you understand it.</p>
 
-      <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition transform hover:scale-105 hover:shadow-lg hover:shadow-primary/25">
-        Descargar App
+      <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition transform hover:scale-105 hover:shadow-lg hover:shadow-primary/25" data-i18n="cta.button">
+        Download App
       </a>
     </div>
   </section>
@@ -671,18 +679,19 @@
     <div class="max-w-6xl mx-auto">
       <div class="flex flex-col md:flex-row items-center justify-between gap-6">
         <div class="flex items-center gap-8">
-          <a href="privacy.html" class="text-sm text-gray-500 hover:text-white transition">Privacy Policy</a>
-          <a href="terms.html" class="text-sm text-gray-500 hover:text-white transition">Terms of Service</a>
-          <a href="contact.html" class="text-sm text-gray-500 hover:text-white transition">Contact</a>
+          <a href="privacy.html" class="text-sm text-gray-500 hover:text-white transition" data-i18n="footer.privacy">Privacy Policy</a>
+          <a href="terms.html" class="text-sm text-gray-500 hover:text-white transition" data-i18n="footer.terms">Terms of Service</a>
+          <a href="contact.html" class="text-sm text-gray-500 hover:text-white transition" data-i18n="footer.contact">Contact</a>
         </div>
-        <p class="text-sm text-gray-600">
-          CRITERIO es una herramienta informativa. No constituye asesoria financiera.
+        <p class="text-sm text-gray-600" data-i18n="footer.disclaimer">
+          CRITERIO is an informational tool. It does not constitute financial advice.
         </p>
       </div>
     </div>
   </footer>
 
   <script>
+    // Mobile menu
     const menuBtn = document.getElementById('menuBtn');
     const closeMenu = document.getElementById('closeMenu');
     const mobileMenu = document.getElementById('mobileMenu');
@@ -693,6 +702,151 @@
     mobileMenu.querySelectorAll('a').forEach(link => {
       link.addEventListener('click', () => mobileMenu.classList.add('hidden'));
     });
+
+    // Translations
+    const translations = {
+      en: {
+        'nav.home': 'Home',
+        'nav.features': 'Features',
+        'nav.about': 'About',
+        'nav.contact': 'Contact',
+        'hero.badge': 'Trading Analysis Tool',
+        'hero.subtitle': 'Technical analysis with defined risk',
+        'hero.description': 'Analysis tool designed for traders who prioritize risk and context before any entry. No guaranteed signals. No profit promises.',
+        'problem.label': 'The Problem',
+        'problem.title': "It's not the lack of signals",
+        'problem.description': 'The market is saturated with opinions, noise, and signals without context. Trading without defining risk first leads to emotional decisions and inconsistent results.',
+        'features.label': 'How It Works',
+        'features.title': 'Structured Analysis',
+        'features.technical.title': 'Technical Analysis',
+        'features.technical.desc': 'Structured indicators and patterns to identify market context.',
+        'features.scenarios.title': 'Scenarios',
+        'features.scenarios.desc': 'Multiple possible scenarios with clear invalidation levels.',
+        'features.risk.title': 'Defined Risk',
+        'features.risk.desc': 'Each analysis includes stop loss levels and clear risk management.',
+        'features.decision.title': 'Your Decision',
+        'features.decision.desc': "The final decision is always the user's. Information, not instructions.",
+        'not.label': 'Important',
+        'not.title': 'What CRITERIO is NOT',
+        'not.copy.title': 'Not Copy Trading',
+        'not.copy.desc': "We don't execute trades for you or replicate trades.",
+        'not.advice.title': 'Not Financial Advice',
+        'not.advice.desc': 'We are an informational tool, not investment advisors.',
+        'not.promises.title': 'No Promises',
+        'not.promises.desc': "Trading has risk. We don't guarantee profits.",
+        'audience.label': 'Audience',
+        'audience.title': 'Who is CRITERIO for',
+        'audience.yes.title': "It's for you",
+        'audience.yes.1': 'Traders who understand risk',
+        'audience.yes.2': 'People who seek structure',
+        'audience.yes.3': 'Users who prefer context',
+        'audience.yes.4': 'Long-term mindset',
+        'audience.no.title': 'Not for you',
+        'audience.no.1': 'Looking for quick profits',
+        'audience.no.2': 'Delegate decisions',
+        'audience.no.3': 'Automated trading without control',
+        'audience.no.4': 'Looking for "safe signals"',
+        'cta.title': "CRITERIO doesn't eliminate risk.",
+        'cta.subtitle': 'It helps you understand it.',
+        'cta.button': 'Download App',
+        'footer.privacy': 'Privacy Policy',
+        'footer.terms': 'Terms of Service',
+        'footer.contact': 'Contact',
+        'footer.disclaimer': 'CRITERIO is an informational tool. It does not constitute financial advice.'
+      },
+      es: {
+        'nav.home': 'Inicio',
+        'nav.features': 'Funciones',
+        'nav.about': 'Acerca de',
+        'nav.contact': 'Contacto',
+        'hero.badge': 'Herramienta de Trading',
+        'hero.subtitle': 'Análisis técnico con riesgo definido',
+        'hero.description': 'Herramienta de análisis diseñada para traders que priorizan el riesgo y el contexto antes de cualquier entrada. Sin señales garantizadas. Sin promesas de rentabilidad.',
+        'problem.label': 'El Problema',
+        'problem.title': 'No es la falta de señales',
+        'problem.description': 'El mercado está saturado de opiniones, ruido y señales sin contexto. Operar sin definir el riesgo primero lleva a decisiones emocionales y resultados inconsistentes.',
+        'features.label': 'Cómo Funciona',
+        'features.title': 'Análisis Estructurado',
+        'features.technical.title': 'Análisis Técnico',
+        'features.technical.desc': 'Indicadores y patrones estructurados para identificar contexto de mercado.',
+        'features.scenarios.title': 'Escenarios',
+        'features.scenarios.desc': 'Múltiples escenarios posibles con niveles claros de invalidación.',
+        'features.risk.title': 'Riesgo Definido',
+        'features.risk.desc': 'Cada análisis incluye niveles de stop loss y gestión de riesgo clara.',
+        'features.decision.title': 'Tu Decisión',
+        'features.decision.desc': 'La decisión final siempre es del usuario. Información, no instrucciones.',
+        'not.label': 'Importante',
+        'not.title': 'Qué NO es CRITERIO',
+        'not.copy.title': 'No es Copy Trading',
+        'not.copy.desc': 'No ejecutamos operaciones por ti ni replicamos trades.',
+        'not.advice.title': 'No es Asesoría',
+        'not.advice.desc': 'Somos una herramienta informativa, no asesores de inversión.',
+        'not.promises.title': 'Sin Promesas',
+        'not.promises.desc': 'El trading tiene riesgo. No garantizamos ganancias.',
+        'audience.label': 'Audiencia',
+        'audience.title': 'Para quién es CRITERIO',
+        'audience.yes.title': 'Sí es para ti',
+        'audience.yes.1': 'Traders que entienden el riesgo',
+        'audience.yes.2': 'Personas que buscan estructura',
+        'audience.yes.3': 'Usuarios que prefieren contexto',
+        'audience.yes.4': 'Mentalidad a largo plazo',
+        'audience.no.title': 'No es para ti',
+        'audience.no.1': 'Buscas ganancias rápidas',
+        'audience.no.2': 'Delegas decisiones',
+        'audience.no.3': 'Trading automático sin control',
+        'audience.no.4': 'Buscas "señales seguras"',
+        'cta.title': 'CRITERIO no elimina el riesgo.',
+        'cta.subtitle': 'Te ayuda a entenderlo.',
+        'cta.button': 'Descargar App',
+        'footer.privacy': 'Política de Privacidad',
+        'footer.terms': 'Términos de Servicio',
+        'footer.contact': 'Contacto',
+        'footer.disclaimer': 'CRITERIO es una herramienta informativa. No constituye asesoría financiera.'
+      }
+    };
+
+    // Language functions
+    function detectLanguage() {
+      const stored = localStorage.getItem('lang');
+      if (stored) return stored;
+      const browserLang = navigator.language || navigator.userLanguage;
+      return browserLang.startsWith('es') ? 'es' : 'en';
+    }
+
+    function setLanguage(lang) {
+      localStorage.setItem('lang', lang);
+      document.documentElement.lang = lang;
+
+      // Update all translated elements
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (translations[lang][key]) {
+          el.textContent = translations[lang][key];
+        }
+      });
+
+      // Update language toggle buttons
+      const flag = lang === 'es' ? '🇪🇸' : '🇺🇸';
+      const code = lang === 'es' ? 'ES' : 'EN';
+
+      document.getElementById('langFlag').textContent = flag;
+      document.getElementById('langCode').textContent = code;
+      document.getElementById('langFlagMobile').textContent = flag;
+      document.getElementById('langCodeMobile').textContent = code;
+    }
+
+    function toggleLanguage() {
+      const current = localStorage.getItem('lang') || detectLanguage();
+      const newLang = current === 'es' ? 'en' : 'es';
+      setLanguage(newLang);
+    }
+
+    // Initialize
+    document.getElementById('langToggle').addEventListener('click', toggleLanguage);
+    document.getElementById('langToggleMobile').addEventListener('click', toggleLanguage);
+
+    // Set initial language
+    setLanguage(detectLanguage());
   </script>
 
 </body>

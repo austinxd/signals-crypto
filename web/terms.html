@@ -48,31 +48,94 @@
 
   <main class="pt-32 pb-24 px-6">
     <div class="max-w-2xl mx-auto">
-      <h1 class="text-4xl font-bold mb-12">Terms of Service</h1>
+      <!-- English -->
+      <div id="content-en">
+        <h1 class="text-4xl font-bold mb-12">Terms of Service</h1>
 
-      <div class="space-y-6 text-gray-400 leading-relaxed">
-        <p>CRITERIO is an informational tool designed to support market analysis.</p>
+        <div class="space-y-6 text-gray-400 leading-relaxed">
+          <p><strong class="text-white">1. Service Description</strong></p>
+          <p>CRITERIO is an informational tool designed to support market analysis. It provides trading signals, technical analysis, and AI-powered insights for cryptocurrency markets.</p>
 
-        <p>It does not provide financial advice, trading recommendations, or guarantees of any kind.</p>
+          <p><strong class="text-white">2. No Financial Advice</strong></p>
+          <p>CRITERIO does not provide financial advice, trading recommendations, or guarantees of any kind. All information is provided for educational and informational purposes only.</p>
 
-        <p>All information is provided for educational and informational purposes only.</p>
+          <p><strong class="text-white">3. User Responsibility</strong></p>
+          <p>Users are solely responsible for their trading decisions. We strongly recommend consulting with qualified financial professionals before making investment decisions.</p>
 
-        <p>Users are solely responsible for their trading decisions.</p>
+          <p><strong class="text-white">4. Risk Disclosure</strong></p>
+          <p>Cryptocurrency trading involves substantial risk of loss. Past performance does not guarantee future results. Never invest more than you can afford to lose.</p>
 
-        <p>CRITERIO is provided "as is" without warranties.</p>
+          <p><strong class="text-white">5. Subscriptions</strong></p>
+          <p>Premium subscriptions are billed monthly through Apple App Store or Google Play. You can cancel anytime from your account settings. No refunds for partial months.</p>
+
+          <p><strong class="text-white">6. Service Availability</strong></p>
+          <p>CRITERIO is provided "as is" without warranties. We do not guarantee uninterrupted service availability or accuracy of information.</p>
+
+          <p><strong class="text-white">7. Account Termination</strong></p>
+          <p>We reserve the right to terminate accounts that violate these terms or engage in abusive behavior.</p>
+
+          <p><strong class="text-white">8. Changes to Terms</strong></p>
+          <p>We may modify these terms at any time. Continued use of the service constitutes acceptance of modified terms.</p>
+        </div>
+      </div>
+
+      <!-- Spanish -->
+      <div id="content-es" style="display: none;">
+        <h1 class="text-4xl font-bold mb-12">Términos de Servicio</h1>
+
+        <div class="space-y-6 text-gray-400 leading-relaxed">
+          <p><strong class="text-white">1. Descripción del Servicio</strong></p>
+          <p>CRITERIO es una herramienta informativa diseñada para apoyar el análisis de mercado. Proporciona señales de trading, análisis técnico e insights impulsados por IA para mercados de criptomonedas.</p>
+
+          <p><strong class="text-white">2. No es Asesoría Financiera</strong></p>
+          <p>CRITERIO no proporciona asesoría financiera, recomendaciones de trading ni garantías de ningún tipo. Toda la información se proporciona únicamente con fines educativos e informativos.</p>
+
+          <p><strong class="text-white">3. Responsabilidad del Usuario</strong></p>
+          <p>Los usuarios son los únicos responsables de sus decisiones de trading. Recomendamos consultar con profesionales financieros calificados antes de tomar decisiones de inversión.</p>
+
+          <p><strong class="text-white">4. Divulgación de Riesgos</strong></p>
+          <p>El trading de criptomonedas implica un riesgo sustancial de pérdida. El rendimiento pasado no garantiza resultados futuros. Nunca inviertas más de lo que puedas permitirte perder.</p>
+
+          <p><strong class="text-white">5. Suscripciones</strong></p>
+          <p>Las suscripciones Premium se facturan mensualmente a través de Apple App Store o Google Play. Puedes cancelar en cualquier momento desde la configuración de tu cuenta. No hay reembolsos por meses parciales.</p>
+
+          <p><strong class="text-white">6. Disponibilidad del Servicio</strong></p>
+          <p>CRITERIO se proporciona "tal cual" sin garantías. No garantizamos la disponibilidad ininterrumpida del servicio ni la precisión de la información.</p>
+
+          <p><strong class="text-white">7. Terminación de Cuenta</strong></p>
+          <p>Nos reservamos el derecho de terminar cuentas que violen estos términos o participen en comportamiento abusivo.</p>
+
+          <p><strong class="text-white">8. Cambios a los Términos</strong></p>
+          <p>Podemos modificar estos términos en cualquier momento. El uso continuado del servicio constituye aceptación de los términos modificados.</p>
+        </div>
       </div>
 
       <div class="mt-12 pt-8 border-t border-white/5">
-        <h2 class="text-lg font-semibold mb-4">Contact</h2>
-        <a href="mailto:contact@criterio.trade" class="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition">
+        <h2 class="text-lg font-semibold mb-4" id="contact-title">Contact</h2>
+        <a href="mailto:support@criteriotrading.com" class="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
           </svg>
-          contact@criterio.trade
+          support@criteriotrading.com
         </a>
       </div>
     </div>
   </main>
+
+  <script>
+    function detectLanguage() {
+      const stored = localStorage.getItem('lang');
+      if (stored) return stored;
+      const browserLang = navigator.language || navigator.userLanguage;
+      return browserLang.startsWith('es') ? 'es' : 'en';
+    }
+    const lang = detectLanguage();
+    if (lang === 'es') {
+      document.getElementById('content-en').style.display = 'none';
+      document.getElementById('content-es').style.display = 'block';
+      document.getElementById('contact-title').textContent = 'Contacto';
+    }
+  </script>
 
   <footer class="py-12 px-6 border-t border-white/5">
     <div class="max-w-6xl mx-auto">
