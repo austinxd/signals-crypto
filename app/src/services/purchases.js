@@ -3,10 +3,30 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { getApiUrl } from './api';
 
-// RevenueCat API Keys - Loaded from app.json extra config
-// Set these in app.json under extra.revenueCatIosKey and extra.revenueCatAndroidKey
-const REVENUECAT_IOS_KEY = Constants.expoConfig?.extra?.revenueCatIosKey || '';
-const REVENUECAT_ANDROID_KEY = Constants.expoConfig?.extra?.revenueCatAndroidKey || '';
+// RevenueCat API Keys - Try multiple ways to access config for different Expo versions
+const getExtraConfig = () => {
+  // Try expoConfig first (newer Expo SDK)
+  if (Constants.expoConfig?.extra) {
+    return Constants.expoConfig.extra;
+  }
+  // Try manifest2 (EAS builds)
+  if (Constants.manifest2?.extra?.expoClient?.extra) {
+    return Constants.manifest2.extra.expoClient.extra;
+  }
+  // Try manifest (older Expo SDK / Expo Go)
+  if (Constants.manifest?.extra) {
+    return Constants.manifest.extra;
+  }
+  return {};
+};
+
+const extraConfig = getExtraConfig();
+const REVENUECAT_IOS_KEY = extraConfig.revenueCatIosKey || '';
+const REVENUECAT_ANDROID_KEY = extraConfig.revenueCatAndroidKey || '';
+
+// Log for debugging
+console.log('[Purchases] Extra config:', JSON.stringify(extraConfig));
+console.log('[Purchases] iOS Key loaded:', REVENUECAT_IOS_KEY ? 'Yes (' + REVENUECAT_IOS_KEY.substring(0, 10) + '...)' : 'No');
 
 // Product identifiers (must match what you create in App Store Connect / Google Play Console)
 export const PRODUCT_IDS = {
