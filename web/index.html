@@ -31,6 +31,93 @@
 
   <style>
     body { font-family: 'Inter', sans-serif; }
+
+    /* Animated gradient background */
+    .hero-gradient {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .hero-gradient::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 50%, rgba(16, 185, 129, 0.15) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 40%);
+      animation: float 20s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      33% { transform: translate(30px, -30px) rotate(5deg); }
+      66% { transform: translate(-20px, 20px) rotate(-5deg); }
+    }
+
+    /* Chart animation */
+    .chart-line {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: drawLine 3s ease forwards;
+    }
+    @keyframes drawLine {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* Candle animation */
+    .candle {
+      animation: candleGrow 0.5s ease forwards;
+      transform-origin: bottom;
+    }
+    .candle:nth-child(1) { animation-delay: 0.1s; }
+    .candle:nth-child(2) { animation-delay: 0.2s; }
+    .candle:nth-child(3) { animation-delay: 0.3s; }
+    .candle:nth-child(4) { animation-delay: 0.4s; }
+    .candle:nth-child(5) { animation-delay: 0.5s; }
+    .candle:nth-child(6) { animation-delay: 0.6s; }
+    .candle:nth-child(7) { animation-delay: 0.7s; }
+    .candle:nth-child(8) { animation-delay: 0.8s; }
+    .candle:nth-child(9) { animation-delay: 0.9s; }
+    .candle:nth-child(10) { animation-delay: 1.0s; }
+    .candle:nth-child(11) { animation-delay: 1.1s; }
+    .candle:nth-child(12) { animation-delay: 1.2s; }
+    @keyframes candleGrow {
+      from { transform: scaleY(0); opacity: 0; }
+      to { transform: scaleY(1); opacity: 1; }
+    }
+
+    /* Pulse glow */
+    .glow-pulse {
+      animation: glowPulse 2s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6)); }
+      50% { filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.9)); }
+    }
+
+    /* Grid background */
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+    }
+
+    /* Floating particles */
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(16, 185, 129, 0.5);
+      border-radius: 50%;
+      animation: particleFloat 10s ease-in-out infinite;
+    }
+    @keyframes particleFloat {
+      0%, 100% { transform: translateY(0) translateX(0); opacity: 0.5; }
+      50% { transform: translateY(-100px) translateX(50px); opacity: 1; }
+    }
   </style>
 
   <!-- Favicon -->
@@ -73,8 +160,120 @@
   </div>
 
   <!-- Hero -->
-  <section class="min-h-screen flex items-center justify-center px-6 pt-20">
-    <div class="max-w-4xl mx-auto text-center">
+  <section class="min-h-screen flex items-center justify-center px-6 pt-20 relative overflow-hidden grid-bg">
+    <!-- Animated gradient background -->
+    <div class="hero-gradient"></div>
+
+    <!-- Floating particles -->
+    <div class="particle" style="top: 20%; left: 10%;"></div>
+    <div class="particle" style="top: 60%; left: 85%; animation-delay: 2s;"></div>
+    <div class="particle" style="top: 80%; left: 20%; animation-delay: 4s;"></div>
+    <div class="particle" style="top: 30%; left: 75%; animation-delay: 6s;"></div>
+
+    <!-- Animated Trading Chart -->
+    <div class="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
+      <svg viewBox="0 0 800 400" class="w-full max-w-5xl h-auto">
+        <defs>
+          <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#10b981"/>
+            <stop offset="50%" stop-color="#34d399"/>
+            <stop offset="100%" stop-color="#10b981"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Grid lines -->
+        <g stroke="rgba(255,255,255,0.05)" stroke-width="1">
+          <line x1="0" y1="100" x2="800" y2="100"/>
+          <line x1="0" y1="200" x2="800" y2="200"/>
+          <line x1="0" y1="300" x2="800" y2="300"/>
+        </g>
+
+        <!-- Candlesticks -->
+        <g class="candles">
+          <!-- Green candles (bullish) -->
+          <g class="candle" style="opacity:0">
+            <line x1="80" y1="280" x2="80" y2="220" stroke="#10b981" stroke-width="2"/>
+            <rect x="70" y="240" width="20" height="30" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="140" y1="250" x2="140" y2="180" stroke="#10b981" stroke-width="2"/>
+            <rect x="130" y="200" width="20" height="40" fill="#10b981" rx="2"/>
+          </g>
+          <!-- Red candle (bearish) -->
+          <g class="candle" style="opacity:0">
+            <line x1="200" y1="220" x2="200" y2="280" stroke="#ef4444" stroke-width="2"/>
+            <rect x="190" y="230" width="20" height="35" fill="#ef4444" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="260" y1="260" x2="260" y2="300" stroke="#ef4444" stroke-width="2"/>
+            <rect x="250" y="270" width="20" height="20" fill="#ef4444" rx="2"/>
+          </g>
+          <!-- Recovery -->
+          <g class="candle" style="opacity:0">
+            <line x1="320" y1="290" x2="320" y2="230" stroke="#10b981" stroke-width="2"/>
+            <rect x="310" y="250" width="20" height="30" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="380" y1="260" x2="380" y2="180" stroke="#10b981" stroke-width="2"/>
+            <rect x="370" y="200" width="20" height="50" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="440" y1="210" x2="440" y2="140" stroke="#10b981" stroke-width="2"/>
+            <rect x="430" y="160" width="20" height="40" fill="#10b981" rx="2"/>
+          </g>
+          <!-- Small pullback -->
+          <g class="candle" style="opacity:0">
+            <line x1="500" y1="170" x2="500" y2="210" stroke="#ef4444" stroke-width="2"/>
+            <rect x="490" y="180" width="20" height="20" fill="#ef4444" rx="2"/>
+          </g>
+          <!-- Continuation -->
+          <g class="candle" style="opacity:0">
+            <line x1="560" y1="190" x2="560" y2="120" stroke="#10b981" stroke-width="2"/>
+            <rect x="550" y="140" width="20" height="40" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="620" y1="150" x2="620" y2="90" stroke="#10b981" stroke-width="2"/>
+            <rect x="610" y="110" width="20" height="30" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="680" y1="120" x2="680" y2="70" stroke="#10b981" stroke-width="2"/>
+            <rect x="670" y="85" width="20" height="25" fill="#10b981" rx="2"/>
+          </g>
+          <g class="candle" style="opacity:0">
+            <line x1="740" y1="95" x2="740" y2="50" stroke="#10b981" stroke-width="2"/>
+            <rect x="730" y="65" width="20" height="20" fill="#10b981" rx="2"/>
+          </g>
+        </g>
+
+        <!-- Price line with glow -->
+        <path class="chart-line glow-pulse"
+          d="M 50 280 L 80 250 L 140 210 L 200 245 L 260 280 L 320 260 L 380 190 L 440 170 L 500 190 L 560 150 L 620 120 L 680 95 L 740 75"
+          stroke="url(#lineGradient)"
+          stroke-width="3"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+        <!-- Area fill -->
+        <path
+          d="M 50 280 L 80 250 L 140 210 L 200 245 L 260 280 L 320 260 L 380 190 L 440 170 L 500 190 L 560 150 L 620 120 L 680 95 L 740 75 L 740 350 L 50 350 Z"
+          fill="url(#chartGradient)"
+          opacity="0.5"/>
+
+        <!-- Current price indicator -->
+        <circle cx="740" cy="75" r="6" fill="#10b981" class="glow-pulse"/>
+        <circle cx="740" cy="75" r="10" fill="none" stroke="#10b981" stroke-width="2" opacity="0.5">
+          <animate attributeName="r" values="10;20;10" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite"/>
+        </circle>
+      </svg>
+    </div>
+
+    <div class="max-w-4xl mx-auto text-center relative z-10">
       <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-8">
         <span class="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
         Trading Analysis Tool
@@ -281,14 +480,26 @@
   </section>
 
   <!-- CTA -->
-  <section class="py-24 px-6">
-    <div class="max-w-2xl mx-auto text-center">
+  <section class="py-24 px-6 relative overflow-hidden">
+    <!-- Animated background -->
+    <div class="absolute inset-0 opacity-30">
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[100px] animate-pulse"></div>
+    </div>
+
+    <div class="max-w-2xl mx-auto text-center relative z-10">
+      <!-- Mini chart icon -->
+      <div class="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-2xl mb-6">
+        <svg class="w-8 h-8 text-primary glow-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+        </svg>
+      </div>
+
       <h2 class="text-3xl md:text-4xl font-bold mb-4">
         CRITERIO no elimina el riesgo.
       </h2>
       <p class="text-xl text-primary mb-8">Te ayuda a entenderlo.</p>
 
-      <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition">
+      <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition transform hover:scale-105 hover:shadow-lg hover:shadow-primary/25">
         Descargar App
       </a>
     </div>
