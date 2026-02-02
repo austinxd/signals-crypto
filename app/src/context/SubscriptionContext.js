@@ -61,10 +61,23 @@ export function SubscriptionProvider({ children }) {
     return () => {
       if (removeListener) removeListener();
     };
-  }, []);
+  }, [refresh]);
 
   const refresh = useCallback(async () => {
     try {
+      // Also check RevenueCat status and sync if needed
+      const token = await AsyncStorage.getItem('access_token');
+      if (token) {
+        try {
+          const storeStatus = await checkStoreSubscription();
+          if (storeStatus.isPremium) {
+            await syncSubscriptionWithBackend(token);
+          }
+        } catch (e) {
+          // RevenueCat might not be available, continue with backend check
+        }
+      }
+
       // Get status from backend (source of truth)
       const data = await getSubscriptionStatus();
       setSubscription({
