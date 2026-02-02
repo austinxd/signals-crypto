@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Feature Graphic - CRITERIO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #1a1a1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 40px;
+    }
+    .container {
+      width: 1024px;
+      height: 500px;
+      background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+      position: relative;
+      overflow: hidden;
+      border-radius: 0;
+    }
+
+    /* Decorative elements */
+    .glow-1 {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+      top: -200px;
+      right: -100px;
+    }
+    .glow-2 {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+      bottom: -100px;
+      left: -50px;
+    }
+
+    /* Grid pattern */
+    .grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 50px 50px;
+    }
+
+    /* Content */
+    .content {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      height: 100%;
+      padding: 60px 80px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .left {
+      flex: 1;
+    }
+
+    .logo {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: 6px;
+      color: white;
+      margin-bottom: 20px;
+    }
+
+    .logo-dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      background: #10b981;
+      border-radius: 50%;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .tagline {
+      font-size: 28px;
+      font-weight: 600;
+      color: #10b981;
+      margin-bottom: 30px;
+    }
+
+    .features {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255,255,255,0.8);
+      font-size: 18px;
+    }
+
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      background: rgba(16, 185, 129, 0.2);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #10b981;
+      font-size: 14px;
+    }
+
+    /* Right side - Phone mockup */
+    .right {
+      position: relative;
+      width: 280px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phone {
+      width: 220px;
+      height: 440px;
+      background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+      border-radius: 36px;
+      border: 3px solid rgba(255,255,255,0.1);
+      padding: 12px;
+      position: relative;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+    }
+
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      background: #020617;
+      border-radius: 28px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-header {
+      padding: 16px;
+      text-align: center;
+    }
+
+    .phone-title {
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .phone-card {
+      margin: 8px 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .card-pair {
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .card-price {
+      color: #10b981;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .card-change {
+      color: #10b981;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .card-signal {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 8px;
+      background: rgba(16, 185, 129, 0.15);
+      border-radius: 4px;
+      color: #10b981;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* Chart decoration */
+    .mini-chart {
+      margin-top: 8px;
+      height: 40px;
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+    }
+
+    .bar {
+      flex: 1;
+      background: linear-gradient(to top, #10b981, rgba(16, 185, 129, 0.3));
+      border-radius: 2px;
+    }
+
+    .instructions {
+      margin-top: 30px;
+      color: #666;
+      font-size: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <div class="container" id="graphic">
+      <div class="glow-1"></div>
+      <div class="glow-2"></div>
+      <div class="grid"></div>
+
+      <div class="content">
+        <div class="left">
+          <div class="logo">
+            CRITERIO
+            <span class="logo-dot"></span>
+          </div>
+          <div class="tagline">Crypto Trading Intelligence</div>
+          <div class="features">
+            <div class="feature">
+              <div class="feature-icon">📊</div>
+              <span>Real-time trading signals</span>
+            </div>
+            <div class="feature">
+              <div class="feature-icon">🤖</div>
+              <span>AI-powered market analysis</span>
+            </div>
+            <div class="feature">
+              <div class="feature-icon">🔔</div>
+              <span>Smart price alerts</span>
+            </div>
+            <div class="feature">
+              <div class="feature-icon">📈</div>
+              <span>Portfolio tracking</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="phone-header">
+                <div class="phone-title">Mercado</div>
+              </div>
+              <div class="phone-card">
+                <div class="card-pair">BTC/USDT</div>
+                <div class="card-price">$97,842</div>
+                <div class="card-change">+2.34%</div>
+                <div class="card-signal">LONG</div>
+                <div class="mini-chart">
+                  <div class="bar" style="height: 45%"></div>
+                  <div class="bar" style="height: 60%"></div>
+                  <div class="bar" style="height: 40%"></div>
+                  <div class="bar" style="height: 75%"></div>
+                  <div class="bar" style="height: 55%"></div>
+                  <div class="bar" style="height: 85%"></div>
+                  <div class="bar" style="height: 70%"></div>
+                  <div class="bar" style="height: 90%"></div>
+                </div>
+              </div>
+              <div class="phone-card">
+                <div class="card-pair">ETH/USDT</div>
+                <div class="card-price">$3,245</div>
+                <div class="card-change">+1.87%</div>
+                <div class="card-signal">LONG</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="instructions">
+      Abre en Chrome, haz clic derecho en el gráfico > Inspeccionar > selecciona el elemento .container > clic derecho > "Capture node screenshot"<br>
+      O usa una extensión como "GoFullPage" para capturar exactamente 1024x500px
+    </p>
+  </div>
+</body>
+</html>
