@@ -1,104 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="CRITERIO Privacy Policy">
-  <meta name="theme-color" content="#06080d">
+  <meta name="theme-color" content="#0f172a">
 
   <title>Privacy Policy - CRITERIO</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#10b981',
+            dark: '#0f172a',
+            darker: '#020617',
+          }
+        }
+      }
+    }
+  </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>body { font-family: 'Inter', sans-serif; }</style>
 
-  <link rel="stylesheet" href="styles.css">
-
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2306080d' width='100' height='100' rx='20'/><circle cx='50' cy='50' r='8' fill='%2300d4aa'/><circle cx='50' cy='50' r='20' fill='none' stroke='%2300d4aa' stroke-width='2' opacity='0.3'/></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230f172a' width='100' height='100' rx='20'/><circle cx='50' cy='50' r='8' fill='%2310b981'/></svg>">
 </head>
-<body>
+<body class="bg-darker text-gray-100 antialiased">
 
-  <header class="header">
-    <div class="container">
-      <a href="index.html" class="logo">CRITERIO</a>
-      <nav>
-        <ul class="nav-links">
-          <li><a href="index.html">Home</a></li>
-          <li><a href="terms.html">Terms</a></li>
-          <li><a href="contact.html">Contact</a></li>
-        </ul>
-      </nav>
-      <button class="menu-toggle" onclick="toggleMobileNav()" aria-label="Menu">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
+  <!-- Navbar -->
+  <nav class="fixed w-full z-50 bg-darker/80 backdrop-blur-lg border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <a href="index.html" class="text-xl font-bold tracking-wider">CRITERIO</a>
+        <div class="flex items-center gap-8">
+          <a href="index.html" class="text-sm text-gray-400 hover:text-white transition">Home</a>
+          <a href="terms.html" class="text-sm text-gray-400 hover:text-white transition">Terms</a>
+          <a href="contact.html" class="text-sm text-gray-400 hover:text-white transition">Contact</a>
+        </div>
+      </div>
     </div>
-  </header>
-
-  <nav class="mobile-nav" id="mobileNav">
-    <button class="mobile-nav-close" onclick="toggleMobileNav()" aria-label="Close">&times;</button>
-    <a href="index.html">Home</a>
-    <a href="privacy.html">Privacy</a>
-    <a href="terms.html">Terms</a>
-    <a href="contact.html">Contact</a>
   </nav>
 
-  <main>
-    <section class="page-header">
-      <div class="container">
-        <h1>Privacy Policy</h1>
+  <main class="pt-32 pb-24 px-6">
+    <div class="max-w-2xl mx-auto">
+      <h1 class="text-4xl font-bold mb-12">Privacy Policy</h1>
+
+      <div class="space-y-6 text-gray-400 leading-relaxed">
+        <p>CRITERIO respects the privacy of its users.</p>
+
+        <p>The application may collect limited technical information such as device type and anonymous usage data strictly for performance and stability purposes.</p>
+
+        <p>CRITERIO does not collect personal financial information.</p>
+
+        <p>No data is sold, rented, or shared with third parties.</p>
+
+        <p>The app may use analytics or crash-reporting services that collect anonymized data.</p>
+
+        <p>All trading decisions are made solely by the user.</p>
       </div>
-    </section>
 
-    <section class="page-content">
-      <div class="container">
-        <div class="content-block">
-          <p>CRITERIO respects the privacy of its users.</p>
-
-          <p>The application may collect limited technical information such as device type and anonymous usage data strictly for performance and stability purposes.</p>
-
-          <p>CRITERIO does not collect personal financial information.</p>
-
-          <p>No data is sold, rented, or shared with third parties.</p>
-
-          <p>The app may use analytics or crash-reporting services that collect anonymized data.</p>
-
-          <p>All trading decisions are made solely by the user.</p>
-        </div>
-
-        <div class="content-block">
-          <h3>Contact</h3>
-          <a href="mailto:contact@criterio.trade" class="contact-email">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
-            </svg>
-            contact@criterio.trade
-          </a>
-        </div>
+      <div class="mt-12 pt-8 border-t border-white/5">
+        <h2 class="text-lg font-semibold mb-4">Contact</h2>
+        <a href="mailto:contact@criterio.trade" class="inline-flex items-center gap-2 text-primary hover:text-primary/80 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+          </svg>
+          contact@criterio.trade
+        </a>
       </div>
-    </section>
+    </div>
   </main>
 
-  <footer class="footer">
-    <div class="container">
-      <ul class="footer-links">
-        <li><a href="privacy.html">Privacy Policy</a></li>
-        <li><a href="terms.html">Terms of Service</a></li>
-        <li><a href="contact.html">Contact</a></li>
-      </ul>
-      <p class="footer-disclaimer">
-        CRITERIO es una herramienta informativa. No constituye asesoria financiera.
-      </p>
+  <footer class="py-12 px-6 border-t border-white/5">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="flex items-center gap-8">
+          <a href="privacy.html" class="text-sm text-gray-500 hover:text-white transition">Privacy Policy</a>
+          <a href="terms.html" class="text-sm text-gray-500 hover:text-white transition">Terms of Service</a>
+          <a href="contact.html" class="text-sm text-gray-500 hover:text-white transition">Contact</a>
+        </div>
+        <p class="text-sm text-gray-600">CRITERIO es una herramienta informativa.</p>
+      </div>
     </div>
   </footer>
-
-  <script>
-    function toggleMobileNav() {
-      document.getElementById('mobileNav').classList.toggle('active');
-    }
-  </script>
 
 </body>
 </html>

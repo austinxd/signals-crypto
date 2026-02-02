@@ -1,297 +1,325 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="CRITERIO - Herramienta de analisis tecnico con riesgo definido para traders profesionales.">
-  <meta name="theme-color" content="#06080d">
-
-  <!-- Open Graph -->
-  <meta property="og:title" content="CRITERIO - Analisis tecnico con riesgo definido">
-  <meta property="og:description" content="Herramienta de analisis diseñada para traders que priorizan el riesgo y el contexto.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://criterio.trade">
+  <meta name="description" content="CRITERIO - Herramienta de analisis tecnico con riesgo definido para traders.">
+  <meta name="theme-color" content="#0f172a">
 
   <title>CRITERIO - Analisis tecnico con riesgo definido</title>
 
-  <!-- Fonts -->
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#10b981',
+            dark: '#0f172a',
+            darker: '#020617',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Inter Font -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+  </style>
 
   <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2306080d' width='100' height='100' rx='20'/><circle cx='50' cy='50' r='8' fill='%2300d4aa'/><circle cx='50' cy='50' r='20' fill='none' stroke='%2300d4aa' stroke-width='2' opacity='0.3'/></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230f172a' width='100' height='100' rx='20'/><circle cx='50' cy='50' r='8' fill='%2310b981'/></svg>">
 </head>
-<body>
+<body class="bg-darker text-gray-100 antialiased">
 
-  <!-- Header -->
-  <header class="header">
-    <div class="container">
-      <a href="index.html" class="logo">CRITERIO</a>
-      <nav>
-        <ul class="nav-links">
-          <li><a href="#features">Funciones</a></li>
-          <li><a href="#about">Nosotros</a></li>
-          <li><a href="contact.html">Contacto</a></li>
-        </ul>
-      </nav>
-      <button class="menu-toggle" onclick="toggleMobileNav()" aria-label="Menu">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
+  <!-- Navbar -->
+  <nav class="fixed w-full z-50 bg-darker/80 backdrop-blur-lg border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-6 py-4">
+      <div class="flex items-center justify-between">
+        <a href="index.html" class="text-xl font-bold tracking-wider">CRITERIO</a>
+        <div class="hidden md:flex items-center gap-8">
+          <a href="#features" class="text-sm text-gray-400 hover:text-white transition">Funciones</a>
+          <a href="#about" class="text-sm text-gray-400 hover:text-white transition">Acerca de</a>
+          <a href="contact.html" class="text-sm text-gray-400 hover:text-white transition">Contacto</a>
+        </div>
+        <button id="menuBtn" class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
     </div>
-  </header>
-
-  <!-- Mobile Navigation -->
-  <nav class="mobile-nav" id="mobileNav">
-    <button class="mobile-nav-close" onclick="toggleMobileNav()" aria-label="Close">&times;</button>
-    <a href="index.html" onclick="toggleMobileNav()">Inicio</a>
-    <a href="#features" onclick="toggleMobileNav()">Funciones</a>
-    <a href="#about" onclick="toggleMobileNav()">Nosotros</a>
-    <a href="contact.html">Contacto</a>
   </nav>
 
-  <main>
+  <!-- Mobile Menu -->
+  <div id="mobileMenu" class="fixed inset-0 z-50 bg-darker hidden">
+    <div class="flex flex-col items-center justify-center h-full gap-8">
+      <button id="closeMenu" class="absolute top-6 right-6 text-gray-400">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+      <a href="index.html" class="text-2xl text-white">Inicio</a>
+      <a href="#features" class="text-2xl text-gray-400 hover:text-white">Funciones</a>
+      <a href="#about" class="text-2xl text-gray-400 hover:text-white">Acerca de</a>
+      <a href="contact.html" class="text-2xl text-gray-400 hover:text-white">Contacto</a>
+    </div>
+  </div>
 
-    <!-- Hero Section -->
-    <section class="hero">
-      <!-- Trading Chart Background -->
-      <svg class="trading-visual" viewBox="0 0 1000 400" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:#00d4aa;stop-opacity:0.3" />
-            <stop offset="100%" style="stop-color:#00d4aa;stop-opacity:0" />
-          </linearGradient>
-        </defs>
-        <path class="chart-area" d="M0,300 L50,280 L100,290 L150,250 L200,260 L250,200 L300,220 L350,180 L400,190 L450,150 L500,170 L550,120 L600,140 L650,100 L700,130 L750,90 L800,110 L850,70 L900,100 L950,60 L1000,80 L1000,400 L0,400 Z"/>
-        <path class="chart-line" d="M0,300 L50,280 L100,290 L150,250 L200,260 L250,200 L300,220 L350,180 L400,190 L450,150 L500,170 L550,120 L600,140 L650,100 L700,130 L750,90 L800,110 L850,70 L900,100 L950,60 L1000,80"/>
-      </svg>
+  <!-- Hero -->
+  <section class="min-h-screen flex items-center justify-center px-6 pt-20">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-8">
+        <span class="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+        Trading Analysis Tool
+      </div>
 
-      <div class="container">
-        <div class="hero-content">
-          <div class="hero-badge">Trading Analysis Tool</div>
-          <h1 class="hero-title">CRITERIO</h1>
-          <p class="hero-subtitle">Analisis tecnico con riesgo definido</p>
-          <p class="hero-text">
-            Herramienta de analisis diseñada para traders que priorizan el riesgo y el contexto antes de cualquier entrada. Sin señales garantizadas. Sin promesas de rentabilidad.
-          </p>
-          <a href="#" class="btn btn-primary">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12l7 7 7-7"/>
+      <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
+        CRITERIO
+      </h1>
+
+      <p class="text-xl md:text-2xl text-gray-400 mb-4">
+        Analisis tecnico con riesgo definido
+      </p>
+
+      <p class="text-gray-500 max-w-2xl mx-auto mb-12 leading-relaxed">
+        Herramienta de analisis diseñada para traders que priorizan el riesgo y el contexto antes de cualquier entrada. Sin señales garantizadas. Sin promesas de rentabilidad.
+      </p>
+
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          App Store
+        </a>
+        <a href="#" class="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-8 py-4 rounded-lg transition">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/></svg>
+          Google Play
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem -->
+  <section class="py-24 px-6 border-t border-white/5">
+    <div class="max-w-4xl mx-auto text-center">
+      <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">El Problema</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-6">No es la falta de señales</h2>
+      <p class="text-gray-400 text-lg leading-relaxed max-w-2xl mx-auto">
+        El mercado esta saturado de opiniones, ruido y señales sin contexto. Operar sin definir el riesgo primero lleva a decisiones emocionales y resultados inconsistentes.
+      </p>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-24 px-6 bg-dark/50">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-16">
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Como Funciona</p>
+        <h2 class="text-3xl md:text-4xl font-bold">Analisis estructurado</h2>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
+          <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
             </svg>
-            Descargar App
-          </a>
+          </div>
+          <h3 class="font-semibold mb-2">Analisis Tecnico</h3>
+          <p class="text-sm text-gray-500">Indicadores y patrones estructurados para identificar contexto de mercado.</p>
+        </div>
+
+        <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
+          <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Escenarios</h3>
+          <p class="text-sm text-gray-500">Multiples escenarios posibles con niveles claros de invalidacion.</p>
+        </div>
+
+        <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
+          <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Riesgo Definido</h3>
+          <p class="text-sm text-gray-500">Cada analisis incluye niveles de stop loss y gestion de riesgo clara.</p>
+        </div>
+
+        <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition">
+          <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2">Tu Decision</h3>
+          <p class="text-sm text-gray-500">La decision final siempre es del usuario. Informacion, no instrucciones.</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Problem Section -->
-    <section class="section">
-      <div class="container">
-        <div class="section-header">
-          <span class="section-label">El Problema</span>
-          <h2 class="section-title">No es la falta de señales</h2>
-          <p class="section-text">
-            El mercado esta saturado de opiniones, ruido y señales sin contexto. Operar sin definir el riesgo primero lleva a decisiones emocionales y resultados inconsistentes.
-          </p>
+  <!-- What it's NOT -->
+  <section id="about" class="py-24 px-6 border-t border-white/5">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-16">
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Importante</p>
+        <h2 class="text-3xl md:text-4xl font-bold">Que NO es CRITERIO</h2>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
+          <div class="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2 text-red-400">No es Copy Trading</h3>
+          <p class="text-sm text-gray-500">No ejecutamos operaciones por ti ni replicamos trades.</p>
+        </div>
+
+        <div class="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
+          <div class="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2 text-red-400">No es Asesoria</h3>
+          <p class="text-sm text-gray-500">Somos una herramienta informativa, no asesores de inversion.</p>
+        </div>
+
+        <div class="bg-red-500/5 border border-red-500/10 rounded-2xl p-6">
+          <div class="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <h3 class="font-semibold mb-2 text-red-400">Sin Promesas</h3>
+          <p class="text-sm text-gray-500">El trading tiene riesgo. No garantizamos ganancias.</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Features Section -->
-    <section class="section" id="features">
-      <div class="container">
-        <div class="section-header">
-          <span class="section-label">Como Funciona</span>
-          <h2 class="section-title">Analisis estructurado</h2>
+  <!-- For Who -->
+  <section class="py-24 px-6 bg-dark/50">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-16">
+        <p class="text-primary text-sm font-medium uppercase tracking-wider mb-4">Audiencia</p>
+        <h2 class="text-3xl md:text-4xl font-bold">Para quien es CRITERIO</h2>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <div class="bg-primary/5 border border-primary/10 rounded-2xl p-8">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <h3 class="font-semibold text-primary">Si es para ti</h3>
+          </div>
+          <ul class="space-y-3 text-gray-400">
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
+              Traders que entienden el riesgo
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
+              Personas que buscan estructura
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
+              Usuarios que prefieren contexto
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-primary rounded-full"></span>
+              Mentalidad a largo plazo
+            </li>
+          </ul>
         </div>
 
-        <div class="features-grid">
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 3v18h18"/>
-                <path d="M18 9l-5 5-4-4-3 3"/>
+        <div class="bg-white/[0.02] border border-white/5 rounded-2xl p-8">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
               </svg>
             </div>
-            <h3>Analisis Tecnico</h3>
-            <p>Indicadores y patrones estructurados para identificar contexto de mercado.</p>
+            <h3 class="font-semibold text-gray-400">No es para ti</h3>
           </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 6v6l4 2"/>
-              </svg>
-            </div>
-            <h3>Escenarios, No Predicciones</h3>
-            <p>Multiples escenarios posibles con niveles claros de invalidacion.</p>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              </svg>
-            </div>
-            <h3>Riesgo Definido</h3>
-            <p>Cada analisis incluye niveles de stop loss y gestion de riesgo clara.</p>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
-            </div>
-            <h3>Tu Decision</h3>
-            <p>La decision final siempre es del usuario. Informacion, no instrucciones.</p>
-          </div>
+          <ul class="space-y-3 text-gray-500">
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
+              Buscas ganancias rapidas
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
+              Delegas decisiones
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
+              Trading automatico sin control
+            </li>
+            <li class="flex items-center gap-3">
+              <span class="w-1.5 h-1.5 bg-gray-600 rounded-full"></span>
+              Buscas "señales seguras"
+            </li>
+          </ul>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Differentiation Section -->
-    <section class="section" id="about">
-      <div class="container">
-        <div class="section-header">
-          <span class="section-label">Diferenciacion</span>
-          <h2 class="section-title">Que NO es CRITERIO</h2>
-        </div>
+  <!-- CTA -->
+  <section class="py-24 px-6">
+    <div class="max-w-2xl mx-auto text-center">
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">
+        CRITERIO no elimina el riesgo.
+      </h2>
+      <p class="text-xl text-primary mb-8">Te ayuda a entenderlo.</p>
 
-        <div class="features-grid" style="max-width: 800px; margin: 0 auto;">
-          <div class="feature-card">
-            <div class="feature-icon" style="background: rgba(255, 71, 87, 0.15); color: #ff4757;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M15 9l-6 6M9 9l6 6"/>
-              </svg>
-            </div>
-            <h3>No es Copy Trading</h3>
-            <p>No ejecutamos operaciones por ti ni replicamos trades de otros.</p>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon" style="background: rgba(255, 71, 87, 0.15); color: #ff4757;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M15 9l-6 6M9 9l6 6"/>
-              </svg>
-            </div>
-            <h3>No es Asesoria Financiera</h3>
-            <p>Somos una herramienta informativa, no asesores de inversion.</p>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon" style="background: rgba(255, 71, 87, 0.15); color: #ff4757;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M15 9l-6 6M9 9l6 6"/>
-              </svg>
-            </div>
-            <h3>No Prometemos Resultados</h3>
-            <p>El trading tiene riesgo. No garantizamos ganancias de ningun tipo.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Target Audience Section -->
-    <section class="section">
-      <div class="container">
-        <div class="section-header">
-          <span class="section-label">Audiencia</span>
-          <h2 class="section-title">Para quien es CRITERIO</h2>
-        </div>
-
-        <div class="two-columns">
-          <div class="column">
-            <h3 class="column-title yes">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <path d="M20 6L9 17l-5-5"/>
-              </svg>
-              Si es para ti
-            </h3>
-            <ul>
-              <li>Traders que entienden el riesgo</li>
-              <li>Personas que buscan estructura</li>
-              <li>Usuarios que prefieren contexto antes que señales</li>
-              <li>Traders con mentalidad a largo plazo</li>
-            </ul>
-          </div>
-          <div class="column">
-            <h3 class="column-title no">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <path d="M18 6L6 18M6 6l12 12"/>
-              </svg>
-              No es para ti
-            </h3>
-            <ul>
-              <li>Personas que buscan ganancias rapidas</li>
-              <li>Usuarios que delegan decisiones</li>
-              <li>Trading automatico sin gestion de riesgo</li>
-              <li>Quienes buscan "señales seguras"</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- CTA Section -->
-    <section class="cta">
-      <div class="container">
-        <div class="cta-card">
-          <div class="cta-content">
-            <p class="cta-text">
-              CRITERIO no elimina el riesgo.<br>
-              Te ayuda a <span>entenderlo</span>.
-            </p>
-            <a href="#" class="btn btn-primary">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 5v14M5 12l7 7 7-7"/>
-              </svg>
-              Descargar App
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-  </main>
+      <a href="#" class="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-black font-semibold px-8 py-4 rounded-lg transition">
+        Descargar App
+      </a>
+    </div>
+  </section>
 
   <!-- Footer -->
-  <footer class="footer">
-    <div class="container">
-      <ul class="footer-links">
-        <li><a href="privacy.html">Privacy Policy</a></li>
-        <li><a href="terms.html">Terms of Service</a></li>
-        <li><a href="contact.html">Contact</a></li>
-      </ul>
-      <p class="footer-disclaimer">
-        CRITERIO es una herramienta informativa. No constituye asesoria financiera.
-      </p>
+  <footer class="py-12 px-6 border-t border-white/5">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="flex items-center gap-8">
+          <a href="privacy.html" class="text-sm text-gray-500 hover:text-white transition">Privacy Policy</a>
+          <a href="terms.html" class="text-sm text-gray-500 hover:text-white transition">Terms of Service</a>
+          <a href="contact.html" class="text-sm text-gray-500 hover:text-white transition">Contact</a>
+        </div>
+        <p class="text-sm text-gray-600">
+          CRITERIO es una herramienta informativa. No constituye asesoria financiera.
+        </p>
+      </div>
     </div>
   </footer>
 
   <script>
-    function toggleMobileNav() {
-      document.getElementById('mobileNav').classList.toggle('active');
-    }
+    const menuBtn = document.getElementById('menuBtn');
+    const closeMenu = document.getElementById('closeMenu');
+    const mobileMenu = document.getElementById('mobileMenu');
 
-    // Smooth scroll for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-      anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
+    menuBtn.addEventListener('click', () => mobileMenu.classList.remove('hidden'));
+    closeMenu.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+
+    mobileMenu.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => mobileMenu.classList.add('hidden'));
     });
   </script>
 
