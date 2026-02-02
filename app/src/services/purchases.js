@@ -100,22 +100,33 @@ async function ensureConfigured() {
 export async function getOfferings() {
   try {
     // Ensure RevenueCat is configured first
+    console.log('[Purchases] getOfferings called, checking configuration...');
     const configured = await ensureConfigured();
     if (!configured) {
       console.log('[Purchases] Cannot get offerings - not configured');
-      return [];
+      throw new Error('RevenueCat no está configurado. Verifica la API key.');
     }
 
+    console.log('[Purchases] Fetching offerings from RevenueCat...');
     const offerings = await Purchases.getOfferings();
+    console.log('[Purchases] Offerings response:', JSON.stringify({
+      hasOfferings: !!offerings,
+      hasCurrent: !!offerings?.current,
+      currentId: offerings?.current?.identifier,
+      packagesCount: offerings?.current?.availablePackages?.length || 0,
+    }));
 
     if (offerings.current) {
-      return offerings.current.availablePackages;
+      const packages = offerings.current.availablePackages;
+      console.log('[Purchases] Available packages:', packages.map(p => p.identifier));
+      return packages;
     }
 
+    console.log('[Purchases] No current offering found');
     return [];
   } catch (err) {
     console.error('[Purchases] Error getting offerings:', err);
-    return [];
+    throw err; // Re-throw so UpgradeScreen can show the error
   }
 }
 

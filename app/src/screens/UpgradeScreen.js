@@ -39,13 +39,22 @@ const UpgradeScreen = ({ navigation }) => {
     loadOfferings();
   }, []);
 
+  const [error, setError] = useState(null);
+
   const loadOfferings = async () => {
     setLoading(true);
+    setError(null);
     try {
+      console.log('[UpgradeScreen] Loading offerings...');
       const pkgs = await getOfferings();
+      console.log('[UpgradeScreen] Packages received:', pkgs.length);
+      if (pkgs.length === 0) {
+        setError('No hay productos disponibles. Verifica la configuración de RevenueCat.');
+      }
       setPackages(pkgs);
     } catch (err) {
-      console.error('Error loading offerings:', err);
+      console.error('[UpgradeScreen] Error loading offerings:', err);
+      setError(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -172,6 +181,16 @@ const UpgradeScreen = ({ navigation }) => {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color="#00d4aa" />
             <Text style={styles.loadingText}>Cargando opciones...</Text>
+          </View>
+        )}
+
+        {/* Error */}
+        {error && !loading && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={loadOfferings} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>Reintentar</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -355,6 +374,29 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#888',
+    fontSize: 14,
+  },
+  errorContainer: {
+    backgroundColor: '#2a1a1a',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  retryButton: {
+    backgroundColor: '#333',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    color: '#fff',
     fontSize: 14,
   },
   upgradeButton: {
