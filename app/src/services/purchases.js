@@ -19,35 +19,59 @@ export const ENTITLEMENTS = {
 };
 
 let isConfigured = false;
+let configurePromise = null;
 
 /**
  * Initialize RevenueCat SDK
  * Call this once when the app starts, after user is authenticated
  */
 export async function initPurchases(userId) {
-  if (isConfigured) return;
+  if (isConfigured) return true;
 
-  try {
-    const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
-
-    // Check if API key is configured
-    if (!apiKey || apiKey.length === 0) {
-      console.log('[Purchases] RevenueCat API key not configured - set in app.json extra');
-      return;
-    }
-
-    Purchases.configure({ apiKey });
-
-    // Identify user with their backend user ID
-    if (userId) {
-      await Purchases.logIn(String(userId));
-    }
-
-    isConfigured = true;
-    console.log('[Purchases] RevenueCat configured successfully');
-  } catch (err) {
-    console.error('[Purchases] Error configuring RevenueCat:', err);
+  // If already configuring, wait for that to complete
+  if (configurePromise) {
+    return configurePromise;
   }
+
+  configurePromise = (async () => {
+    try {
+      const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
+
+      // Check if API key is configured
+      if (!apiKey || apiKey.length === 0) {
+        console.log('[Purchases] RevenueCat API key not configured - set in app.json extra');
+        return false;
+      }
+
+      Purchases.configure({ apiKey });
+
+      // Identify user with their backend user ID
+      if (userId) {
+        await Purchases.logIn(String(userId));
+      }
+
+      isConfigured = true;
+      console.log('[Purchases] RevenueCat configured successfully');
+      return true;
+    } catch (err) {
+      console.error('[Purchases] Error configuring RevenueCat:', err);
+      return false;
+    }
+  })();
+
+  return configurePromise;
+}
+
+/**
+ * Ensure RevenueCat is configured before making calls
+ */
+async function ensureConfigured() {
+  if (isConfigured) return true;
+  if (configurePromise) {
+    return configurePromise;
+  }
+  // Try to configure without user ID
+  return initPurchases(null);
 }
 
 /**
@@ -55,6 +79,13 @@ export async function initPurchases(userId) {
  */
 export async function getOfferings() {
   try {
+    // Ensure RevenueCat is configured first
+    const configured = await ensureConfigured();
+    if (!configured) {
+      console.log('[Purchases] Cannot get offerings - not configured');
+      return [];
+    }
+
     const offerings = await Purchases.getOfferings();
 
     if (offerings.current) {
