@@ -762,7 +762,7 @@
                         <td>${u.id}</td>
                         <td>
                             ${u.email}
-                            ${u.email_verified ? '<span class="badge" style="background:#10b981;color:#fff;">✓</span>' : '<span class="badge" style="background:#f59e0b;color:#fff;cursor:pointer;" onclick="showVerifyOptions(${u.id}, \'${u.email}\')">!</span>'}
+                            ${u.email_verified ? '<span class="badge" style="background:#10b981;color:#fff;">✓</span>' : '<span class="badge verify-badge" style="background:#f59e0b;color:#fff;cursor:pointer;" data-user-id="' + u.id + '" data-email="' + u.email + '">!</span>'}
                             ${u.is_admin ? '<span class="badge admin">Admin</span>' : ''}
                         </td>
                         <td>${u.country || '-'}</td>
@@ -787,6 +787,15 @@
                 renderPagination('users', data.total, usersPage, (page) => {
                     usersPage = page;
                     loadUsers(search);
+                });
+
+                // Add click handlers for verify badges
+                document.querySelectorAll('.verify-badge').forEach(badge => {
+                    badge.addEventListener('click', () => {
+                        const userId = badge.dataset.userId;
+                        const email = badge.dataset.email;
+                        showVerifyOptions(userId, email);
+                    });
                 });
             } catch (err) {
                 tbody.innerHTML = `<tr><td colspan="8" class="loading">Error: ${err.message}</td></tr>`;
