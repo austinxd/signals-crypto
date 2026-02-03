@@ -49,7 +49,7 @@ from alerts import (
     send_signal_notification,
 )
 from ai_explainer import get_ai_explanation, should_call_ai, check_state_changed, get_cache_stats, get_position_ai_analysis
-from email_service import generate_verification_token, send_verification_email
+from email_service import generate_verification_code, send_verification_email
 import requests as http_requests  # For IP geolocation
 
 
@@ -537,8 +537,8 @@ async def auth_register(data: AuthRegister, request: Request):
     client_ip = get_client_ip(request)
     country = get_country_from_ip(client_ip) if client_ip else None
 
-    # Generate verification token
-    verification_token = generate_verification_token()
+    # Generate 6-digit verification code
+    verification_code = generate_verification_code()
 
     db = get_db()
     try:
@@ -550,11 +550,11 @@ async def auth_register(data: AuthRegister, request: Request):
         account = DBHelper.create_account(
             db, data.email.lower(), pw_hash,
             country=country,
-            verification_token=verification_token
+            verification_token=verification_code  # Now stores 6-digit code
         )
 
-        # Send verification email (non-blocking, don't fail registration if email fails)
-        send_verification_email(account.email, verification_token)
+        # Send verification email with code
+        send_verification_email(account.email, verification_code)
 
         access_token = create_access_token(account.id, account.email)
         refresh_token = create_refresh_token(account.id)
@@ -603,40 +603,32 @@ async def auth_login(data: AuthLogin):
         db.close()
 
 
-@app.get("/api/auth/verify-email")
-async def verify_email(token: str):
-    """Verify user's email address using the token from the verification email."""
-    if not token:
-        raise HTTPException(status_code=400, detail="Token required")
+class VerifyEmailRequest(BaseModel):
+    code: str
+
+
+@app.post("/api/auth/verify-email")
+async def verify_email(data: VerifyEmailRequest, user: UserAccount = Depends(get_current_user)):
+    """Verify user's email address using the 6-digit code."""
+    if not data.code or len(data.code) != 6:
+        raise HTTPException(status_code=400, detail="Invalid code format")
+
+    if user.email_verified:
+        return {"status": "ok", "message": "Email already verified"}
 
     db = get_db()
     try:
-        account = db.query(UserAccount).filter(UserAccount.verification_token == token).first()
-        static_dir = os.path.join(os.path.dirname(__file__), "static")
-        success_page = os.path.join(static_dir, "verification-success.html")
-        failed_page = os.path.join(static_dir, "verification-failed.html")
+        account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
 
-        if not account:
-            # Return HTML page with error
-            if os.path.exists(failed_page):
-                return FileResponse(failed_page)
-            return {"status": "error", "message": "Invalid or expired verification link"}
-
-        if account.email_verified:
-            # Already verified
-            if os.path.exists(success_page):
-                return FileResponse(success_page)
-            return {"status": "ok", "message": "Email already verified"}
+        if not account.verification_token or account.verification_token != data.code:
+            raise HTTPException(status_code=400, detail="Invalid verification code")
 
         # Mark as verified
         account.email_verified = True
-        account.verification_token = None  # Clear token after use
+        account.verification_token = None  # Clear code after use
         db.commit()
 
-        # Return success HTML page
-        if os.path.exists(success_page):
-            return FileResponse(success_page)
-        return {"status": "ok", "message": "Email verified successfully! You can now use all features."}
+        return {"status": "ok", "message": "Email verified successfully!"}
     finally:
         db.close()
 
@@ -647,17 +639,17 @@ async def resend_verification(user: UserAccount = Depends(get_current_user)):
     if user.email_verified:
         return {"status": "ok", "message": "Email already verified"}
 
-    # Generate new token
-    new_token = generate_verification_token()
+    # Generate new 6-digit code
+    new_code = generate_verification_code()
 
     db = get_db()
     try:
         account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
-        account.verification_token = new_token
+        account.verification_token = new_code
         db.commit()
 
-        # Send email
-        sent = send_verification_email(account.email, new_token)
+        # Send email with code
+        sent = send_verification_email(account.email, new_code)
         if sent:
             return {"status": "ok", "message": "Verification email sent"}
         else:

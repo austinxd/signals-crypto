@@ -4,6 +4,7 @@ Email service using Resend for transactional emails.
 import os
 import logging
 import secrets
+import random
 import resend
 
 logger = logging.getLogger("uvicorn.error")
@@ -11,29 +12,26 @@ logger = logging.getLogger("uvicorn.error")
 # Configure Resend
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = "CRITERIO <noreply@criterio.trade>"
-BASE_URL = os.getenv("BASE_URL", "https://api.criterio.trade")
 
 resend.api_key = RESEND_API_KEY
 
 
-def generate_verification_token() -> str:
-    """Generate a secure random token for email verification."""
-    return secrets.token_urlsafe(32)
+def generate_verification_code() -> str:
+    """Generate a 6-digit verification code."""
+    return str(random.randint(100000, 999999))
 
 
-def send_verification_email(to_email: str, token: str, lang: str = "es") -> bool:
+def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
     """
-    Send email verification link to user.
+    Send email verification code to user.
     Returns True if sent successfully, False otherwise.
     """
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not configured, skipping email")
         return False
 
-    verification_url = f"{BASE_URL}/api/auth/verify-email?token={token}"
-
     if lang == "es":
-        subject = "Verifica tu email - CRITERIO"
+        subject = "Tu codigo de verificacion - CRITERIO"
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -46,21 +44,21 @@ def send_verification_email(to_email: str, token: str, lang: str = "es") -> bool
                 .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
                 h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
                 p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .button {{ display: inline-block; background: #10b981; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0; }}
-                .button:hover {{ background: #059669; }}
+                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
+                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
                 .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .link {{ color: #10b981; word-break: break-all; }}
+                .warning {{ color: #f59e0b; font-size: 13px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Verifica tu email</h1>
-                <p>Gracias por registrarte en CRITERIO. Para completar tu registro y acceder a todas las funciones, verifica tu email haciendo clic en el boton:</p>
-                <a href="{verification_url}" class="button">Verificar Email</a>
-                <p>O copia y pega este enlace en tu navegador:</p>
-                <p class="link">{verification_url}</p>
-                <p>Este enlace expira en 24 horas.</p>
+                <h1>Tu codigo de verificacion</h1>
+                <p>Ingresa este codigo en la app para verificar tu email:</p>
+                <div class="code-box">
+                    <div class="code">{code}</div>
+                </div>
+                <p class="warning">Este codigo expira en 24 horas. No compartas este codigo con nadie.</p>
                 <div class="footer">
                     <p>Si no creaste esta cuenta, puedes ignorar este email.</p>
                     <p>CRITERIO - Crypto Trading Intelligence</p>
@@ -70,7 +68,7 @@ def send_verification_email(to_email: str, token: str, lang: str = "es") -> bool
         </html>
         """
     else:
-        subject = "Verify your email - CRITERIO"
+        subject = "Your verification code - CRITERIO"
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -83,21 +81,21 @@ def send_verification_email(to_email: str, token: str, lang: str = "es") -> bool
                 .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
                 h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
                 p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .button {{ display: inline-block; background: #10b981; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0; }}
-                .button:hover {{ background: #059669; }}
+                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
+                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
                 .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .link {{ color: #10b981; word-break: break-all; }}
+                .warning {{ color: #f59e0b; font-size: 13px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Verify your email</h1>
-                <p>Thanks for signing up for CRITERIO. To complete your registration and access all features, please verify your email by clicking the button below:</p>
-                <a href="{verification_url}" class="button">Verify Email</a>
-                <p>Or copy and paste this link in your browser:</p>
-                <p class="link">{verification_url}</p>
-                <p>This link expires in 24 hours.</p>
+                <h1>Your verification code</h1>
+                <p>Enter this code in the app to verify your email:</p>
+                <div class="code-box">
+                    <div class="code">{code}</div>
+                </div>
+                <p class="warning">This code expires in 24 hours. Do not share this code with anyone.</p>
                 <div class="footer">
                     <p>If you didn't create this account, you can ignore this email.</p>
                     <p>CRITERIO - Crypto Trading Intelligence</p>
@@ -122,16 +120,14 @@ def send_verification_email(to_email: str, token: str, lang: str = "es") -> bool
         return False
 
 
-def send_password_reset_email(to_email: str, token: str, lang: str = "es") -> bool:
+def send_password_reset_email(to_email: str, code: str, lang: str = "es") -> bool:
     """
-    Send password reset link to user.
+    Send password reset code to user.
     Returns True if sent successfully, False otherwise.
     """
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not configured, skipping email")
         return False
-
-    reset_url = f"{BASE_URL}/api/auth/reset-password?token={token}"
 
     if lang == "es":
         subject = "Restablecer contrasena - CRITERIO"
@@ -147,17 +143,21 @@ def send_password_reset_email(to_email: str, token: str, lang: str = "es") -> bo
                 .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
                 h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
                 p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .button {{ display: inline-block; background: #10b981; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0; }}
+                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
+                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
                 .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
+                .warning {{ color: #f59e0b; font-size: 13px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="logo">CRITERIO<span class="dot"></span></div>
                 <h1>Restablecer contrasena</h1>
-                <p>Recibimos una solicitud para restablecer la contrasena de tu cuenta CRITERIO.</p>
-                <a href="{reset_url}" class="button">Restablecer Contrasena</a>
-                <p>Este enlace expira en 1 hora.</p>
+                <p>Ingresa este codigo en la app para restablecer tu contrasena:</p>
+                <div class="code-box">
+                    <div class="code">{code}</div>
+                </div>
+                <p class="warning">Este codigo expira en 1 hora. No compartas este codigo con nadie.</p>
                 <div class="footer">
                     <p>Si no solicitaste esto, puedes ignorar este email.</p>
                     <p>CRITERIO - Crypto Trading Intelligence</p>
@@ -180,17 +180,21 @@ def send_password_reset_email(to_email: str, token: str, lang: str = "es") -> bo
                 .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
                 h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
                 p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .button {{ display: inline-block; background: #10b981; color: #fff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 20px 0; }}
+                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
+                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
                 .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
+                .warning {{ color: #f59e0b; font-size: 13px; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="logo">CRITERIO<span class="dot"></span></div>
                 <h1>Reset your password</h1>
-                <p>We received a request to reset the password for your CRITERIO account.</p>
-                <a href="{reset_url}" class="button">Reset Password</a>
-                <p>This link expires in 1 hour.</p>
+                <p>Enter this code in the app to reset your password:</p>
+                <div class="code-box">
+                    <div class="code">{code}</div>
+                </div>
+                <p class="warning">This code expires in 1 hour. Do not share this code with anyone.</p>
                 <div class="footer">
                     <p>If you didn't request this, you can ignore this email.</p>
                     <p>CRITERIO - Crypto Trading Intelligence</p>
