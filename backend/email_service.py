@@ -20,8 +20,8 @@ def generate_verification_code() -> str:
     return str(random.randint(100000, 999999))
 
 
-# Logo as inline SVG data URI (works in most email clients)
-LOGO_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%230f172a' width='100' height='100' rx='20'/%3E%3Ccircle cx='50' cy='50' r='8' fill='%2310b981'/%3E%3C/svg%3E"
+# Logo URL hosted on the website
+LOGO_URL = "https://criterio.trade/logo.png"
 
 
 def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
@@ -50,7 +50,7 @@ def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
                     <!-- Header with Logo -->
                     <tr>
                         <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
-                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <img src="{LOGO_URL}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
                             <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
                             <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
@@ -118,7 +118,7 @@ Desarrollado por @austin.app (Instagram)
                     <!-- Header with Logo -->
                     <tr>
                         <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
-                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <img src="{LOGO_URL}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
                             <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
                             <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
@@ -212,7 +212,7 @@ def send_password_reset_email(to_email: str, code: str, lang: str = "es") -> boo
                     <!-- Header with Logo -->
                     <tr>
                         <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
-                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <img src="{LOGO_URL}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
                             <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
                             <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
@@ -280,7 +280,7 @@ Desarrollado por @austin.app (Instagram)
                     <!-- Header with Logo -->
                     <tr>
                         <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
-                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <img src="{LOGO_URL}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
                             <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
                             <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
