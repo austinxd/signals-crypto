@@ -3693,6 +3693,37 @@ async def admin_update_user(user_id: int, data: AdminUserUpdate, admin: UserAcco
         db.close()
 
 
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: int, admin: UserAccount = Depends(get_admin_user)):
+    """Delete a user and all their associated data."""
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    db = get_db()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Delete user's subscriptions
+        db.query(Subscription).filter(Subscription.account_id == user_id).delete()
+
+        # Delete user's positions
+        db.query(ActivePosition).filter(ActivePosition.user_id == user_id).delete()
+
+        # Delete user's notifications
+        db.query(UserNotification).filter(UserNotification.user_id == user_id).delete()
+
+        # Delete the user
+        db.delete(user)
+        db.commit()
+
+        logger.info(f"Admin {admin.email} deleted user {user.email} (ID: {user_id})")
+        return {"status": "ok", "message": f"User {user.email} deleted"}
+    finally:
+        db.close()
+
+
 @app.get("/api/admin/positions")
 async def admin_list_positions(
     admin: UserAccount = Depends(get_admin_user),
