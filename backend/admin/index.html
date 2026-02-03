@@ -482,6 +482,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Email</th>
+                                <th>País</th>
                                 <th>Plan</th>
                                 <th>Binance</th>
                                 <th>AI Uso</th>
@@ -716,7 +717,7 @@
 
         async function loadUsers(search = '') {
             const tbody = document.getElementById('usersTableBody');
-            tbody.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="loading">Cargando...</td></tr>';
 
             try {
                 const params = new URLSearchParams({
@@ -734,6 +735,7 @@
                             ${u.email}
                             ${u.is_admin ? '<span class="badge admin">Admin</span>' : ''}
                         </td>
+                        <td>${u.country || '-'}</td>
                         <td>
                             <span class="badge ${u.is_premium ? 'premium' : 'free'}">
                                 ${u.is_premium ? 'Premium' : 'Free'}
@@ -756,7 +758,7 @@
                     loadUsers(search);
                 });
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan="7" class="loading">Error: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="loading">Error: ${err.message}</td></tr>`;
             }
         }
 

@@ -49,6 +49,36 @@ from alerts import (
     send_signal_notification,
 )
 from ai_explainer import get_ai_explanation, should_call_ai, check_state_changed, get_cache_stats, get_position_ai_analysis
+import requests as http_requests  # For IP geolocation
+
+
+def get_country_from_ip(ip: str) -> Optional[str]:
+    """Get country code from IP address using ip-api.com (free, no key needed)."""
+    if not ip or ip in ("127.0.0.1", "localhost", "::1"):
+        return None
+    try:
+        response = http_requests.get(f"http://ip-api.com/json/{ip}?fields=countryCode", timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("countryCode")
+    except Exception as e:
+        logger.warning(f"Could not get country from IP {ip}: {e}")
+    return None
+
+
+def get_client_ip(request: Request) -> str:
+    """Get client IP from request, handling proxies."""
+    # Check X-Forwarded-For header (common for proxies/load balancers)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # Take the first IP in the chain (original client)
+        return forwarded.split(",")[0].strip()
+    # Check X-Real-IP header (nginx)
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip
+    # Fall back to direct client IP
+    return request.client.host if request.client else None
 
 
 # Available trading modes
@@ -496,11 +526,15 @@ app.add_middleware(
 # ============================================================
 
 @app.post("/api/auth/register")
-async def auth_register(data: AuthRegister):
+async def auth_register(data: AuthRegister, request: Request):
     if not data.email or not data.password:
         raise HTTPException(status_code=400, detail="Email and password required")
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    # Detect country from IP
+    client_ip = get_client_ip(request)
+    country = get_country_from_ip(client_ip) if client_ip else None
 
     db = get_db()
     try:
@@ -509,7 +543,7 @@ async def auth_register(data: AuthRegister):
             raise HTTPException(status_code=409, detail="Email already registered")
 
         pw_hash = hash_password(data.password)
-        account = DBHelper.create_account(db, data.email.lower(), pw_hash)
+        account = DBHelper.create_account(db, data.email.lower(), pw_hash, country=country)
 
         access_token = create_access_token(account.id, account.email)
         refresh_token = create_refresh_token(account.id)
@@ -3473,6 +3507,7 @@ async def admin_list_users(
             "users": [{
                 "id": u.id,
                 "email": u.email,
+                "country": u.country,
                 "subscription_status": u.subscription_status or "free",
                 "subscription_expires_at": u.subscription_expires_at.isoformat() if u.subscription_expires_at else None,
                 "is_premium": u.is_premium(),
@@ -3515,6 +3550,7 @@ async def admin_get_user(user_id: int, admin: UserAccount = Depends(get_admin_us
         return {
             "id": user.id,
             "email": user.email,
+            "country": user.country,
             "subscription_status": user.subscription_status or "free",
             "subscription_expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
             "is_premium": user.is_premium(),

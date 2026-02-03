@@ -198,6 +198,7 @@ class UserAccount(Base):
     is_admin = Column(Boolean, default=False)
 
     enabled = Column(Boolean, default=True)
+    country = Column(String(2), nullable=True)  # ISO country code (e.g., "US", "ES", "MX")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -420,6 +421,7 @@ def _run_migrations():
         ("user_accounts", "ai_usage_count", "ALTER TABLE user_accounts ADD COLUMN ai_usage_count INT DEFAULT 0"),
         ("user_accounts", "ai_usage_reset_at", "ALTER TABLE user_accounts ADD COLUMN ai_usage_reset_at DATETIME NULL"),
         ("user_accounts", "is_admin", "ALTER TABLE user_accounts ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"),
+        ("user_accounts", "country", "ALTER TABLE user_accounts ADD COLUMN country VARCHAR(2) NULL"),
     ]
     with engine.connect() as conn:
         for table, column, sql in migrations:
@@ -769,11 +771,12 @@ class DBHelper:
         return db.query(UserAccount).filter(UserAccount.id == account_id).first()
 
     @staticmethod
-    def create_account(db: Session, email: str, password_hash: str) -> UserAccount:
+    def create_account(db: Session, email: str, password_hash: str, country: str = None) -> UserAccount:
         """Create a new user account."""
         account = UserAccount(
             email=email,
             password_hash=password_hash,
+            country=country,
         )
         db.add(account)
         db.commit()
