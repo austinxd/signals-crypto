@@ -197,6 +197,10 @@ class UserAccount(Base):
     # Admin flag
     is_admin = Column(Boolean, default=False)
 
+    # Email verification
+    email_verified = Column(Boolean, default=False)
+    verification_token = Column(String(64), nullable=True)
+
     enabled = Column(Boolean, default=True)
     country = Column(String(2), nullable=True)  # ISO country code (e.g., "US", "ES", "MX")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -422,6 +426,8 @@ def _run_migrations():
         ("user_accounts", "ai_usage_reset_at", "ALTER TABLE user_accounts ADD COLUMN ai_usage_reset_at DATETIME NULL"),
         ("user_accounts", "is_admin", "ALTER TABLE user_accounts ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"),
         ("user_accounts", "country", "ALTER TABLE user_accounts ADD COLUMN country VARCHAR(2) NULL"),
+        ("user_accounts", "email_verified", "ALTER TABLE user_accounts ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"),
+        ("user_accounts", "verification_token", "ALTER TABLE user_accounts ADD COLUMN verification_token VARCHAR(64) NULL"),
     ]
     with engine.connect() as conn:
         for table, column, sql in migrations:
@@ -771,12 +777,14 @@ class DBHelper:
         return db.query(UserAccount).filter(UserAccount.id == account_id).first()
 
     @staticmethod
-    def create_account(db: Session, email: str, password_hash: str, country: str = None) -> UserAccount:
+    def create_account(db: Session, email: str, password_hash: str, country: str = None, verification_token: str = None) -> UserAccount:
         """Create a new user account."""
         account = UserAccount(
             email=email,
             password_hash=password_hash,
             country=country,
+            verification_token=verification_token,
+            email_verified=False,
         )
         db.add(account)
         db.commit()

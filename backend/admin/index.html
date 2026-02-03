@@ -733,6 +733,7 @@
                         <td>${u.id}</td>
                         <td>
                             ${u.email}
+                            ${u.email_verified ? '<span class="badge" style="background:#10b981;color:#fff;">✓</span>' : '<span class="badge" style="background:#f59e0b;color:#fff;">!</span>'}
                             ${u.is_admin ? '<span class="badge admin">Admin</span>' : ''}
                         </td>
                         <td>${u.country || '-'}</td>

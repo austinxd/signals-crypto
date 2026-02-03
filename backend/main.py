@@ -49,6 +49,7 @@ from alerts import (
     send_signal_notification,
 )
 from ai_explainer import get_ai_explanation, should_call_ai, check_state_changed, get_cache_stats, get_position_ai_analysis
+from email_service import generate_verification_token, send_verification_email
 import requests as http_requests  # For IP geolocation
 
 
@@ -536,6 +537,9 @@ async def auth_register(data: AuthRegister, request: Request):
     client_ip = get_client_ip(request)
     country = get_country_from_ip(client_ip) if client_ip else None
 
+    # Generate verification token
+    verification_token = generate_verification_token()
+
     db = get_db()
     try:
         existing = DBHelper.get_account_by_email(db, data.email.lower())
@@ -543,7 +547,14 @@ async def auth_register(data: AuthRegister, request: Request):
             raise HTTPException(status_code=409, detail="Email already registered")
 
         pw_hash = hash_password(data.password)
-        account = DBHelper.create_account(db, data.email.lower(), pw_hash, country=country)
+        account = DBHelper.create_account(
+            db, data.email.lower(), pw_hash,
+            country=country,
+            verification_token=verification_token
+        )
+
+        # Send verification email (non-blocking, don't fail registration if email fails)
+        send_verification_email(account.email, verification_token)
 
         access_token = create_access_token(account.id, account.email)
         refresh_token = create_refresh_token(account.id)
@@ -555,7 +566,9 @@ async def auth_register(data: AuthRegister, request: Request):
                 "id": account.id,
                 "email": account.email,
                 "mode": account.mode.value,
+                "email_verified": account.email_verified,
             },
+            "message": "Verification email sent. Please check your inbox.",
         }
     finally:
         db.close()
@@ -583,8 +596,72 @@ async def auth_login(data: AuthLogin):
                 "email": account.email,
                 "mode": account.mode.value,
                 "has_binance_keys": account.has_binance_keys(),
+                "email_verified": account.email_verified or False,
             },
         }
+    finally:
+        db.close()
+
+
+@app.get("/api/auth/verify-email")
+async def verify_email(token: str):
+    """Verify user's email address using the token from the verification email."""
+    if not token:
+        raise HTTPException(status_code=400, detail="Token required")
+
+    db = get_db()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.verification_token == token).first()
+        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        success_page = os.path.join(static_dir, "verification-success.html")
+        failed_page = os.path.join(static_dir, "verification-failed.html")
+
+        if not account:
+            # Return HTML page with error
+            if os.path.exists(failed_page):
+                return FileResponse(failed_page)
+            return {"status": "error", "message": "Invalid or expired verification link"}
+
+        if account.email_verified:
+            # Already verified
+            if os.path.exists(success_page):
+                return FileResponse(success_page)
+            return {"status": "ok", "message": "Email already verified"}
+
+        # Mark as verified
+        account.email_verified = True
+        account.verification_token = None  # Clear token after use
+        db.commit()
+
+        # Return success HTML page
+        if os.path.exists(success_page):
+            return FileResponse(success_page)
+        return {"status": "ok", "message": "Email verified successfully! You can now use all features."}
+    finally:
+        db.close()
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(user: UserAccount = Depends(get_current_user)):
+    """Resend verification email to the current user."""
+    if user.email_verified:
+        return {"status": "ok", "message": "Email already verified"}
+
+    # Generate new token
+    new_token = generate_verification_token()
+
+    db = get_db()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.id == user.id).first()
+        account.verification_token = new_token
+        db.commit()
+
+        # Send email
+        sent = send_verification_email(account.email, new_token)
+        if sent:
+            return {"status": "ok", "message": "Verification email sent"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send email")
     finally:
         db.close()
 
@@ -3507,6 +3584,7 @@ async def admin_list_users(
             "users": [{
                 "id": u.id,
                 "email": u.email,
+                "email_verified": u.email_verified or False,
                 "country": u.country,
                 "subscription_status": u.subscription_status or "free",
                 "subscription_expires_at": u.subscription_expires_at.isoformat() if u.subscription_expires_at else None,
@@ -3713,8 +3791,9 @@ async def admin_list_subscriptions(
         db.close()
 
 
-# Serve admin panel static files
+# Static directories
 ADMIN_DIR = os.path.join(os.path.dirname(__file__), "admin")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
 @app.get("/admin")
