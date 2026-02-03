@@ -20,6 +20,10 @@ def generate_verification_code() -> str:
     return str(random.randint(100000, 999999))
 
 
+# Logo as inline SVG data URI (works in most email clients)
+LOGO_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%230f172a' width='100' height='100' rx='20'/%3E%3Ccircle cx='50' cy='50' r='8' fill='%2310b981'/%3E%3C/svg%3E"
+
+
 def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
     """
     Send email verification code to user.
@@ -42,33 +46,40 @@ def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <!-- Header with Logo -->
                     <tr>
-                        <td style="padding:32px 40px; text-align:center;">
-                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
-                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
+                            <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
                     </tr>
+                    <!-- Content -->
                     <tr>
-                        <td style="padding:0 40px 32px 40px;">
+                        <td style="padding:32px 40px;">
                             <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
                                 Tu codigo de verificacion es:
                             </p>
-                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
-                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            <div style="background-color:#f0fdf4; border:2px solid #10b981; border-radius:12px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:36px; font-weight:700; letter-spacing:8px; color:#0f172a; font-family:monospace;">{code}</span>
                             </div>
                             <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
                                 Ingresa este codigo en la app para verificar tu email.
                             </p>
-                            <p style="margin:0; font-size:14px; color:#999;">
+                            <p style="margin:0; font-size:13px; color:#999;">
                                 El codigo expira en 24 horas.
                             </p>
                         </td>
                     </tr>
+                    <!-- Footer -->
                     <tr>
                         <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
-                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                            <p style="margin:0 0 12px 0; font-size:12px; color:#999; text-align:center;">
                                 Si no creaste una cuenta en CRITERIO, ignora este email.
+                            </p>
+                            <p style="margin:0; font-size:12px; color:#666; text-align:center;">
+                                Desarrollado por <a href="https://instagram.com/austin.app" style="color:#10b981; text-decoration:none;">@austin.app</a>
                             </p>
                         </td>
                     </tr>
@@ -87,6 +98,8 @@ Ingresa este codigo en la app para verificar tu email.
 El codigo expira en 24 horas.
 
 Si no creaste una cuenta en CRITERIO, ignora este email.
+
+Desarrollado por @austin.app (Instagram)
 """
     else:
         subject = f"{code} is your verification code"
@@ -101,33 +114,40 @@ Si no creaste una cuenta en CRITERIO, ignora este email.
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <!-- Header with Logo -->
                     <tr>
-                        <td style="padding:32px 40px; text-align:center;">
-                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
-                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
+                            <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
                     </tr>
+                    <!-- Content -->
                     <tr>
-                        <td style="padding:0 40px 32px 40px;">
+                        <td style="padding:32px 40px;">
                             <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
                                 Your verification code is:
                             </p>
-                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
-                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            <div style="background-color:#f0fdf4; border:2px solid #10b981; border-radius:12px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:36px; font-weight:700; letter-spacing:8px; color:#0f172a; font-family:monospace;">{code}</span>
                             </div>
                             <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
                                 Enter this code in the app to verify your email.
                             </p>
-                            <p style="margin:0; font-size:14px; color:#999;">
+                            <p style="margin:0; font-size:13px; color:#999;">
                                 This code expires in 24 hours.
                             </p>
                         </td>
                     </tr>
+                    <!-- Footer -->
                     <tr>
                         <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
-                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                            <p style="margin:0 0 12px 0; font-size:12px; color:#999; text-align:center;">
                                 If you didn't create a CRITERIO account, please ignore this email.
+                            </p>
+                            <p style="margin:0; font-size:12px; color:#666; text-align:center;">
+                                Developed by <a href="https://instagram.com/austin.app" style="color:#10b981; text-decoration:none;">@austin.app</a>
                             </p>
                         </td>
                     </tr>
@@ -146,6 +166,8 @@ Enter this code in the app to verify your email.
 This code expires in 24 hours.
 
 If you didn't create a CRITERIO account, please ignore this email.
+
+Developed by @austin.app (Instagram)
 """
 
     try:
@@ -154,7 +176,7 @@ If you didn't create a CRITERIO account, please ignore this email.
             "to": [to_email],
             "subject": subject,
             "html": html_content,
-            "text": text_content,  # Plain text version helps avoid spam
+            "text": text_content,
         }
         response = resend.Emails.send(params)
         logger.info(f"Verification email sent to {to_email}: {response}")
@@ -186,33 +208,40 @@ def send_password_reset_email(to_email: str, code: str, lang: str = "es") -> boo
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <!-- Header with Logo -->
                     <tr>
-                        <td style="padding:32px 40px; text-align:center;">
-                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
-                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
+                            <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
                     </tr>
+                    <!-- Content -->
                     <tr>
-                        <td style="padding:0 40px 32px 40px;">
+                        <td style="padding:32px 40px;">
                             <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
                                 Tu codigo para restablecer la contrasena es:
                             </p>
-                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
-                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            <div style="background-color:#fef3c7; border:2px solid #f59e0b; border-radius:12px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:36px; font-weight:700; letter-spacing:8px; color:#0f172a; font-family:monospace;">{code}</span>
                             </div>
                             <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
                                 Ingresa este codigo en la app para crear una nueva contrasena.
                             </p>
-                            <p style="margin:0; font-size:14px; color:#999;">
+                            <p style="margin:0; font-size:13px; color:#999;">
                                 El codigo expira en 1 hora.
                             </p>
                         </td>
                     </tr>
+                    <!-- Footer -->
                     <tr>
                         <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
-                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                            <p style="margin:0 0 12px 0; font-size:12px; color:#999; text-align:center;">
                                 Si no solicitaste restablecer tu contrasena, ignora este email.
+                            </p>
+                            <p style="margin:0; font-size:12px; color:#666; text-align:center;">
+                                Desarrollado por <a href="https://instagram.com/austin.app" style="color:#10b981; text-decoration:none;">@austin.app</a>
                             </p>
                         </td>
                     </tr>
@@ -231,6 +260,8 @@ Ingresa este codigo en la app para crear una nueva contrasena.
 El codigo expira en 1 hora.
 
 Si no solicitaste restablecer tu contrasena, ignora este email.
+
+Desarrollado por @austin.app (Instagram)
 """
     else:
         subject = f"{code} - Reset your password"
@@ -245,33 +276,40 @@ Si no solicitaste restablecer tu contrasena, ignora este email.
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
         <tr>
             <td align="center">
-                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <!-- Header with Logo -->
                     <tr>
-                        <td style="padding:32px 40px; text-align:center;">
-                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
-                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        <td style="padding:32px 40px; text-align:center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+                            <img src="{LOGO_SVG}" alt="CRITERIO" width="50" height="50" style="display:block; margin:0 auto 16px auto; border-radius:12px;" />
+                            <h1 style="margin:0; font-size:24px; font-weight:700; color:#ffffff; letter-spacing:3px;">CRITERIO</h1>
+                            <p style="margin:8px 0 0 0; font-size:13px; color:#10b981;">Crypto Trading Intelligence</p>
                         </td>
                     </tr>
+                    <!-- Content -->
                     <tr>
-                        <td style="padding:0 40px 32px 40px;">
+                        <td style="padding:32px 40px;">
                             <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
                                 Your password reset code is:
                             </p>
-                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
-                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            <div style="background-color:#fef3c7; border:2px solid #f59e0b; border-radius:12px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:36px; font-weight:700; letter-spacing:8px; color:#0f172a; font-family:monospace;">{code}</span>
                             </div>
                             <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
                                 Enter this code in the app to create a new password.
                             </p>
-                            <p style="margin:0; font-size:14px; color:#999;">
+                            <p style="margin:0; font-size:13px; color:#999;">
                                 This code expires in 1 hour.
                             </p>
                         </td>
                     </tr>
+                    <!-- Footer -->
                     <tr>
                         <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
-                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                            <p style="margin:0 0 12px 0; font-size:12px; color:#999; text-align:center;">
                                 If you didn't request a password reset, please ignore this email.
+                            </p>
+                            <p style="margin:0; font-size:12px; color:#666; text-align:center;">
+                                Developed by <a href="https://instagram.com/austin.app" style="color:#10b981; text-decoration:none;">@austin.app</a>
                             </p>
                         </td>
                     </tr>
@@ -290,6 +328,8 @@ Enter this code in the app to create a new password.
 This code expires in 1 hour.
 
 If you didn't request a password reset, please ignore this email.
+
+Developed by @austin.app (Instagram)
 """
 
     try:
