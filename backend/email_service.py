@@ -3,7 +3,6 @@ Email service using Resend for transactional emails.
 """
 import os
 import logging
-import secrets
 import random
 import resend
 
@@ -31,79 +30,123 @@ def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
         return False
 
     if lang == "es":
-        subject = "Tu codigo de verificacion - CRITERIO"
+        subject = f"{code} es tu codigo de verificacion"
         html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 40px 20px; }}
-                .container {{ max-width: 500px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 40px; }}
-                .logo {{ font-size: 28px; font-weight: bold; letter-spacing: 4px; margin-bottom: 30px; }}
-                .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
-                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .warning {{ color: #f59e0b; font-size: 13px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Tu codigo de verificacion</h1>
-                <p>Ingresa este codigo en la app para verificar tu email:</p>
-                <div class="code-box">
-                    <div class="code">{code}</div>
-                </div>
-                <p class="warning">Este codigo expira en 24 horas. No compartas este codigo con nadie.</p>
-                <div class="footer">
-                    <p>Si no creaste esta cuenta, puedes ignorar este email.</p>
-                    <p>CRITERIO - Crypto Trading Intelligence</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color:#f5f5f5;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <tr>
+                        <td style="padding:32px 40px; text-align:center;">
+                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
+                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 40px 32px 40px;">
+                            <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
+                                Tu codigo de verificacion es:
+                            </p>
+                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            </div>
+                            <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
+                                Ingresa este codigo en la app para verificar tu email.
+                            </p>
+                            <p style="margin:0; font-size:14px; color:#999;">
+                                El codigo expira en 24 horas.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
+                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                                Si no creaste una cuenta en CRITERIO, ignora este email.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+        text_content = f"""CRITERIO - Crypto Trading Intelligence
+
+Tu codigo de verificacion es: {code}
+
+Ingresa este codigo en la app para verificar tu email.
+El codigo expira en 24 horas.
+
+Si no creaste una cuenta en CRITERIO, ignora este email.
+"""
     else:
-        subject = "Your verification code - CRITERIO"
+        subject = f"{code} is your verification code"
         html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 40px 20px; }}
-                .container {{ max-width: 500px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 40px; }}
-                .logo {{ font-size: 28px; font-weight: bold; letter-spacing: 4px; margin-bottom: 30px; }}
-                .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
-                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .warning {{ color: #f59e0b; font-size: 13px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Your verification code</h1>
-                <p>Enter this code in the app to verify your email:</p>
-                <div class="code-box">
-                    <div class="code">{code}</div>
-                </div>
-                <p class="warning">This code expires in 24 hours. Do not share this code with anyone.</p>
-                <div class="footer">
-                    <p>If you didn't create this account, you can ignore this email.</p>
-                    <p>CRITERIO - Crypto Trading Intelligence</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color:#f5f5f5;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <tr>
+                        <td style="padding:32px 40px; text-align:center;">
+                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
+                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 40px 32px 40px;">
+                            <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
+                                Your verification code is:
+                            </p>
+                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            </div>
+                            <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
+                                Enter this code in the app to verify your email.
+                            </p>
+                            <p style="margin:0; font-size:14px; color:#999;">
+                                This code expires in 24 hours.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
+                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                                If you didn't create a CRITERIO account, please ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+        text_content = f"""CRITERIO - Crypto Trading Intelligence
+
+Your verification code is: {code}
+
+Enter this code in the app to verify your email.
+This code expires in 24 hours.
+
+If you didn't create a CRITERIO account, please ignore this email.
+"""
 
     try:
         params = {
@@ -111,6 +154,7 @@ def send_verification_email(to_email: str, code: str, lang: str = "es") -> bool:
             "to": [to_email],
             "subject": subject,
             "html": html_content,
+            "text": text_content,  # Plain text version helps avoid spam
         }
         response = resend.Emails.send(params)
         logger.info(f"Verification email sent to {to_email}: {response}")
@@ -130,79 +174,123 @@ def send_password_reset_email(to_email: str, code: str, lang: str = "es") -> boo
         return False
 
     if lang == "es":
-        subject = "Restablecer contrasena - CRITERIO"
+        subject = f"{code} - Restablecer contrasena"
         html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 40px 20px; }}
-                .container {{ max-width: 500px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 40px; }}
-                .logo {{ font-size: 28px; font-weight: bold; letter-spacing: 4px; margin-bottom: 30px; }}
-                .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
-                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .warning {{ color: #f59e0b; font-size: 13px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Restablecer contrasena</h1>
-                <p>Ingresa este codigo en la app para restablecer tu contrasena:</p>
-                <div class="code-box">
-                    <div class="code">{code}</div>
-                </div>
-                <p class="warning">Este codigo expira en 1 hora. No compartas este codigo con nadie.</p>
-                <div class="footer">
-                    <p>Si no solicitaste esto, puedes ignorar este email.</p>
-                    <p>CRITERIO - Crypto Trading Intelligence</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color:#f5f5f5;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <tr>
+                        <td style="padding:32px 40px; text-align:center;">
+                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
+                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 40px 32px 40px;">
+                            <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
+                                Tu codigo para restablecer la contrasena es:
+                            </p>
+                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            </div>
+                            <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
+                                Ingresa este codigo en la app para crear una nueva contrasena.
+                            </p>
+                            <p style="margin:0; font-size:14px; color:#999;">
+                                El codigo expira en 1 hora.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
+                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                                Si no solicitaste restablecer tu contrasena, ignora este email.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+        text_content = f"""CRITERIO - Crypto Trading Intelligence
+
+Tu codigo para restablecer la contrasena es: {code}
+
+Ingresa este codigo en la app para crear una nueva contrasena.
+El codigo expira en 1 hora.
+
+Si no solicitaste restablecer tu contrasena, ignora este email.
+"""
     else:
-        subject = "Reset your password - CRITERIO"
+        subject = f"{code} - Reset your password"
         html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; padding: 40px 20px; }}
-                .container {{ max-width: 500px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 40px; }}
-                .logo {{ font-size: 28px; font-weight: bold; letter-spacing: 4px; margin-bottom: 30px; }}
-                .dot {{ display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-left: 4px; }}
-                h1 {{ font-size: 24px; margin-bottom: 20px; color: #fff; }}
-                p {{ color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }}
-                .code-box {{ background: #0f172a; border: 2px solid #10b981; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
-                .code {{ font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981; font-family: monospace; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #334155; font-size: 12px; color: #64748b; }}
-                .warning {{ color: #f59e0b; font-size: 13px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">CRITERIO<span class="dot"></span></div>
-                <h1>Reset your password</h1>
-                <p>Enter this code in the app to reset your password:</p>
-                <div class="code-box">
-                    <div class="code">{code}</div>
-                </div>
-                <p class="warning">This code expires in 1 hour. Do not share this code with anyone.</p>
-                <div class="footer">
-                    <p>If you didn't request this, you can ignore this email.</p>
-                    <p>CRITERIO - Crypto Trading Intelligence</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color:#f5f5f5;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5; padding:40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <tr>
+                        <td style="padding:32px 40px; text-align:center;">
+                            <h1 style="margin:0 0 8px 0; font-size:24px; font-weight:700; color:#1a1a1a; letter-spacing:2px;">CRITERIO</h1>
+                            <p style="margin:0; font-size:14px; color:#666;">Crypto Trading Intelligence</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 40px 32px 40px;">
+                            <p style="margin:0 0 24px 0; font-size:16px; color:#333; line-height:1.5;">
+                                Your password reset code is:
+                            </p>
+                            <div style="background-color:#f8f9fa; border-radius:8px; padding:24px; text-align:center; margin-bottom:24px;">
+                                <span style="font-size:32px; font-weight:700; letter-spacing:6px; color:#1a1a1a; font-family:monospace;">{code}</span>
+                            </div>
+                            <p style="margin:0 0 8px 0; font-size:14px; color:#666; line-height:1.5;">
+                                Enter this code in the app to create a new password.
+                            </p>
+                            <p style="margin:0; font-size:14px; color:#999;">
+                                This code expires in 1 hour.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:24px 40px; background-color:#f8f9fa; border-top:1px solid #eee;">
+                            <p style="margin:0; font-size:12px; color:#999; text-align:center;">
+                                If you didn't request a password reset, please ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+        text_content = f"""CRITERIO - Crypto Trading Intelligence
+
+Your password reset code is: {code}
+
+Enter this code in the app to create a new password.
+This code expires in 1 hour.
+
+If you didn't request a password reset, please ignore this email.
+"""
 
     try:
         params = {
@@ -210,6 +298,7 @@ def send_password_reset_email(to_email: str, code: str, lang: str = "es") -> boo
             "to": [to_email],
             "subject": subject,
             "html": html_content,
+            "text": text_content,
         }
         response = resend.Emails.send(params)
         logger.info(f"Password reset email sent to {to_email}: {response}")
