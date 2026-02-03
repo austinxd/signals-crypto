@@ -3724,6 +3724,55 @@ async def admin_delete_user(user_id: int, admin: UserAccount = Depends(get_admin
         db.close()
 
 
+@app.post("/api/admin/users/{user_id}/resend-verification")
+async def admin_resend_verification(user_id: int, admin: UserAccount = Depends(get_admin_user)):
+    """Resend verification email to a user."""
+    db = get_db()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.email_verified:
+            raise HTTPException(status_code=400, detail="User is already verified")
+
+        # Generate new code and send email
+        code = generate_verification_code()
+        user.verification_token = code
+        db.commit()
+
+        sent = send_verification_email(user.email, code, "es")
+        if not sent:
+            raise HTTPException(status_code=500, detail="Failed to send email")
+
+        logger.info(f"Admin {admin.email} resent verification to {user.email}")
+        return {"status": "ok", "message": f"Verification email sent to {user.email}", "code": code}
+    finally:
+        db.close()
+
+
+@app.post("/api/admin/users/{user_id}/verify")
+async def admin_verify_user(user_id: int, admin: UserAccount = Depends(get_admin_user)):
+    """Manually verify a user's email."""
+    db = get_db()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.email_verified:
+            raise HTTPException(status_code=400, detail="User is already verified")
+
+        user.email_verified = True
+        user.verification_token = None
+        db.commit()
+
+        logger.info(f"Admin {admin.email} manually verified {user.email}")
+        return {"status": "ok", "message": f"User {user.email} verified"}
+    finally:
+        db.close()
+
+
 @app.get("/api/admin/positions")
 async def admin_list_positions(
     admin: UserAccount = Depends(get_admin_user),

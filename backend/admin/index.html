@@ -565,6 +565,28 @@
         </div>
     </div>
 
+    <!-- Verify Email Modal -->
+    <div class="modal-overlay" id="verifyModal">
+        <div class="modal" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Verificar Email</h3>
+                <button class="modal-close" onclick="closeVerifyModal()">&times;</button>
+            </div>
+            <div id="verifyModalContent">
+                <p style="color:#888; margin-bottom:20px;">Usuario: <strong id="verifyUserEmail"></strong></p>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <button class="btn-action primary" style="width:100%; padding:12px;" onclick="resendVerification()">
+                        Reenviar codigo de verificacion
+                    </button>
+                    <button class="btn-action" style="width:100%; padding:12px; background:#10b981;" onclick="verifyUserManually()">
+                        Verificar manualmente
+                    </button>
+                </div>
+                <div id="verifyResult" style="margin-top:16px; padding:12px; border-radius:8px; display:none;"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '';
         let token = localStorage.getItem('admin_token');
@@ -740,7 +762,7 @@
                         <td>${u.id}</td>
                         <td>
                             ${u.email}
-                            ${u.email_verified ? '<span class="badge" style="background:#10b981;color:#fff;">✓</span>' : '<span class="badge" style="background:#f59e0b;color:#fff;">!</span>'}
+                            ${u.email_verified ? '<span class="badge" style="background:#10b981;color:#fff;">✓</span>' : '<span class="badge" style="background:#f59e0b;color:#fff;cursor:pointer;" onclick="showVerifyOptions(${u.id}, \'${u.email}\')">!</span>'}
                             ${u.is_admin ? '<span class="badge admin">Admin</span>' : ''}
                         </td>
                         <td>${u.country || '-'}</td>
@@ -941,6 +963,64 @@
             document.getElementById('userModal').classList.remove('active');
         }
 
+        let verifyUserId = null;
+
+        function showVerifyOptions(userId, email) {
+            verifyUserId = userId;
+            document.getElementById('verifyUserEmail').textContent = email;
+            document.getElementById('verifyResult').style.display = 'none';
+            document.getElementById('verifyModal').classList.add('active');
+        }
+
+        function closeVerifyModal() {
+            document.getElementById('verifyModal').classList.remove('active');
+            verifyUserId = null;
+        }
+
+        async function resendVerification() {
+            if (!verifyUserId) return;
+            const resultEl = document.getElementById('verifyResult');
+            resultEl.style.display = 'block';
+            resultEl.style.background = '#2a2a4a';
+            resultEl.innerHTML = 'Enviando...';
+
+            try {
+                const data = await apiRequest(`/api/admin/users/${verifyUserId}/resend-verification`, {
+                    method: 'POST'
+                });
+                resultEl.style.background = '#10b98120';
+                resultEl.innerHTML = `<span style="color:#10b981;">✓ Email enviado</span><br><small style="color:#888;">Codigo: <strong>${data.code}</strong></small>`;
+            } catch (err) {
+                resultEl.style.background = '#ef444420';
+                resultEl.innerHTML = `<span style="color:#ef4444;">Error: ${err.message}</span>`;
+            }
+        }
+
+        async function verifyUserManually() {
+            if (!verifyUserId) return;
+            if (!confirm('¿Verificar este usuario manualmente sin codigo?')) return;
+
+            const resultEl = document.getElementById('verifyResult');
+            resultEl.style.display = 'block';
+            resultEl.style.background = '#2a2a4a';
+            resultEl.innerHTML = 'Verificando...';
+
+            try {
+                await apiRequest(`/api/admin/users/${verifyUserId}/verify`, {
+                    method: 'POST'
+                });
+                resultEl.style.background = '#10b98120';
+                resultEl.innerHTML = '<span style="color:#10b981;">✓ Usuario verificado</span>';
+                setTimeout(() => {
+                    closeVerifyModal();
+                    loadUsers(document.getElementById('userSearch').value);
+                }, 1000);
+            } catch (err) {
+                resultEl.style.background = '#ef444420';
+                resultEl.innerHTML = `<span style="color:#ef4444;">Error: ${err.message}</span>`;
+            }
+        }
+
         async function togglePremium(userId, makePremium) {
             try {
                 const data = {
@@ -1031,6 +1111,9 @@
         // Close modal on outside click
         document.getElementById('userModal').addEventListener('click', (e) => {
             if (e.target.id === 'userModal') closeUserModal();
+        });
+        document.getElementById('verifyModal').addEventListener('click', (e) => {
+            if (e.target.id === 'verifyModal') closeVerifyModal();
         });
     </script>
 </body>
