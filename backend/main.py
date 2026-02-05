@@ -1264,6 +1264,10 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
     rsi_zone = analysis["timing"]["rsi_zone"]
     macd_state = analysis["timing"]["macd_state"]
 
+    # Get retracement zone from indicators (not exposed to UI)
+    retracement_zone = htf_indicators.get("retracement_zone", "unknown") if htf_indicators else "unknown"
+    analysis["context"]["retracement_zone"] = retracement_zone
+
     risk_factors = 0
     favorable_factors = 0
 
@@ -1286,6 +1290,21 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         favorable_factors += 2
     if macd_state and "cruce" in macd_state:
         favorable_factors += 1
+
+    # Retracement zone adjustment
+    if retracement_zone == "shallow":
+        # Shallow retracement in clear trend = more favorable
+        if htf_bias in ["alcista", "bajista"]:
+            favorable_factors += 1
+    elif retracement_zone == "mid":
+        # Decision zone (50%) = neutral, no adjustment
+        pass
+    elif retracement_zone == "deep":
+        # Deep retracement = higher risk
+        risk_factors += 1
+        # If also mixed bias, additional risk
+        if htf_bias in ["neutral", "mixto"]:
+            risk_factors += 1
 
     # Funding consideration
     if funding:
@@ -2537,6 +2556,7 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
             "volatility": analysis.get("volatility_state", "normal"),
             "rsi": analysis.get("rsi"),
             "scenario": analysis.get("scenario", "espera"),
+            "retracement_zone": analysis.get("retracement_zone", "unknown"),
         }
 
         # Log the data being sent to AI for debugging
@@ -2963,6 +2983,7 @@ async def get_ai_market_explanation(pair: str, user: UserAccount = Depends(get_o
             "volume_dominance": volume_dominance,
             "momentum_state": momentum_state,
             "rsi_state": rsi_state,
+            "retracement_zone": analysis.get("context", {}).get("retracement_zone", "unknown"),
         }
 
         # Check if there's a relevant tension that warrants AI explanation

@@ -68,6 +68,25 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional
 
     current_price = df.iloc[-1]["close"]
 
+    # Calculate retracement zone (internal, NOT exposed as percentage)
+    if swing_high != swing_low:
+        if is_uptrend:
+            # In uptrend: retracement from swing_high towards swing_low
+            retracement_pct = (swing_high - current_price) / (swing_high - swing_low) * 100
+        else:
+            # In downtrend: retracement from swing_low towards swing_high
+            retracement_pct = (current_price - swing_low) / (swing_high - swing_low) * 100
+    else:
+        retracement_pct = 0
+
+    # Classify into discrete zone
+    if retracement_pct < 38:
+        retracement_zone = "shallow"
+    elif retracement_pct <= 62:
+        retracement_zone = "mid"
+    else:
+        retracement_zone = "deep"
+
     fib_ratios = {
         "0.0": 0.0, "23.6": 0.236, "38.2": 0.382,
         "50.0": 0.5, "61.8": 0.618, "78.6": 0.786, "100.0": 1.0,
@@ -136,6 +155,7 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 50) -> Optional
         "key_level_name": key_level_name,
         "entry_quality": entry_quality,
         "recommendation": recommendation,
+        "retracement_zone": retracement_zone,  # shallow | mid | deep
     }
 
 
@@ -294,6 +314,7 @@ def get_latest_indicators(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
             "entry_quality": fib_data["entry_quality"],
             "recommendation": fib_data["recommendation"],
         }
+        result["retracement_zone"] = fib_data.get("retracement_zone", "unknown")
 
     # RSI Divergence detection
     divergence = detect_rsi_divergence(df)

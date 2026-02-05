@@ -59,6 +59,11 @@ PIENSA EN:
 - Donde suele fallar la mayoria (entradas tardias, stops muy cercanos, persecucion)
 - Que tipo de reaccion es comun (rebote debil, falsa ruptura, lateralizacion, absorcion)
 
+COMPORTAMIENTO POR ZONA DE RETROCESO:
+- Si el contexto esta "cerca del extremo reciente": describe momentum, extension, agotamiento.
+- Si esta "en zona de decision estructural": describe ruido, falsas recuperaciones, fragilidad direccional, barridas frecuentes.
+- Si esta "en retroceso profundo": describe perdida de momentum, transicion vs correccion, squeezes.
+
 ESTO NO ES PREDICCION.
 Es memoria de comportamiento de mercado.
 
@@ -207,8 +212,8 @@ def _generate_cache_key(state: Dict[str, Any], reason: str) -> str:
     """
     Generate explicit cache key based on market state AND reason.
 
-    Format: v1|{PAIR}|{REASON}|{BIAS}|{SCENARIO}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}
-    Example: v1|BTCUSDT|momentum_extreme_against_trend|bearish|operable|high|selling|weakening|overbought
+    Format: v1|{PAIR}|{REASON}|{BIAS}|{SCENARIO}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}|{RETRACEMENT}
+    Example: v1|BTCUSDT|momentum_extreme_against_trend|bearish|operable|high|selling|weakening|overbought|mid
 
     Reason is part of the key because different reasons = different interpretations.
     """
@@ -219,8 +224,9 @@ def _generate_cache_key(state: Dict[str, Any], reason: str) -> str:
     volume_dominance = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+    retracement_zone = state.get("retracement_zone", "unknown")
 
-    return f"{CACHE_VERSION}|{pair}|{reason}|{htf_bias}|{scenario}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}"
+    return f"{CACHE_VERSION}|{pair}|{reason}|{htf_bias}|{scenario}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}|{retracement_zone}"
 
 
 def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
@@ -245,6 +251,14 @@ def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
     volume_dom = _normalize(state.get("volume_dominance", ""), _DOMINANCE_MAP, "balanced")
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
+    retracement_zone = state.get("retracement_zone", "unknown")
+
+    # Translate retracement zone to behavioral description (NO percentages)
+    zone_behavior = {
+        "shallow": "cerca del extremo reciente",
+        "mid": "en zona de decision estructural",
+        "deep": "en retroceso profundo",
+    }.get(retracement_zone, "")
 
     # Get behavioral focus for this reason
     behaviors = REASON_FOCUS.get(reason, "comportamiento tipico del precio")
@@ -254,7 +268,7 @@ def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
 TENSION DETECTADA: {reason}
 COMPORTAMIENTOS TIPICOS: {behaviors}
 
-ESTADO ACTUAL: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}
+ESTADO ACTUAL: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, zona_retroceso={zone_behavior}
 
 Describe como suele moverse el precio y donde suelen fallar los participantes.
 Termina conectando el comportamiento con el estado actual (ej: "...y actualmente no hay confirmacion", "...mientras el volumen no confirme", "...y por ahora la estructura se mantiene").
@@ -570,6 +584,12 @@ ESTILO:
 - Lenguaje condicional: "suele", "tiende", "mientras".
 - Enfocado en gestion de riesgo, no en prediccion.
 
+ZONAS DE RETROCESO:
+- En "mid" (zona de decision): enfatiza errores de timing, barridas, y fragilidad.
+  "zona donde suele definirse si el movimiento es correccion o transicion"
+- En "deep": enfatiza riesgo de que la tesis se invalide.
+- En "shallow": el movimiento aun no ha dado respiro, atencion a extensiones.
+
 REGLA FINAL:
 No describas el mercado.
 Evalua si esta posicion, con este riesgo, sigue siendo racional.
@@ -639,8 +659,9 @@ def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_
     volatility = _normalize(market_state.get("volatility", "normal"), _VOLATILITY_MAP, "normal")
     coherence = market_state.get("coherence", "neutral")
     scenario = market_state.get("scenario", "wait")
+    retracement_zone = market_state.get("retracement_zone", "unknown")
 
-    return f"pos|u{user_id}|{symbol}|{pnl_state}|{alignment}|{coherence}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{scenario}"
+    return f"pos|u{user_id}|{symbol}|{pnl_state}|{alignment}|{coherence}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{scenario}|{retracement_zone}"
 
 
 def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
@@ -666,6 +687,9 @@ def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, An
     inv_str = f"{inv_distance:.1f}" if inv_distance is not None else "N/A"
     liq_str = f"{liq_distance:.1f}" if liq_distance is not None else "N/A"
 
+    # Get retracement zone
+    retracement_zone = market_state.get("retracement_zone", "unknown")
+
     prompt = f"""POSITION_STATE:
 
 side: {side}
@@ -682,6 +706,7 @@ ltf_momentum: {ltf_momentum}
 volatility: {volatility}
 rsi_state: {rsi_state}
 scenario: {scenario}
+retracement_zone: {retracement_zone}
 
 RISK:
 distance_to_invalidation_pct: {inv_str}
@@ -873,6 +898,13 @@ def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str
         fragilidad = "Posiciones contra tendencia suelen sufrir squeezes antes de cualquier reversal"
     else:
         fragilidad = "Retrocesos normales pueden parecer cambios de tendencia, la estructura define"
+
+    # Modulate fragility by retracement zone
+    retracement_zone = market_state.get("retracement_zone", "unknown")
+    if retracement_zone == "mid":
+        fragilidad += " En zona de decision estructural donde el ruido y las barridas son frecuentes."
+    elif retracement_zone == "deep":
+        fragilidad += " Retroceso profundo aumenta probabilidad de transicion vs correccion."
 
     if alignment == "with_context":
         si_favorece = "Cierres 4H manteniendo estructura, momentum sostenido, volumen confirmando"
