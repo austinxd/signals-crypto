@@ -78,11 +78,13 @@ FORMATO:
 [Descripcion de comportamientos tipicos - 2-4 lineas]
 [Conclusion que conecte con el estado actual - 1 linea]
 
-La conclusion DEBE indicar donde esta el contexto ahora respecto al comportamiento descrito:
-- "...y actualmente no hay confirmacion estructural"
+La conclusion DEBE indicar donde esta el contexto ahora respecto al comportamiento descrito.
+Indica explicitamente si el mercado esta ENTRANDO, DENTRO, o SALIENDO de esa zona:
+- "Actualmente el precio se encuentra dentro de esta zona de decision"
+- "El mercado esta testeando este tipo de entorno, pero aun no lo ha resuelto"
+- "Este comportamiento suele aparecer aqui, y el contexto actual encaja con ello"
 - "...y por ahora el volumen no acompana"
 - "...mientras la estructura no ceda, esto sigue vigente"
-- "...y el momentum aun no muestra agotamiento"
 
 PROHIBICIONES:
 - No uses numeros ni precios
