@@ -28,7 +28,7 @@ from config import (
     REVENUECAT_WEBHOOK_SECRET,
 )
 from binance_client import get_binance_client, create_user_client
-from indicators import add_all_indicators, get_latest_indicators
+from indicators import add_all_indicators, get_latest_indicators, calculate_daily_gap
 from signals import detect_signal, SignalHistory, evaluate_exit_signals
 from notifications import NotificationManager, send_test_notification, send_exit_notification
 from database import (
@@ -1069,12 +1069,13 @@ def _format_price(p):
     return f"${p:,.0f}"
 
 
-def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicators: dict, funding: dict = None) -> dict:
+def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicators: dict, funding: dict = None, gap_data: dict = None) -> dict:
     """
     Compute unified pair analysis combining 4H (context) and 15m (timing).
 
     4H = CONTEXTO: Define si hay que mirar el par (sesgo, estructura, volatilidad)
     15m = TIMING: Define cuándo hay confirmación (momentum, crossovers)
+    1D GAP = Contexto estructural adicional (modula riesgo, no genera señales)
 
     Returns unified analysis with:
     - context: 4H analysis (htf_bias, structure, volatility)
@@ -1346,6 +1347,39 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
             analysis["direction_preference"] = "long"
         elif htf_bias == "bajista" and rsi_zone not in ["sobrevendido"]:
             analysis["direction_preference"] = "short"
+
+    # ========== GAP MODULATION (1D structural context) ==========
+    # Gap does NOT change htf_bias or generate signals
+    # Gap ONLY modulates scenario risk level
+    gap_context = "none"
+    if gap_data and gap_data.get("gap_exists") and not gap_data.get("gap_filled"):
+        gap_direction = gap_data.get("gap_direction")
+        gap_position = gap_data.get("gap_position")
+
+        # Determine gap context relative to current bias
+        if gap_direction == "up" and gap_position == "below":
+            # Gap up, price below gap = gap acts as resistance/magnet above
+            gap_context = "above_price"
+            if htf_bias == "bajista":
+                # Gap above in bearish context = friction for shorts
+                if analysis["scenario"] == "favorable":
+                    analysis["scenario"] = "operable"
+                    analysis["scenario_reason"] += " (friccion estructural pendiente)"
+        elif gap_direction == "down" and gap_position == "above":
+            # Gap down, price above gap = gap acts as support/magnet below
+            gap_context = "below_price"
+            if htf_bias == "alcista":
+                # Gap below in bullish context = friction for longs
+                if analysis["scenario"] == "favorable":
+                    analysis["scenario"] = "operable"
+                    analysis["scenario_reason"] += " (friccion estructural pendiente)"
+
+        # Store gap context for AI (internal, not for UI)
+        analysis["context"]["gap_context"] = gap_context
+        analysis["context"]["has_structural_gap"] = True
+    else:
+        analysis["context"]["gap_context"] = "none"
+        analysis["context"]["has_structural_gap"] = False
 
     # ========== UNIFIED READING ==========
     reading_parts = []
@@ -2557,6 +2591,8 @@ async def get_position_ai(symbol: str, user: UserAccount = Depends(get_current_u
             "rsi": analysis.get("rsi"),
             "scenario": analysis.get("scenario", "espera"),
             "retracement_zone": analysis.get("retracement_zone", "unknown"),
+            "has_structural_gap": analysis.get("has_structural_gap", False),
+            "gap_context": analysis.get("gap_context", "none"),
         }
 
         # Log the data being sent to AI for debugging
@@ -2820,8 +2856,17 @@ async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = F
             elif htf_indicators:
                 current_price = htf_indicators.get("price")
 
+            # Fetch 1D data for gap detection (independent of HTF analysis)
+            gap_data = None
+            try:
+                df_1d = client.fetch_ohlcv(pair, "1d", limit=15)
+                if df_1d is not None and len(df_1d) >= 3:
+                    gap_data = calculate_daily_gap(df_1d, current_price)
+            except Exception as e:
+                logger.warning(f"Error fetching 1D data for gap detection ({pair}): {e}")
+
             # Compute unified analysis
-            analysis = _compute_unified_pair_analysis(pair, htf_indicators, ltf_indicators, funding_data)
+            analysis = _compute_unified_pair_analysis(pair, htf_indicators, ltf_indicators, funding_data, gap_data)
 
             result[pair] = {
                 "pair": pair,
@@ -2858,6 +2903,14 @@ async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = F
                 # Legacy: include full indicators for PairDetailModal compatibility
                 "indicators": ltf_indicators,
                 "funding": funding_data,
+                # Gap data for structural context (1D)
+                "gap": {
+                    "exists": gap_data.get("gap_exists", False) if gap_data else False,
+                    "direction": gap_data.get("gap_direction") if gap_data else None,
+                    "low": gap_data.get("gap_low") if gap_data else None,
+                    "high": gap_data.get("gap_high") if gap_data else None,
+                    "filled": gap_data.get("gap_filled") if gap_data else None,
+                } if gap_data and gap_data.get("gap_exists") else None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
@@ -2984,6 +3037,8 @@ async def get_ai_market_explanation(pair: str, user: UserAccount = Depends(get_o
             "momentum_state": momentum_state,
             "rsi_state": rsi_state,
             "retracement_zone": analysis.get("context", {}).get("retracement_zone", "unknown"),
+            "has_structural_gap": analysis.get("context", {}).get("has_structural_gap", False),
+            "gap_context": analysis.get("context", {}).get("gap_context", "none"),
         }
 
         # Check if there's a relevant tension that warrants AI explanation

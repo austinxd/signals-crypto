@@ -214,6 +214,115 @@ def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 20) -> Optional[Dict
     return result
 
 
+def calculate_daily_gap(df: pd.DataFrame, current_price: float = None) -> Optional[Dict[str, Any]]:
+    """
+    Detect price gaps from daily (1D) data.
+
+    A gap is the zone between the previous day's close and the next day's open
+    where no trading occurred. Only considers the most recent unfilled gap.
+
+    Args:
+        df: DataFrame with OHLCV data (should be 1D timeframe)
+        current_price: Current price to check if gap is filled (optional)
+
+    Returns:
+        Dict with gap info or None if no gap exists
+    """
+    if df is None or len(df) < 3:
+        return None
+
+    # Look at the last few candles to find the most recent gap
+    recent = df.tail(10)
+
+    gap_info = None
+
+    for i in range(len(recent) - 1, 0, -1):
+        prev_candle = recent.iloc[i - 1]
+        curr_candle = recent.iloc[i]
+
+        prev_close = prev_candle["close"]
+        curr_open = curr_candle["open"]
+        curr_high = curr_candle["high"]
+        curr_low = curr_candle["low"]
+
+        # Gap up: current open > previous close AND current low > previous close
+        # (price never traded in between)
+        if curr_open > prev_close and curr_low > prev_close:
+            gap_low = prev_close
+            gap_high = curr_low
+            gap_direction = "up"
+
+            # Check if gap has been filled by subsequent candles
+            filled = False
+            for j in range(i, len(recent)):
+                if recent.iloc[j]["low"] <= gap_low:
+                    filled = True
+                    break
+
+            if not filled:
+                gap_info = {
+                    "gap_exists": True,
+                    "gap_direction": gap_direction,
+                    "gap_low": float(gap_low),
+                    "gap_high": float(gap_high),
+                    "gap_mid": float((gap_low + gap_high) / 2),
+                    "gap_filled": False,
+                }
+                break
+
+        # Gap down: current open < previous close AND current high < previous close
+        elif curr_open < prev_close and curr_high < prev_close:
+            gap_low = curr_high
+            gap_high = prev_close
+            gap_direction = "down"
+
+            # Check if gap has been filled by subsequent candles
+            filled = False
+            for j in range(i, len(recent)):
+                if recent.iloc[j]["high"] >= gap_high:
+                    filled = True
+                    break
+
+            if not filled:
+                gap_info = {
+                    "gap_exists": True,
+                    "gap_direction": gap_direction,
+                    "gap_low": float(gap_low),
+                    "gap_high": float(gap_high),
+                    "gap_mid": float((gap_low + gap_high) / 2),
+                    "gap_filled": False,
+                }
+                break
+
+    if gap_info is None:
+        return {
+            "gap_exists": False,
+            "gap_direction": None,
+            "gap_low": None,
+            "gap_high": None,
+            "gap_mid": None,
+            "gap_filled": None,
+        }
+
+    # Calculate distance from current price to gap (if current_price provided)
+    if current_price and gap_info["gap_exists"]:
+        gap_mid = gap_info["gap_mid"]
+        gap_info["gap_distance_pct"] = abs(current_price - gap_mid) / current_price * 100
+
+        # Determine if price is above or below the gap
+        if current_price > gap_info["gap_high"]:
+            gap_info["gap_position"] = "above"  # Price is above the gap
+        elif current_price < gap_info["gap_low"]:
+            gap_info["gap_position"] = "below"  # Price is below the gap
+        else:
+            gap_info["gap_position"] = "inside"  # Price is within the gap
+    else:
+        gap_info["gap_distance_pct"] = None
+        gap_info["gap_position"] = None
+
+    return gap_info
+
+
 def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Add all technical indicators to the DataFrame."""
     df = df.copy()

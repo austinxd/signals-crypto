@@ -64,6 +64,11 @@ COMPORTAMIENTO POR ZONA DE RETROCESO:
 - Si esta "en zona de decision estructural": describe ruido, falsas recuperaciones, fragilidad direccional, barridas frecuentes.
 - Si esta "en retroceso profundo": describe perdida de momentum, transicion vs correccion, squeezes.
 
+FRICCION ESTRUCTURAL (zonas no negociadas):
+- Si hay "zona no negociada por encima": describe atraccion tecnica en rebotes, movimientos incompletos, resistencia latente.
+- Si hay "zona no negociada por debajo": describe riesgo de continuacion tras impulsos, soporte pendiente de testeo.
+- NUNCA uses la palabra "gap". Usa: "zona no negociada", "movimiento incompleto", "friccion estructural".
+
 ESTO NO ES PREDICCION.
 Es memoria de comportamiento de mercado.
 
@@ -214,8 +219,8 @@ def _generate_cache_key(state: Dict[str, Any], reason: str) -> str:
     """
     Generate explicit cache key based on market state AND reason.
 
-    Format: v1|{PAIR}|{REASON}|{BIAS}|{SCENARIO}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}|{RETRACEMENT}
-    Example: v1|BTCUSDT|momentum_extreme_against_trend|bearish|operable|high|selling|weakening|overbought|mid
+    Format: v1|{PAIR}|{REASON}|{BIAS}|{SCENARIO}|{VOL}|{DOMINANCE}|{MOMENTUM}|{RSI}|{RETRACEMENT}|{GAP}
+    Example: v1|BTCUSDT|momentum_extreme_against_trend|bearish|operable|high|selling|weakening|overbought|mid|above
 
     Reason is part of the key because different reasons = different interpretations.
     """
@@ -227,8 +232,9 @@ def _generate_cache_key(state: Dict[str, Any], reason: str) -> str:
     momentum_state = _normalize(state.get("momentum_state", ""), _MOMENTUM_STATE_MAP, "neutral")
     rsi_state = _normalize(state.get("rsi_state", ""), _RSI_STATE_MAP, "neutral")
     retracement_zone = state.get("retracement_zone", "unknown")
+    gap_context = state.get("gap_context", "none")
 
-    return f"{CACHE_VERSION}|{pair}|{reason}|{htf_bias}|{scenario}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}|{retracement_zone}"
+    return f"{CACHE_VERSION}|{pair}|{reason}|{htf_bias}|{scenario}|{volatility}|{volume_dominance}|{momentum_state}|{rsi_state}|{retracement_zone}|{gap_context}"
 
 
 def _is_cache_valid(cache_entry: Dict[str, Any], volatility: str = "normal") -> bool:
@@ -262,15 +268,29 @@ def _format_input_for_ai(state: Dict[str, Any], reason: str) -> str:
         "deep": "en retroceso profundo",
     }.get(retracement_zone, "")
 
+    # Translate gap context to behavioral description (NO "gap" word)
+    gap_context = state.get("gap_context", "none")
+    structural_friction = {
+        "above_price": "con zona no negociada por encima",
+        "below_price": "con zona no negociada por debajo",
+    }.get(gap_context, "")
+
     # Get behavioral focus for this reason
     behaviors = REASON_FOCUS.get(reason, "comportamiento tipico del precio")
+
+    # Build state string
+    state_parts = [f"sesgo={htf_bias}", f"momentum={momentum_state}", f"rsi={rsi_state}", f"volatilidad={volatility}", f"volumen={volume_dom}"]
+    if zone_behavior:
+        state_parts.append(f"zona_retroceso={zone_behavior}")
+    if structural_friction:
+        state_parts.append(f"friccion_estructural={structural_friction}")
 
     prompt = f"""Describe que suele pasar con el precio en {pair} cuando aparece esta tension.
 
 TENSION DETECTADA: {reason}
 COMPORTAMIENTOS TIPICOS: {behaviors}
 
-ESTADO ACTUAL: sesgo={htf_bias}, momentum={momentum_state}, rsi={rsi_state}, volatilidad={volatility}, volumen={volume_dom}, zona_retroceso={zone_behavior}
+ESTADO ACTUAL: {", ".join(state_parts)}
 
 Describe como suele moverse el precio y donde suelen fallar los participantes.
 Termina conectando el comportamiento con el estado actual (ej: "...y actualmente no hay confirmacion", "...mientras el volumen no confirme", "...y por ahora la estructura se mantiene").
@@ -592,6 +612,11 @@ ZONAS DE RETROCESO:
 - En "deep": enfatiza riesgo de que la tesis se invalide.
 - En "shallow": el movimiento aun no ha dado respiro, atencion a extensiones.
 
+FRICCION ESTRUCTURAL (zonas no negociadas):
+- Si hay "zona_no_negociada_arriba" y posicion es SHORT: mayor riesgo de squeeze, reflejar en Fragilidad.
+- Si hay "zona_no_negociada_abajo" y posicion es LONG: mayor riesgo de continuacion bajista, reflejar en Si contra.
+- NUNCA uses la palabra "gap". Usa: "zona no negociada", "movimiento incompleto", "friccion estructural pendiente".
+
 REGLA FINAL:
 No describas el mercado.
 Evalua si esta posicion, con este riesgo, sigue siendo racional.
@@ -662,8 +687,9 @@ def _generate_position_cache_key(user_id: int, position: Dict[str, Any], market_
     coherence = market_state.get("coherence", "neutral")
     scenario = market_state.get("scenario", "wait")
     retracement_zone = market_state.get("retracement_zone", "unknown")
+    gap_context = market_state.get("gap_context", "none")
 
-    return f"pos|u{user_id}|{symbol}|{pnl_state}|{alignment}|{coherence}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{scenario}|{retracement_zone}"
+    return f"pos|u{user_id}|{symbol}|{pnl_state}|{alignment}|{coherence}|{htf_bias}|{structure}|{ltf_momentum}|{volatility}|{scenario}|{retracement_zone}|{gap_context}"
 
 
 def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, Any]) -> str:
@@ -689,8 +715,16 @@ def _format_position_prompt(position: Dict[str, Any], market_state: Dict[str, An
     inv_str = f"{inv_distance:.1f}" if inv_distance is not None else "N/A"
     liq_str = f"{liq_distance:.1f}" if liq_distance is not None else "N/A"
 
-    # Get retracement zone
+    # Get retracement zone and gap context
     retracement_zone = market_state.get("retracement_zone", "unknown")
+    gap_context = market_state.get("gap_context", "none")
+
+    # Translate gap to behavioral friction (no "gap" word)
+    structural_friction = {
+        "above_price": "zona_no_negociada_arriba",
+        "below_price": "zona_no_negociada_abajo",
+        "none": "sin_friccion"
+    }.get(gap_context, "sin_friccion")
 
     prompt = f"""POSITION_STATE:
 
@@ -709,6 +743,7 @@ volatility: {volatility}
 rsi_state: {rsi_state}
 scenario: {scenario}
 retracement_zone: {retracement_zone}
+structural_friction: {structural_friction}
 
 RISK:
 distance_to_invalidation_pct: {inv_str}
@@ -908,12 +943,25 @@ def _generate_position_fallback(position: Dict[str, Any], market_state: Dict[str
     elif retracement_zone == "deep":
         fragilidad += " Retroceso profundo aumenta probabilidad de transicion vs correccion."
 
+    # Modulate by structural friction (gap context)
+    gap_context = market_state.get("gap_context", "none")
+    if gap_context == "above_price" and side == "SHORT":
+        fragilidad += " Zona no negociada por encima aumenta riesgo de squeeze."
+    elif gap_context == "below_price" and side == "LONG":
+        fragilidad += " Zona no negociada por debajo representa friccion estructural pendiente."
+
     if alignment == "with_context":
         si_favorece = "Cierres 4H manteniendo estructura, momentum sostenido, volumen confirmando"
         si_contra = "Ruptura de ultimo pivot estructural, cambio de coherencia posicion-mercado"
     else:
         si_favorece = "Quiebre de estructura HTF confirmado con cierre, giro de momentum LTF"
         si_contra = "Continuation del sesgo dominante, nuevos extremos en direccion opuesta"
+
+    # Add gap context to si_contra if relevant
+    if gap_context == "above_price" and side == "SHORT":
+        si_contra += ", movimiento hacia zona no negociada superior"
+    elif gap_context == "below_price" and side == "LONG":
+        si_contra += ", testeo de zona no negociada inferior"
 
     return {
         "lectura": lectura,

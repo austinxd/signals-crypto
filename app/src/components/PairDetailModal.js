@@ -749,6 +749,17 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </View>
             )}
 
+            {/* Contexto Estructural Adicional (Gap) - Only if gap exists */}
+            {data?.gap?.exists && !data?.gap?.filled && (
+              <View style={styles.structuralContextBox}>
+                <Text style={styles.structuralContextTitle}>Contexto estructural adicional</Text>
+                <Text style={styles.structuralContextLabel}>Zona no negociada (Daily):</Text>
+                <Text style={styles.structuralContextValue}>
+                  {formatPrice(data.gap.low)} – {formatPrice(data.gap.high)}
+                </Text>
+              </View>
+            )}
+
             {/* Disclaimer */}
             <View style={styles.disclaimerBox}>
               <Text style={styles.disclaimerText}>
@@ -1179,6 +1190,31 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 12,
     fontWeight: '500',
+  },
+
+  // Structural Context (Gap)
+  structuralContextBox: {
+    backgroundColor: '#0f0f1a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  structuralContextTitle: {
+    color: '#666',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    letterSpacing: 0.5,
+  },
+  structuralContextLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  structuralContextValue: {
+    color: '#aaa',
+    fontSize: 14,
   },
 
   // Disclaimer
