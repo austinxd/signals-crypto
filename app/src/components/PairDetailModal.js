@@ -749,16 +749,27 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </View>
             )}
 
-            {/* Contexto Estructural Adicional (Gap) - Only if gap exists */}
-            {data?.gap?.exists && !data?.gap?.filled && (
-              <View style={styles.structuralContextBox}>
-                <Text style={styles.structuralContextTitle}>Contexto estructural adicional</Text>
-                <Text style={styles.structuralContextLabel}>Zona no negociada (Daily):</Text>
-                <Text style={styles.structuralContextValue}>
-                  {formatPrice(data.gap.low)} – {formatPrice(data.gap.high)}
-                </Text>
-              </View>
-            )}
+            {/* Contexto Estructural Adicional (Gap) - Always show */}
+            <View style={styles.structuralContextBox}>
+              <Text style={styles.structuralContextTitle}>Contexto estructural adicional</Text>
+              {data?.gap?.exists && !data?.gap?.filled ? (
+                <>
+                  <Text style={styles.structuralContextLabel}>Zona no negociada (Daily):</Text>
+                  <Text style={styles.structuralContextValue}>
+                    {formatPrice(data.gap.low)} – {formatPrice(data.gap.high)}
+                  </Text>
+                  {data.gap.distance_pct != null && (
+                    <Text style={styles.structuralContextDistance}>
+                      {data.gap.position === 'above' ? 'Precio por encima' :
+                       data.gap.position === 'below' ? 'Precio por debajo' :
+                       'Precio dentro'} • {data.gap.distance_pct.toFixed(1)}% de distancia
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.structuralContextNone}>Sin zonas no negociadas activas</Text>
+              )}
+            </View>
 
             {/* Disclaimer */}
             <View style={styles.disclaimerBox}>
@@ -1215,6 +1226,16 @@ const styles = StyleSheet.create({
   structuralContextValue: {
     color: '#aaa',
     fontSize: 14,
+  },
+  structuralContextDistance: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  structuralContextNone: {
+    color: '#555',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
 
   // Disclaimer

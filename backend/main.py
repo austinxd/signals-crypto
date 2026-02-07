@@ -2903,14 +2903,16 @@ async def get_unified_market_data(pairs: Optional[str] = None, refresh: bool = F
                 # Legacy: include full indicators for PairDetailModal compatibility
                 "indicators": ltf_indicators,
                 "funding": funding_data,
-                # Gap data for structural context (1D)
+                # Gap data for structural context (1D) - always included
                 "gap": {
                     "exists": gap_data.get("gap_exists", False) if gap_data else False,
                     "direction": gap_data.get("gap_direction") if gap_data else None,
                     "low": gap_data.get("gap_low") if gap_data else None,
                     "high": gap_data.get("gap_high") if gap_data else None,
                     "filled": gap_data.get("gap_filled") if gap_data else None,
-                } if gap_data and gap_data.get("gap_exists") else None,
+                    "distance_pct": gap_data.get("gap_distance_pct") if gap_data else None,
+                    "position": gap_data.get("gap_position") if gap_data else None,  # above/below/inside
+                } if gap_data else {"exists": False},
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
