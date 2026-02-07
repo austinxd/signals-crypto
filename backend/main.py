@@ -1131,6 +1131,10 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         htf_fib = htf_indicators.get("fibonacci")
         htf_divergence = htf_indicators.get("divergence")
 
+        # Store current price for notifications
+        if htf_price:
+            analysis["context"]["current_price"] = htf_price
+
         # EMA200 position (structure)
         ema_bias = None
         if htf_price_above_ema is True:
@@ -1167,9 +1171,13 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
             dist = htf_fib.get("distance_percent", 0)
             at_level = htf_fib.get("at_key_level", False)
             near_level = htf_fib.get("near_key_level", False)
+            key_level_name = htf_fib.get("key_level_name")
 
             if at_level or near_level:
                 analysis["context"]["htf_structure"] = "en nivel clave"
+                # Store Fibonacci level details for notifications
+                analysis["context"]["fibo_level"] = key_level_name
+                analysis["context"]["fibo_price"] = htf_fib.get("levels", {}).get(key_level_name) if key_level_name else None
             elif abs(dist) < 3:
                 analysis["context"]["htf_structure"] = "consolidacion"
             elif (is_uptrend and dist > 0) or (not is_uptrend and dist < 0):

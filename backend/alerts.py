@@ -355,6 +355,10 @@ def check_market_context_changes(
         if not _is_on_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key):
             fibo_context = current_analysis.get("price_state", {}).get("fibo_context", "")
 
+            # Get price and Fibonacci level for specific notification
+            current_price = current_analysis.get("current_price")
+            fibo_level = current_analysis.get("fibo_level")
+
             # Add trend direction to the notification
             trend_label = ""
             if current_bias == "alcista":
@@ -362,14 +366,31 @@ def check_market_context_changes(
             elif current_bias == "bajista":
                 trend_label = "BAJISTA"
 
-            if trend_label:
+            # Format price for display
+            price_str = ""
+            if current_price:
+                if current_price >= 1000:
+                    price_str = f"${current_price:,.0f}"
+                elif current_price >= 1:
+                    price_str = f"${current_price:.2f}"
+                else:
+                    price_str = f"${current_price:.4f}"
+
+            # Build title with price and Fibo level
+            if current_price and fibo_level:
+                title = f"{pair_short} {price_str} - Fibo {fibo_level}%"
+            elif trend_label:
                 title = f"{pair_short} - Zona clave ({trend_label})"
             else:
                 title = f"{pair_short} - Zona de decision"
 
-            body = f"El precio entro en zona clave."
-            if fibo_context:
+            # Build body
+            if fibo_level:
+                body = f"Precio en nivel Fibo {fibo_level}%."
+            elif fibo_context:
                 body = f"{fibo_context}."
+            else:
+                body = f"El precio entro en zona clave."
             if trend_label:
                 body += f" Tendencia {trend_label}."
 
@@ -611,6 +632,10 @@ def check_unified_pair_changes(
 
     if previous_structure and current_structure == "en nivel clave" and previous_structure != "en nivel clave":
         if not _is_on_cooldown(AlertType.PRICE_AT_KEY_ZONE, cache_key):
+            # Get price and Fibonacci level details
+            current_price = context.get("current_price")
+            fibo_level = context.get("fibo_level")  # e.g., "50.0", "61.8"
+
             # Include trend direction in the notification
             trend_label = ""
             if current_bias == "alcista":
@@ -618,17 +643,29 @@ def check_unified_pair_changes(
             elif current_bias == "bajista":
                 trend_label = "BAJISTA"
 
-            if trend_label:
-                title = f"{pair_short} - Zona clave ({trend_label})"
-                body = f"El precio entro en nivel clave de Fibonacci. Tendencia {trend_label}."
+            # Format price for display
+            if current_price:
+                if current_price >= 1000:
+                    price_str = f"${current_price:,.0f}"
+                elif current_price >= 1:
+                    price_str = f"${current_price:.2f}"
+                else:
+                    price_str = f"${current_price:.4f}"
             else:
-                title = f"{pair_short} - Zona de decision"
-                body = "El precio entro en nivel clave de Fibonacci."
+                price_str = ""
+
+            # Build notification with specific details
+            if trend_label:
+                title = f"{pair_short} {price_str} - Fibo {fibo_level}%" if fibo_level and price_str else f"{pair_short} - Zona clave ({trend_label})"
+                body = f"Precio en nivel Fibo {fibo_level}%. Tendencia {trend_label}." if fibo_level else f"El precio entro en nivel clave de Fibonacci. Tendencia {trend_label}."
+            else:
+                title = f"{pair_short} {price_str} - Fibo {fibo_level}%" if fibo_level and price_str else f"{pair_short} - Zona de decision"
+                body = f"Precio en nivel Fibo {fibo_level}%." if fibo_level else "El precio entro en nivel clave de Fibonacci."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
                     token, title, body, AlertType.PRICE_AT_KEY_ZONE,
-                    data={"pair": pair, "structure": current_structure, "trend": current_bias},
+                    data={"pair": pair, "structure": current_structure, "trend": current_bias, "price": current_price, "fibo_level": fibo_level},
                     db=db, user_id=user_id, symbol=pair
                 )
 
@@ -636,7 +673,9 @@ def check_unified_pair_changes(
             alerts_triggered.append({
                 "type": AlertType.PRICE_AT_KEY_ZONE.value,
                 "pair": pair,
-                "trend": current_bias
+                "trend": current_bias,
+                "price": current_price,
+                "fibo_level": fibo_level
             })
 
     # Update cache with current state
