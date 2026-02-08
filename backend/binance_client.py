@@ -105,6 +105,21 @@ class BinanceClient:
         import logging
         logger = logging.getLogger("uvicorn.error")
         try:
+            # First, get the configured leverage for each symbol
+            leverage_config = {}
+            try:
+                leverages = self.exchange.fetch_leverages()
+                for symbol, lev_data in leverages.items():
+                    if lev_data and isinstance(lev_data, dict):
+                        # Store the full leverage data (longLeverage, shortLeverage)
+                        leverage_config[symbol] = {
+                            "longLeverage": lev_data.get("longLeverage"),
+                            "shortLeverage": lev_data.get("shortLeverage"),
+                        }
+                logger.info(f"[POSITIONS] Fetched leverage config for {len(leverage_config)} symbols")
+            except Exception as e:
+                logger.warning(f"[POSITIONS] Could not fetch leverages: {e}")
+
             positions = self.exchange.fetch_positions()
             logger.info(f"[POSITIONS] Raw positions count: {len(positions)}")
 
@@ -134,9 +149,29 @@ class BinanceClient:
                 mark_price = float(pos.get("markPrice") or pos.get("info", {}).get("markPrice", 0))
                 unrealized_pnl = float(pos.get("unrealizedPnl") or pos.get("info", {}).get("unRealizedProfit", 0))
                 info = pos.get("info", {})
-                leverage_raw = pos.get("leverage") or info.get("leverage", 1)
-                leverage = int(float(leverage_raw))
-                logger.info(f"[POSITIONS] {pos.get('symbol')} leverage: ccxt={pos.get('leverage')}, info={info.get('leverage')}, resolved={leverage}")
+
+                # Get leverage from configured leverage first, then fallback to position data
+                symbol = pos.get("symbol")
+                leverage_data = leverage_config.get(symbol, {})
+                # Use longLeverage or shortLeverage based on position side
+                if isinstance(leverage_data, dict):
+                    if side == "LONG":
+                        leverage_from_config = leverage_data.get("longLeverage")
+                    else:
+                        leverage_from_config = leverage_data.get("shortLeverage") or leverage_data.get("longLeverage")
+                else:
+                    leverage_from_config = leverage_data if leverage_data else None
+
+                leverage_from_pos = pos.get("leverage") or info.get("leverage")
+
+                if leverage_from_config:
+                    leverage = int(float(leverage_from_config))
+                elif leverage_from_pos:
+                    leverage = int(float(leverage_from_pos))
+                else:
+                    leverage = 1
+
+                logger.info(f"[POSITIONS] {symbol} leverage: config={leverage_from_config}, pos={leverage_from_pos}, info={info.get('leverage')}, resolved={leverage}")
 
                 logger.info(f"[POSITIONS] Open: {pos.get('symbol')} {side} contracts={contracts} entry={entry_price}")
 
