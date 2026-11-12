@@ -521,6 +521,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Trading bot: journal report and pause/mode/approve controls (token protected, see bot/api.py)
+from bot.api import router as bot_router
+app.include_router(bot_router)
+
 
 # ============================================================
 # Auth Endpoints
