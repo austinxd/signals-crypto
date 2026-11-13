@@ -19,6 +19,7 @@ class RiskConfig:
     max_position_leverage: float = 3.0   # notional / equity, per position
     max_total_leverage: float = 5.0      # sum of notionals / equity
     max_open_positions: int = 3
+    max_same_direction: int = 3          # longs (or shorts) open at once; 3 = no extra limit (a cap of 2 backtested worse)
     daily_loss_limit: float = 0.02       # no new entries after losing this in a UTC day
     max_drawdown_halt: float = 0.15      # live only: pause the bot at this drawdown from peak
     min_stop_pct: float = 0.003          # reject stops closer than this (noise / fee dominated)

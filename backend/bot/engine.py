@@ -129,7 +129,8 @@ class Engine:
         trades = self.j.open_trades()
         notional = sum(t["qty"] * t["entry"] for t in trades)
         return risk_mod.evaluate(self.cfg.risk, side, price, sl, acct["equity"], len(trades), notional,
-                                 self.j.get_state("day_start_equity", acct["equity"]))
+                                 self.j.get_state("day_start_equity", acct["equity"]),
+                                 sum(1 for t in trades if t["side"] == side))
 
     # -- trades -------------------------------------------------------------------------------
     def _enter(self, symbol: str, side: int, qty: float, sl: float, tp: Optional[float], bar_time: str,

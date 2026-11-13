@@ -17,7 +17,8 @@ class Verdict:
 
 
 def evaluate(cfg: RiskConfig, side: int, entry: float, sl: float, equity: float,
-             open_positions: int, open_notional: float, day_start_equity: float) -> Verdict:
+             open_positions: int, open_notional: float, day_start_equity: float,
+             same_side_positions: int = 0) -> Verdict:
     """Decide whether a trade may be opened and with what size."""
     if equity <= 0:
         return Verdict(False, reason="no_equity")
@@ -31,6 +32,8 @@ def evaluate(cfg: RiskConfig, side: int, entry: float, sl: float, equity: float,
         return Verdict(False, reason=f"stop_too_wide ({stop_pct:.2%})")
     if open_positions >= cfg.max_open_positions:
         return Verdict(False, reason="max_open_positions")
+    if same_side_positions >= cfg.max_same_direction:
+        return Verdict(False, reason="max_same_direction")  # one more would be the same bet again
     if day_start_equity > 0 and equity <= day_start_equity * (1 - cfg.daily_loss_limit):
         return Verdict(False, reason="daily_loss_limit")
 

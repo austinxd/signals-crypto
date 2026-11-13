@@ -50,6 +50,10 @@
       "revenueCatIosKey": "appl_nXpKtuXfAhwPbReYTkbdwjbTmPR",
       "revenueCatAndroidKey": ""
     },
-    "owner": "austinxd"
+    "owner": "austinxd",
+    "updates": {
+      "url": "https://u.expo.dev/07235eeb-4402-411d-81fc-7e2e2d6bc03f"
+    },
+    "runtimeVersion": "1.1.0"
   }
 }

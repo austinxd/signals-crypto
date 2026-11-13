@@ -137,7 +137,7 @@ def run_backtest(prepared: Dict[str, pd.DataFrame], tf: str, mgmt: Dict[str, Any
                 entry = o * (1 + slip * side)
                 open_notional = sum(p["qty"] * last_close.get(k, p["entry"]) for k, p in positions.items())
                 v = risk_mod.evaluate(risk, side, entry, sl, equity_prev, len(positions), open_notional,
-                                      day_start_equity)
+                                      day_start_equity, sum(1 for p in positions.values() if p["side"] == side))
                 if v.ok:
                     fee_entry = v.qty * entry * fee
                     balance -= fee_entry

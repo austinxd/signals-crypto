@@ -55,6 +55,7 @@ def test_leverage_cap_reduces_size():
     (dict(side=1, entry=100, sl=80), "stop_too_wide"),
     (dict(side=1, entry=100, sl=98, open_positions=3), "max_open_positions"),
     (dict(side=1, entry=100, sl=98, equity=9_700), "daily_loss_limit"),
+    (dict(side=1, entry=100, sl=98, open_positions=2, same_side_positions=3), "max_same_direction"),
 ])
 def test_rejections(kwargs, reason):
     args = dict(equity=10_000, open_positions=0, open_notional=0.0, day_start_equity=10_000)
