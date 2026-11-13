@@ -1,22 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  RefreshControl,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+import { Text } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getPositions } from '../services/api';
 import PositionCard from '../components/PositionCard';
 import LockedPositionCard from '../components/LockedPositionCard';
 import { useSubscription } from '../context/SubscriptionContext';
+import { Screen, Card, Stat, StatRow, Notice, Empty, Loading, Button } from '../components/ui';
+import { space, type, fmtSigned, pnlColor } from '../theme';
 
 const PositionsScreen = () => {
   const navigation = useNavigation();
   const { isPremium } = useSubscription();
   const [positions, setPositions] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [totalPnl, setTotalPnl] = useState(0);
@@ -33,11 +29,13 @@ const PositionsScreen = () => {
       setTotalPnl(pnl);
     } catch (err) {
       if (err.status === 401) {
-        setError('Inicia sesión para ver posiciones');
+        setError('Inicia sesión para ver tus posiciones.');
       } else {
-        setError('Error cargando posiciones');
+        setError('No se pudieron cargar tus posiciones. Revisa tu conexión.');
       }
       console.error('Positions error:', err);
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -58,146 +56,77 @@ const PositionsScreen = () => {
     setRefreshing(false);
   }, [fetchPositions]);
 
-  return (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#00d4aa"
-          />
-        }
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>Posiciones</Text>
-          {positions.length > 0 && (
-            <View style={styles.summary}>
-              <Text style={styles.summaryLabel}>{positions.length} abiertas</Text>
-              <Text style={[styles.summaryPnl, { color: totalPnl >= 0 ? '#00d4aa' : '#ff4757' }]}>
-                {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} USDT
-              </Text>
-            </View>
-          )}
-        </View>
+  const count = positions.length;
 
-        {error ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>⚠️</Text>
-            <Text style={styles.emptyText}>{error}</Text>
-          </View>
-        ) : positions.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📭</Text>
-            <Text style={styles.emptyText}>No hay posiciones abiertas</Text>
-            <Text style={styles.emptyHint}>
-              Conecta tu cuenta de Binance en Ajustes
-            </Text>
-            <TouchableOpacity
-              style={styles.configButton}
-              onPress={() => navigation?.navigate?.('Settings')}
-            >
-              <Text style={styles.configButtonText}>Configurar Binance</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          positions.map((pos, index) => {
-            // Free users: only first position is visible, others are locked
-            const isLocked = !isPremium && index > 0;
+  const body = () => {
+    if (error) {
+      return (
+        <Notice tone="danger" title="Algo falló">
+          <Text style={type.bodyDim}>{error}</Text>
+          <Button label="Reintentar" kind="secondary" small onPress={onRefresh} style={{ marginTop: space.md, alignSelf: 'flex-start' }} />
+        </Notice>
+      );
+    }
+    if (!loaded) return <Loading label="Leyendo tus posiciones…" />;
+    if (count === 0) {
+      return (
+        <Empty
+          title="No hay posiciones abiertas"
+          hint="Aquí aparecen las operaciones de futuros que tengas abiertas en Binance. Si aún no conectaste tu cuenta, añade tus claves de Binance en Ajustes."
+          actionLabel="Ir a Ajustes"
+          onAction={() => navigation?.navigate?.('Settings')}
+        />
+      );
+    }
+    return (
+      <>
+        <Card>
+          <StatRow>
+            <Stat label="Posiciones abiertas" value={String(count)} />
+            <Stat
+              label="Resultado ahora"
+              value={`${fmtSigned(totalPnl)} USDT`}
+              color={pnlColor(totalPnl)}
+              hint="Sin cerrar: cambia con el precio"
+            />
+          </StatRow>
+        </Card>
 
-            if (isLocked) {
-              return (
-                <LockedPositionCard
-                  key={pos.id || pos.symbol}
-                  onPress={() => navigation.navigate('Upgrade')}
-                />
-              );
-            }
+        {positions.map((pos, index) => {
+          // Free plan: only the first position is shown, the rest are locked
+          const isLocked = !isPremium && index > 0;
 
+          if (isLocked) {
             return (
-              <PositionCard
+              <LockedPositionCard
                 key={pos.id || pos.symbol}
-                position={{ ...pos, mode }}
-                totalCount={positions.length}
+                onPress={() => navigation.navigate('Upgrade')}
               />
             );
-          })
-        )}
-      </ScrollView>
-    </View>
+          }
+
+          return (
+            <PositionCard
+              key={pos.id || pos.symbol}
+              position={{ ...pos, mode }}
+              totalCount={count}
+            />
+          );
+        })}
+      </>
+    );
+  };
+
+  return (
+    <Screen
+      title="Posiciones"
+      subtitle="Tus operaciones abiertas en Binance"
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
+      {body()}
+    </Screen>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a14',
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 4,
-  },
-  title: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  summary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  summaryLabel: {
-    color: '#888',
-    fontSize: 14,
-  },
-  summaryPnl: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyText: {
-    color: '#888',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  emptyHint: {
-    color: '#555',
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  configButton: {
-    marginTop: 20,
-    backgroundColor: '#00d4aa',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-  },
-  configButtonText: {
-    color: '#0a0a14',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-});
 
 export default PositionsScreen;

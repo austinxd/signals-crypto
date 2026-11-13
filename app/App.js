@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Text, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { StyleSheet, ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 
@@ -13,6 +14,7 @@ import PositionsScreen from './src/screens/PositionsScreen';
 import BotScreen from './src/screens/BotScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import UpgradeScreen from './src/screens/UpgradeScreen';
+import { colors } from './src/theme';
 import { SubscriptionProvider } from './src/context/SubscriptionContext';
 import {
   getStoredPushToken,
@@ -25,18 +27,39 @@ import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated, set
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const HomeIcon = ({ focused }) => (
-  <Text style={[styles.icon, focused && styles.iconActive]}>📊</Text>
-);
-const PositionsIcon = ({ focused }) => (
-  <Text style={[styles.icon, focused && styles.iconActive]}>💼</Text>
-);
-const BotIcon = ({ focused }) => (
-  <Text style={[styles.icon, focused && styles.iconActive]}>🤖</Text>
-);
-const SettingsIcon = ({ focused }) => (
-  <Text style={[styles.icon, focused && styles.iconActive]}>⚙️</Text>
-);
+// Lets the Settings tab log the user out without re-creating the navigator on every render.
+const LogoutContext = React.createContext(() => {});
+const SettingsTab = () => <SettingsScreen onLogout={React.useContext(LogoutContext)} />;
+
+// Text-only tab bar: the active tab gets a short accent bar above its label.
+const tabIcon = ({ focused }) => <View style={[styles.tabMark, focused && styles.tabMarkOn]} />;
+
+const TABS = [
+  { name: 'Home', label: 'Mercado', component: HomeScreen },
+  { name: 'Positions', label: 'Posiciones', component: PositionsScreen },
+  { name: 'Bot', label: 'Bot', component: BotScreen },
+  { name: 'Settings', label: 'Ajustes', component: SettingsTab },
+];
+
+const TabNavigator = () => {
+  const insets = useSafeAreaInsets();
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: [styles.tabBar, { height: 58 + insets.bottom, paddingBottom: insets.bottom + 6 }],
+        tabBarActiveTintColor: colors.text,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarIcon: tabIcon,
+      }}
+    >
+      {TABS.map((t) => (
+        <Tab.Screen key={t.name} name={t.name} component={t.component} options={{ tabBarLabel: t.label }} />
+      ))}
+    </Tab.Navigator>
+  );
+};
 
 async function syncPushToken() {
   try {
@@ -54,6 +77,7 @@ async function syncPushToken() {
 
 export default function App() {
   const [authed, setAuthed] = useState(null); // null = loading
+  const logout = useCallback(() => setAuthed(false), []);
 
   useEffect(() => {
     isAuthenticated().then(setAuthed);
@@ -87,103 +111,51 @@ export default function App() {
 
   if (authed === null) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0a0a14', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#00d4aa" />
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   if (!authed) {
     return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <StatusBar style="light" />
-        <AuthScreen onAuthSuccess={() => setAuthed(true)} />
-      </GestureHandlerRootView>
+      <SafeAreaProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <StatusBar style="light" />
+          <AuthScreen onAuthSuccess={() => setAuthed(true)} />
+        </GestureHandlerRootView>
+      </SafeAreaProvider>
     );
   }
 
-  const TabNavigator = () => (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#00d4aa',
-        tabBarInactiveTintColor: '#888',
-        tabBarLabelStyle: styles.tabLabel,
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          tabBarLabel: 'Inicio',
-          tabBarIcon: ({ focused }) => <HomeIcon focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Positions"
-        component={PositionsScreen}
-        options={{
-          tabBarLabel: 'Posiciones',
-          tabBarIcon: ({ focused }) => <PositionsIcon focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Bot"
-        component={BotScreen}
-        options={{
-          tabBarLabel: 'Bot',
-          tabBarIcon: ({ focused }) => <BotIcon focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        options={{
-          tabBarLabel: 'Ajustes',
-          tabBarIcon: ({ focused }) => <SettingsIcon focused={focused} />,
-        }}
-      >
-        {() => <SettingsScreen onLogout={() => setAuthed(false)} />}
-      </Tab.Screen>
-    </Tab.Navigator>
-  );
-
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SubscriptionProvider>
-        <NavigationContainer>
-          <StatusBar style="light" />
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen
-              name="Upgrade"
-              component={UpgradeScreen}
-              options={{ presentation: 'modal' }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </SubscriptionProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SubscriptionProvider>
+          <LogoutContext.Provider value={logout}>
+            <NavigationContainer theme={navTheme}>
+              <StatusBar style="light" />
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Main" component={TabNavigator} />
+                <Stack.Screen name="Upgrade" component={UpgradeScreen} options={{ presentation: 'modal' }} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </LogoutContext.Provider>
+        </SubscriptionProvider>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
+const navTheme = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.surface, border: colors.border, primary: colors.accent, text: colors.text },
+};
+
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: '#1e1e2e',
-    borderTopColor: '#333',
-    borderTopWidth: 1,
-    paddingTop: 8,
-    paddingBottom: 24,
-    height: 80,
-  },
-  tabLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  icon: {
-    fontSize: 24,
-  },
-  iconActive: {
-    transform: [{ scale: 1.1 }],
-  },
+  splash: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
+  tabBar: { backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, paddingTop: 6 },
+  tabLabel: { fontSize: 13, fontWeight: '600' },
+  tabMark: { width: 24, height: 3, borderRadius: 2, backgroundColor: 'transparent' },
+  tabMarkOn: { backgroundColor: colors.accent },
 });

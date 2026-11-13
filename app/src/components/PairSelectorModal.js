@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  Modal,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-} from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { getUserPairs, setUserPairs, getConfig } from '../services/api';
+import { ModalHeader, Button, Loading } from './ui';
+import { colors, space, radius, type, tint, pairName } from '../theme';
+
+const FALLBACK_PAIRS = [
+  'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT',
+  'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT',
+  'DOT/USDT', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT',
+  'ATOM/USDT', 'LTC/USDT', 'ETC/USDT', 'FIL/USDT',
+];
 
 const PairSelectorModal = ({ visible, onClose, onSave }) => {
   const [availablePairs, setAvailablePairs] = useState([]);
@@ -24,18 +26,13 @@ const PairSelectorModal = ({ visible, onClose, onSave }) => {
     setLoading(true);
     try {
       const pairs = await getUserPairs();
-      setSelectedPairs(pairs);
+      setSelectedPairs(pairs || []);
 
       try {
         const config = await getConfig();
-        setAvailablePairs(config.available_pairs || []);
+        setAvailablePairs(config?.available_pairs || []);
       } catch {
-        setAvailablePairs([
-          'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT',
-          'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT',
-          'DOT/USDT', 'MATIC/USDT', 'LINK/USDT', 'UNI/USDT',
-          'ATOM/USDT', 'LTC/USDT', 'ETC/USDT', 'FIL/USDT',
-        ]);
+        setAvailablePairs(FALLBACK_PAIRS);
       }
     } catch (err) {
       console.error('Error loading pairs:', err);
@@ -43,10 +40,11 @@ const PairSelectorModal = ({ visible, onClose, onSave }) => {
     setLoading(false);
   };
 
+  // At least one coin always stays selected.
   const togglePair = (pair) => {
     if (selectedPairs.includes(pair)) {
       if (selectedPairs.length > 1) {
-        setSelectedPairs(selectedPairs.filter(p => p !== pair));
+        setSelectedPairs(selectedPairs.filter((p) => p !== pair));
       }
     } else {
       setSelectedPairs([...selectedPairs, pair]);
@@ -55,72 +53,52 @@ const PairSelectorModal = ({ visible, onClose, onSave }) => {
 
   const handleSave = async () => {
     await setUserPairs(selectedPairs);
-    onSave(selectedPairs);
+    if (onSave) onSave(selectedPairs);
     onClose();
   };
 
-  const selectAll = () => {
-    setSelectedPairs([...availablePairs]);
-  };
-
-  const selectNone = () => {
-    setSelectedPairs([availablePairs[0]]);
-  };
+  const selectAll = () => setSelectedPairs([...availablePairs]);
+  const selectNone = () => setSelectedPairs(availablePairs.length ? [availablePairs[0]] : []);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.overlay}>
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Seleccionar Pares</Text>
-            <Text style={styles.subtitle}>{selectedPairs.length} seleccionados</Text>
-          </View>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.container}>
+        <ModalHeader
+          title="Elegir monedas"
+          subtitle={`${selectedPairs.length} elegidas · mínimo una`}
+          onClose={onClose}
+        />
 
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.quickButton} onPress={selectAll}>
-              <Text style={styles.quickButtonText}>Todos</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickButton} onPress={selectNone}>
-              <Text style={styles.quickButtonText}>Mínimo</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            <View style={styles.pairsGrid}>
+        {loading ? (
+          <Loading label="Cargando monedas…" />
+        ) : (
+          <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+            <View style={styles.quick}>
+              <Button label="Elegir todas" kind="secondary" small onPress={selectAll} style={{ flex: 1 }} />
+              <Button label="Dejar solo una" kind="secondary" small onPress={selectNone} style={{ flex: 1 }} />
+            </View>
+            <View style={styles.grid}>
               {availablePairs.map((pair) => {
-                const isSelected = selectedPairs.includes(pair);
-                const symbol = pair.replace('/USDT', '');
+                const on = selectedPairs.includes(pair);
                 return (
                   <TouchableOpacity
                     key={pair}
-                    style={[styles.pairChip, isSelected && styles.pairChipActive]}
+                    style={[styles.item, on && styles.itemOn]}
                     onPress={() => togglePair(pair)}
+                    activeOpacity={0.75}
                   >
-                    <Text style={[styles.pairSymbol, isSelected && styles.pairSymbolActive]}>
-                      {symbol}
-                    </Text>
-                    <Text style={[styles.pairSuffix, isSelected && styles.pairSuffixActive]}>
-                      /USDT
-                    </Text>
-                    {isSelected && (
-                      <View style={styles.checkmark}>
-                        <Text style={styles.checkmarkText}>✓</Text>
-                      </View>
-                    )}
+                    <Text style={[styles.itemName, on && { color: colors.accent }]}>{pairName(pair)}</Text>
+                    <Text style={type.small}>{on ? 'Elegida' : 'Tocar para elegir'}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
           </ScrollView>
+        )}
 
-          <View style={styles.footer}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Guardar</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.footer}>
+          <Button label="Cancelar" kind="secondary" onPress={onClose} style={{ flex: 1 }} />
+          <Button label="Guardar" onPress={handleSave} disabled={loading} style={{ flex: 2 }} />
         </View>
       </View>
     </Modal>
@@ -128,135 +106,19 @@ const PairSelectorModal = ({ visible, onClose, onSave }) => {
 };
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'flex-end',
+  container: { flex: 1, backgroundColor: colors.bg },
+  body: { padding: space.lg },
+  quick: { flexDirection: 'row', gap: space.sm, marginBottom: space.lg },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  item: {
+    width: '48%', minHeight: 60, justifyContent: 'center', paddingHorizontal: space.md, paddingVertical: space.sm,
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
   },
-  container: {
-    backgroundColor: '#1a1a2e',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-    paddingBottom: 30,
-  },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a4a',
-  },
-  title: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  subtitle: {
-    color: '#00d4aa',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 12,
-  },
-  quickButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 20,
-  },
-  quickButtonText: {
-    color: '#888',
-    fontSize: 14,
-  },
-  content: {
-    padding: 16,
-    maxHeight: 400,
-  },
-  pairsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  pairChip: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0f0f1a',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: '#2a2a4a',
-  },
-  pairChipActive: {
-    backgroundColor: 'rgba(0, 212, 170, 0.1)',
-    borderColor: '#00d4aa',
-  },
-  pairSymbol: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  pairSymbolActive: {
-    color: '#00d4aa',
-  },
-  pairSuffix: {
-    color: '#666',
-    fontSize: 12,
-    marginLeft: 2,
-  },
-  pairSuffixActive: {
-    color: '#00d4aa',
-    opacity: 0.7,
-  },
-  checkmark: {
-    marginLeft: 'auto',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#00d4aa',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmarkText: {
-    color: '#0f0f1a',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  itemOn: { borderColor: colors.accent, backgroundColor: tint(colors.accent, 0.1) },
+  itemName: { color: colors.text, fontSize: 16, fontWeight: '700' },
   footer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 16,
-    backgroundColor: '#2a2a4a',
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 16,
-    backgroundColor: '#00d4aa',
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: '#0f0f1a',
-    fontSize: 16,
-    fontWeight: '600',
+    flexDirection: 'row', gap: space.sm, padding: space.lg, paddingBottom: space.xl,
+    borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg,
   },
 });
 

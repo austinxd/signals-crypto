@@ -5,24 +5,29 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
-  Alert,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { register, login } from '../services/api';
+import { Button, Notice } from '../components/ui';
+import { colors, space, radius, type } from '../theme';
 
 const AuthScreen = ({ onAuthSuccess }) => {
+  const insets = useSafeAreaInsets();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Ingresa email y contraseña');
+      setError('Escribe tu correo y tu contraseña.');
       return;
     }
+    setError(null);
     setLoading(true);
     try {
       if (isLogin) {
@@ -32,145 +37,96 @@ const AuthScreen = ({ onAuthSuccess }) => {
       }
       onAuthSuccess();
     } catch (err) {
-      Alert.alert('Error', err.message || 'Error de autenticación');
+      setError((err && err.message) || 'No se pudo entrar. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
+  const switchMode = () => {
+    setIsLogin(!isLogin);
+    setError(null);
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.inner}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoIcon}>📈</Text>
-          <Text style={styles.logoTitle}>Criterio Trading</Text>
-          <Text style={styles.logoSubtitle}>Binance Futures USDT-M</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={[styles.inner, { paddingTop: insets.top + space.xl, paddingBottom: insets.bottom + space.xl }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.brand}>
+          <Text style={styles.brandName}>Criterio</Text>
+          <Text style={[type.bodyDim, { textAlign: 'center', marginTop: space.sm }]}>
+            Análisis claro del mercado de futuros cripto y avisos cuando algo cambia.
+          </Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.formTitle}>{isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}</Text>
+          <Text style={[type.heading, { marginBottom: space.lg }]}>{isLogin ? 'Iniciar sesión' : 'Crear cuenta'}</Text>
 
+          {!!error && <Notice tone="danger">{error}</Notice>}
+
+          <Text style={styles.fieldLabel}>Correo electrónico</Text>
           <TextInput
             style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#666"
+            placeholder="tu@correo.com"
+            placeholderTextColor={colors.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="emailAddress"
+            returnKeyType="next"
           />
 
+          <Text style={styles.fieldLabel}>Contraseña</Text>
           <TextInput
             style={styles.input}
-            placeholder="Contraseña"
-            placeholderTextColor="#666"
+            placeholder={isLogin ? 'Tu contraseña' : 'Elige una contraseña'}
+            placeholderTextColor={colors.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            returnKeyType="go"
+            onSubmitEditing={handleSubmit}
           />
 
-          <TouchableOpacity
-            style={styles.submitButton}
+          <Button
+            label={isLogin ? 'Entrar' : 'Crear cuenta'}
             onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#0a0a14" />
-            ) : (
-              <Text style={styles.submitText}>
-                {isLogin ? 'Entrar' : 'Registrarse'}
-              </Text>
-            )}
-          </TouchableOpacity>
+            loading={loading}
+            style={{ marginTop: space.sm }}
+          />
 
-          <TouchableOpacity
-            style={styles.toggleButton}
-            onPress={() => setIsLogin(!isLogin)}
-          >
-            <Text style={styles.toggleText}>
-              {isLogin
-                ? '¿No tienes cuenta? Regístrate'
-                : '¿Ya tienes cuenta? Inicia sesión'}
+          <TouchableOpacity style={styles.switch} onPress={switchMode} disabled={loading}>
+            <Text style={type.bodyDim}>
+              {isLogin ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
+              <Text style={styles.switchLink}>{isLogin ? 'Crear cuenta' : 'Iniciar sesión'}</Text>
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a14',
-  },
-  inner: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  logoIcon: {
-    fontSize: 64,
-    marginBottom: 12,
-  },
-  logoTitle: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  logoSubtitle: {
-    color: '#00d4aa',
-    fontSize: 14,
-    marginTop: 4,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  inner: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: space.xl },
+  brand: { alignItems: 'center', marginBottom: space.xxl },
+  brandName: { color: colors.text, fontSize: 34, fontWeight: '800', letterSpacing: 0.5 },
   form: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: colors.surface, borderRadius: radius.lg, padding: space.xl,
+    borderWidth: 1, borderColor: colors.border,
   },
-  formTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
+  fieldLabel: { color: colors.textDim, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   input: {
-    backgroundColor: '#0f0f1a',
-    borderRadius: 10,
-    padding: 14,
-    color: '#fff',
-    fontSize: 16,
-    marginBottom: 12,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    color: colors.text, fontSize: 16, minHeight: 48, paddingHorizontal: space.md, marginBottom: space.lg,
   },
-  submitButton: {
-    backgroundColor: '#00d4aa',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  submitText: {
-    color: '#0a0a14',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  toggleButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  toggleText: {
-    color: '#00d4aa',
-    fontSize: 14,
-  },
+  switch: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginTop: space.md },
+  switchLink: { color: colors.accent, fontWeight: '700' },
 });
 
 export default AuthScreen;

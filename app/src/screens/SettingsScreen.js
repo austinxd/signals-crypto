@@ -1,16 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  Switch,
-} from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, TextInput, Alert } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import Constants from 'expo-constants';
 import {
   registerPushToken,
   sendTestNotification,
@@ -27,14 +18,45 @@ import {
   clearNotificationHistory,
 } from '../services/notifications';
 import { useSubscription } from '../context/SubscriptionContext';
+import {
+  Screen, Card, SectionTitle, Chip, Button, Row, Notice, Collapsible, Loading,
+} from '../components/ui';
+import { colors, space, radius, type, GLOSSARY } from '../theme';
+
+// What the app warns about. These are always on; the list is here so people know what to expect.
+const ALERT_KINDS = [
+  { label: 'Cambio de escenario', help: 'Un par pasa a buen momento, operable, riesgo alto o espera.' },
+  { label: 'Posición contra el mercado', help: 'Una posición tuya deja de ir a favor de la tendencia.' },
+  { label: 'Idea invalidada', help: 'El motivo por el que se abrió una operación ya no se cumple.' },
+  { label: 'Demasiado riesgo', help: 'Tienes varias posiciones en contra del mercado a la vez.' },
+];
+
+/** Result of the last action in a section, shown right under its buttons. */
+const Feedback = ({ value }) =>
+  value ? (
+    <Notice tone={value.ok ? 'good' : 'danger'} style={{ marginTop: space.md, marginBottom: 0 }}>
+      {value.text}
+    </Notice>
+  ) : null;
+
+const Field = ({ label, help, ...input }) => (
+  <View style={{ marginBottom: space.md }}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <TextInput style={styles.input} placeholderTextColor={colors.textMuted} {...input} />
+    {!!help && <Text style={[type.small, { marginTop: 4 }]}>{help}</Text>}
+  </View>
+);
 
 const SettingsScreen = ({ onLogout }) => {
   const navigation = useNavigation();
-  const { isPremium, status, aiUsage, aiLimit, aiRemaining } = useSubscription();
+  const { isPremium, aiUsage, aiLimit, aiRemaining } = useSubscription();
 
   const [pushToken, setPushToken] = useState(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
+  const loadedOnce = useRef(false);
+  const [busy, setBusy] = useState(null); // which action is running
+  const [feedback, setFeedback] = useState({}); // section -> { ok, text }
 
   // Account
   const [profile, setProfile] = useState(null);
@@ -48,6 +70,8 @@ const SettingsScreen = ({ onLogout }) => {
   const [riskFixedUsdt, setRiskFixedUsdt] = useState('');
   const [maxLeverage, setMaxLeverage] = useState('10');
 
+  const say = (section, ok, text) => setFeedback((f) => ({ ...f, [section]: { ok, text } }));
+
   // Reload settings every time the screen is focused
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +81,7 @@ const SettingsScreen = ({ onLogout }) => {
 
   const loadSettings = async () => {
     try {
-      setLoading(true);
+      if (!loadedOnce.current) setLoading(true);
 
       const token = await getStoredPushToken();
       setPushToken(token);
@@ -76,52 +100,57 @@ const SettingsScreen = ({ onLogout }) => {
     } catch (err) {
       console.error('Error loading settings:', err);
     } finally {
+      loadedOnce.current = true;
       setLoading(false);
     }
   };
 
   const handleRegisterPush = async () => {
-    setLoading(true);
+    setBusy('push');
     try {
       const token = await registerForPushNotifications();
       if (token) {
         setPushToken(token);
         await registerPushToken(token);
         setIsRegistered(true);
-        Alert.alert('Registrado', 'Notificaciones activadas.');
+        say('push', true, 'Notificaciones activadas en este dispositivo.');
       } else {
-        Alert.alert('Error', 'No se pudo obtener el token de notificaciones');
+        say('push', false, 'No se pudieron activar. Revisa que la app tenga permiso de notificaciones en los ajustes del teléfono.');
       }
     } catch {
-      Alert.alert('Error', 'Error registrando notificaciones');
+      say('push', false, 'No se pudieron activar las notificaciones. Inténtalo de nuevo.');
     }
-    setLoading(false);
+    setBusy(null);
   };
 
   const handleTestNotification = async () => {
     if (!pushToken) {
-      Alert.alert('Error', 'Primero registra las notificaciones');
+      say('push', false, 'Primero activa las notificaciones.');
       return;
     }
-    setLoading(true);
+    setBusy('test');
     try {
       await sendTestNotification(pushToken);
-      Alert.alert('Enviado', 'Notificacion de prueba enviada');
+      say('push', true, 'Notificación de prueba enviada. Debería llegarte en unos segundos.');
     } catch {
-      Alert.alert('Error', 'No se pudo enviar la notificacion');
+      say('push', false, 'No se pudo enviar la notificación de prueba.');
     }
-    setLoading(false);
+    setBusy(null);
   };
 
-  const handleClearHistory = async () => {
-    Alert.alert('Confirmar', 'Eliminar todo el historial local?', [
+  const handleClearHistory = () => {
+    Alert.alert('Borrar historial', 'Se borrará el historial de notificaciones guardado en este teléfono.', [
       { text: 'Cancelar', style: 'cancel' },
       {
-        text: 'Eliminar',
+        text: 'Borrar',
         style: 'destructive',
         onPress: async () => {
-          await clearNotificationHistory();
-          Alert.alert('Listo', 'Historial eliminado');
+          try {
+            await clearNotificationHistory();
+            say('advanced', true, 'Historial borrado.');
+          } catch {
+            say('advanced', false, 'No se pudo borrar el historial.');
+          }
         },
       },
     ]);
@@ -129,12 +158,13 @@ const SettingsScreen = ({ onLogout }) => {
 
   const handleSaveBinanceKeys = async () => {
     if (!binanceKey.trim() || !binanceSecret.trim()) {
-      Alert.alert('Error', 'Ingresa API Key y Secret');
+      say('binance', false, 'Escribe la API Key y el API Secret.');
       return;
     }
+    setBusy('saveKeys');
     try {
       const result = await updateBinanceKeys(binanceKey.trim(), binanceSecret.trim());
-      Alert.alert('Guardado', result.message || 'API keys guardadas');
+      say('binance', true, (result && result.message) || 'Conexión guardada.');
       setBinanceKey('');
       setBinanceSecret('');
       // Reload profile to reflect changes
@@ -145,11 +175,47 @@ const SettingsScreen = ({ onLogout }) => {
         console.log('Profile reload error:', e.message);
       }
     } catch (err) {
-      Alert.alert('Error', err.message || 'No se pudieron guardar las keys');
+      say('binance', false, (err && err.message) || 'No se pudo guardar la conexión.');
     }
+    setBusy(null);
+  };
+
+  const handleVerifyBinance = async () => {
+    setBusy('verify');
+    try {
+      const result = await verifyBinanceKeys();
+      const ok = result && result.status === 'ok';
+      say('binance', ok, (result && result.message) || (ok ? 'La conexión funciona.' : 'La conexión no funciona.'));
+    } catch (err) {
+      say('binance', false, (err && err.message) || 'No se pudo verificar la conexión.');
+    }
+    setBusy(null);
+  };
+
+  const handleDeleteBinance = () => {
+    Alert.alert('Desconectar Binance', 'Se borrarán tus claves del servidor y dejarás de ver tus posiciones.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Desconectar',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy('delete');
+          try {
+            await deleteBinanceKeys();
+            const p = await getProfile();
+            setProfile(p);
+            say('binance', true, 'Binance desconectado.');
+          } catch (err) {
+            say('binance', false, (err && err.message) || 'No se pudo desconectar.');
+          }
+          setBusy(null);
+        },
+      },
+    ]);
   };
 
   const handleSaveReferenceParams = async () => {
+    setBusy('risk');
     try {
       await updateAccountSettings({
         mode: 'recommendations', // Always recommendations mode
@@ -157,17 +223,18 @@ const SettingsScreen = ({ onLogout }) => {
         risk_fixed_usdt: riskFixedUsdt ? parseFloat(riskFixedUsdt) : null,
         max_leverage: parseInt(maxLeverage) || 10,
       });
-      Alert.alert('Guardado', 'Parametros de referencia actualizados');
+      say('risk', true, 'Preferencias guardadas.');
     } catch (err) {
-      Alert.alert('Error', err.message || 'No se pudo guardar');
+      say('risk', false, (err && err.message) || 'No se pudieron guardar.');
     }
+    setBusy(null);
   };
 
   const handleLogout = () => {
-    Alert.alert('Cerrar Sesion', 'Estas seguro?', [
+    Alert.alert('Cerrar sesión', '¿Seguro que quieres salir de tu cuenta?', [
       { text: 'Cancelar', style: 'cancel' },
       {
-        text: 'Cerrar Sesion',
+        text: 'Cerrar sesión',
         style: 'destructive',
         onPress: async () => {
           await logout();
@@ -181,608 +248,194 @@ const SettingsScreen = ({ onLogout }) => {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#00d4aa" />
-      </View>
+      <Screen title="Ajustes" scroll={false}>
+        <Loading />
+      </Screen>
     );
   }
 
+  const connected = !!profile && profile.has_binance_keys === true;
+  const version = (Constants.expoConfig && Constants.expoConfig.version) || '';
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Configuracion</Text>
-        <Text style={styles.subtitle}>Herramienta de analisis</Text>
-      </View>
-
-      {/* Account */}
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Cuenta</Text>
-          <Text style={styles.infoText}>{profile.email}</Text>
-          <TouchableOpacity style={styles.dangerButton} onPress={handleLogout}>
-            <Text style={styles.dangerButtonText}>Cerrar Sesion</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Plan */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Plan</Text>
-        <View style={styles.planRow}>
-          <Text style={styles.planLabel}>Plan actual:</Text>
-          <Text style={[styles.planValue, isPremium && styles.planValuePremium]}>
-            {isPremium ? 'Premium mensual' : 'Free'}
-          </Text>
-        </View>
-        <View style={styles.planRow}>
-          <Text style={styles.planLabel}>Consultas IA:</Text>
-          <Text style={styles.planValue}>
-            {aiUsage} / {aiLimit} ({aiRemaining} restantes)
-          </Text>
-        </View>
+    <Screen title="Ajustes">
+      <SectionTitle>Tu cuenta</SectionTitle>
+      <Card>
+        <Row first label="Correo" value={(profile && profile.email) || '-'} />
+        <Row label="Plan">
+          <Chip label={isPremium ? 'Premium' : 'Gratis'} color={isPremium ? colors.accent : colors.textDim} solid={isPremium} />
+        </Row>
+        <Row
+          label="Consultas a la IA este mes"
+          value={`${aiUsage ?? 0} de ${aiLimit ?? 0}`}
+          help={`Te quedan ${aiRemaining ?? 0}. Se gastan al pedir una explicación de un par o de una posición.`}
+        />
         {!isPremium && (
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => navigation.navigate('Upgrade')}
-          >
-            <Text style={styles.upgradeButtonText}>Desbloquear Premium</Text>
-          </TouchableOpacity>
+          <Button label="Pasar a Premium" onPress={() => navigation.navigate('Upgrade')} style={{ marginTop: space.md }} />
         )}
-      </View>
+      </Card>
 
-      {/* Assistance Mode */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Modo de Asistencia</Text>
-        <View style={styles.modeCard}>
-          <View style={styles.modeIconContainer}>
-            <Text style={styles.modeIcon}>📘</Text>
-          </View>
-          <View style={styles.modeContent}>
-            <Text style={styles.modeLabel}>Analisis y alertas</Text>
-            <Text style={styles.modeDescription}>
-              La app analiza el mercado y notifica cambios de estado.
-            </Text>
-          </View>
-          <View style={styles.activeIndicator}>
-            <Text style={styles.activeIndicatorText}>Activo</Text>
-          </View>
+      <SectionTitle>Notificaciones</SectionTitle>
+      <Card
+        title="Avisos en este teléfono"
+        right={<Chip label={pushToken ? 'Activadas' : 'Desactivadas'} color={pushToken ? colors.accent : colors.warn} />}
+      >
+        <Text style={type.bodyDim}>
+          {pushToken
+            ? 'Te avisamos cuando cambia algo importante. Son avisos informativos, no órdenes de compra o venta.'
+            : 'Actívalas para enterarte cuando cambie algo importante en el mercado o en tus posiciones.'}
+        </Text>
+        <View style={styles.buttons}>
+          <Button
+            label={isRegistered ? 'Volver a activar' : 'Activar'}
+            kind={isRegistered ? 'secondary' : 'primary'}
+            onPress={handleRegisterPush}
+            loading={busy === 'push'}
+            disabled={!!busy}
+            style={{ flex: 1 }}
+          />
+          <Button
+            label="Enviar prueba"
+            kind="secondary"
+            onPress={handleTestNotification}
+            loading={busy === 'test'}
+            disabled={!!busy}
+            style={{ flex: 1 }}
+          />
         </View>
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>
-            La app no ejecuta operaciones automaticamente.{'\n'}
-            Este modo solo analiza y envia alertas.
-          </Text>
-        </View>
-      </View>
+        <Feedback value={feedback.push} />
+      </Card>
+      <Collapsible title="Qué te avisamos" hint="Los cuatro tipos de aviso, siempre activos">
+        {ALERT_KINDS.map((a, i) => (
+          <Row key={a.label} first={i === 0} label={a.label} help={a.help}>
+            <Chip label="Activo" color={colors.accent} />
+          </Row>
+        ))}
+      </Collapsible>
 
-      {/* Binance Connection */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Conexion Binance</Text>
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>
-            Las API se usan unicamente para lectura y analisis.{'\n'}
-            Esta app no ejecuta ordenes automaticamente.
-          </Text>
-        </View>
-        {profile && profile.has_binance_keys === true ? (
+      <SectionTitle>Conexión con Binance</SectionTitle>
+      <Card
+        title="Tu cuenta de Binance"
+        right={<Chip label={connected ? 'Conectado' : 'Sin conectar'} color={connected ? colors.accent : colors.textDim} />}
+      >
+        <Text style={type.bodyDim}>
+          Sirve para mostrar tus posiciones y analizarlas. Las claves se usan solo para leer: la app no abre ni
+          cierra operaciones con ellas.
+        </Text>
+        {connected && (
           <>
-            <View style={styles.keysStatus}>
-              <Text style={styles.keysStatusIcon}>✓</Text>
-              <View style={styles.keysStatusContent}>
-                <Text style={styles.keysStatusText}>Conexion activa (solo lectura)</Text>
-                {profile.api_key_hint ? (
-                  <Text style={styles.keysHint}>Key: ****{profile.api_key_hint}</Text>
-                ) : null}
-              </View>
+            {!!profile.api_key_hint && (
+              <Text style={[type.small, { marginTop: space.sm }]}>Clave guardada: ****{profile.api_key_hint}</Text>
+            )}
+            <View style={styles.buttons}>
+              <Button
+                label="Comprobar"
+                kind="secondary"
+                onPress={handleVerifyBinance}
+                loading={busy === 'verify'}
+                disabled={!!busy}
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Desconectar"
+                kind="danger"
+                onPress={handleDeleteBinance}
+                loading={busy === 'delete'}
+                disabled={!!busy}
+                style={{ flex: 1 }}
+              />
             </View>
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={styles.button}
-                onPress={async () => {
-                  try {
-                    const result = await verifyBinanceKeys();
-                    Alert.alert(
-                      result.status === 'ok' ? 'Conexion OK' : 'Error',
-                      result.message
-                    );
-                  } catch (err) {
-                    Alert.alert('Error', err.message);
-                  }
-                }}
-              >
-                <Text style={styles.buttonText}>Verificar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonDanger]}
-                onPress={() => {
-                  Alert.alert('Eliminar Keys', 'Seguro que quieres eliminar la conexion?', [
-                    { text: 'Cancelar', style: 'cancel' },
-                    {
-                      text: 'Eliminar',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await deleteBinanceKeys();
-                          const p = await getProfile();
-                          setProfile(p);
-                          Alert.alert('Listo', 'Conexion eliminada');
-                        } catch (err) {
-                          Alert.alert('Error', err.message);
-                        }
-                      },
-                    },
-                  ]);
-                }}
-              >
-                <Text style={styles.buttonText}>Eliminar</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.fieldLabel}>Reemplazar conexion:</Text>
           </>
-        ) : (
-          <Text style={styles.helperText}>Conecta tu cuenta para ver posiciones y precios</Text>
         )}
-        <TextInput
-          style={styles.input}
-          placeholder="API Key"
-          placeholderTextColor="#666"
+
+        <Text style={[type.label, { marginTop: space.lg, marginBottom: space.md }]}>
+          {connected ? 'Cambiar las claves' : 'Conectar'}
+        </Text>
+        <Field
+          label="API Key"
+          placeholder="Pega aquí tu API Key"
           value={binanceKey}
           onChangeText={setBinanceKey}
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="API Secret"
-          placeholderTextColor="#666"
+        <Field
+          label="API Secret"
+          placeholder="Pega aquí tu API Secret"
           value={binanceSecret}
           onChangeText={setBinanceSecret}
           autoCapitalize="none"
           autoCorrect={false}
           secureTextEntry
+          help="En Binance, crea la clave solo con permiso de lectura. No actives trading ni retiros."
         />
-        <TouchableOpacity style={styles.button} onPress={handleSaveBinanceKeys}>
-          <Text style={styles.buttonText}>Guardar Conexion</Text>
-        </TouchableOpacity>
-        <Text style={styles.permissionNote}>
-          Permisos requeridos: Lectura de cuenta y posiciones.{'\n'}
-          No se requieren permisos de trading.
+        <Button
+          label={connected ? 'Guardar claves nuevas' : 'Conectar Binance'}
+          onPress={handleSaveBinanceKeys}
+          loading={busy === 'saveKeys'}
+          disabled={!!busy}
+        />
+        <Feedback value={feedback.binance} />
+      </Card>
+
+      <SectionTitle>Preferencias</SectionTitle>
+      <Card title="Tu riesgo de referencia">
+        <Text style={[type.bodyDim, { marginBottom: space.lg }]}>
+          Con estos números la app calcula si una posición es grande para ti y cuándo avisarte. No abren, cierran
+          ni modifican operaciones.
         </Text>
-      </View>
-
-      {/* Reference Parameters */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Parametros de referencia de riesgo</Text>
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>
-            Estos valores se usan solo como referencia analitica y para alertas.{'\n'}
-            No abren, cierran ni modifican operaciones.
-          </Text>
-        </View>
-
-        <Text style={styles.fieldLabel}>% del balance por operacion (referencia)</Text>
-        <TextInput
-          style={styles.input}
+        <Field
+          label="Riesgo por operación (% del saldo)"
           placeholder="2"
-          placeholderTextColor="#666"
           value={riskPercent}
           onChangeText={setRiskPercent}
           keyboardType="numeric"
+          help="Cuánto de tu saldo aceptas perder en una sola operación. Lo habitual es entre 1 y 2."
         />
-
-        <Text style={styles.fieldLabel}>Monto fijo USDT (alternativo)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Opcional"
-          placeholderTextColor="#666"
+        <Field
+          label="O una cantidad fija en USDT (opcional)"
+          placeholder="Vacío = usar el porcentaje"
           value={riskFixedUsdt}
           onChangeText={setRiskFixedUsdt}
           keyboardType="numeric"
+          help="Si la rellenas, se usa en lugar del porcentaje."
         />
-
-        <Text style={styles.fieldLabel}>Leverage maximo de referencia</Text>
-        <TextInput
-          style={styles.input}
+        <Field
+          label="Apalancamiento máximo"
           placeholder="10"
-          placeholderTextColor="#666"
           value={maxLeverage}
           onChangeText={setMaxLeverage}
           keyboardType="numeric"
+          help={GLOSSARY.leverage}
         />
+        <Button label="Guardar preferencias" onPress={handleSaveReferenceParams} loading={busy === 'risk'} disabled={!!busy} />
+        <Feedback value={feedback.risk} />
+      </Card>
 
-        <TouchableOpacity style={styles.button} onPress={handleSaveReferenceParams}>
-          <Text style={styles.buttonText}>Guardar Parametros</Text>
-        </TouchableOpacity>
-      </View>
+      <Collapsible title="Avanzado" hint="Datos guardados e información de la app">
+        <Row first label="Versión" value={version || '-'} />
+        <Row label="Mercado" value="Binance Futures USDT-M" />
+        <Row
+          label="Cómo funciona"
+          help="La app analiza el mercado y te avisa de los cambios. No ejecuta operaciones con tu cuenta: tú decides."
+        >
+          <View />
+        </Row>
+        <Button label="Borrar historial de notificaciones" kind="secondary" onPress={handleClearHistory} style={{ marginTop: space.md }} />
+        <Feedback value={feedback.advanced} />
+      </Collapsible>
 
-      {/* Alerts */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Alertas</Text>
-        <View style={styles.disclaimer}>
-          <Text style={styles.disclaimerText}>
-            Las alertas informan cambios de estado, no instrucciones de trading.
-          </Text>
-        </View>
-
-        <View style={styles.alertItem}>
-          <View style={styles.alertInfo}>
-            <Text style={styles.alertLabel}>Cambio de escenario (Mercado)</Text>
-            <Text style={styles.alertHint}>Favorable, Operable, Alto Riesgo, Espera</Text>
-          </View>
-          <View style={styles.alertStatus}>
-            <Text style={styles.alertStatusText}>Activo</Text>
-          </View>
-        </View>
-
-        <View style={styles.alertItem}>
-          <View style={styles.alertInfo}>
-            <Text style={styles.alertLabel}>Cambio de coherencia (Posiciones)</Text>
-            <Text style={styles.alertHint}>A favor, Contra contexto, Neutral</Text>
-          </View>
-          <View style={styles.alertStatus}>
-            <Text style={styles.alertStatusText}>Activo</Text>
-          </View>
-        </View>
-
-        <View style={styles.alertItem}>
-          <View style={styles.alertInfo}>
-            <Text style={styles.alertLabel}>Invalidacion estructural</Text>
-            <Text style={styles.alertHint}>Cuando la tesis de un trade se invalida</Text>
-          </View>
-          <View style={styles.alertStatus}>
-            <Text style={styles.alertStatusText}>Activo</Text>
-          </View>
-        </View>
-
-        <View style={styles.alertItem}>
-          <View style={styles.alertInfo}>
-            <Text style={styles.alertLabel}>Exposicion de riesgo</Text>
-            <Text style={styles.alertHint}>Multiples posiciones contra contexto</Text>
-          </View>
-          <View style={styles.alertStatus}>
-            <Text style={styles.alertStatusText}>Activo</Text>
-          </View>
-        </View>
-
-        {/* Push Notifications */}
-        <View style={styles.pushSection}>
-          <Text style={styles.fieldLabel}>Notificaciones Push</Text>
-          {pushToken ? (
-            <Text style={styles.tokenRegistered}>Dispositivo registrado</Text>
-          ) : (
-            <Text style={styles.helperText}>Registra tu dispositivo para recibir alertas</Text>
-          )}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.button} onPress={handleRegisterPush} disabled={loading}>
-              <Text style={styles.buttonText}>{isRegistered ? 'Actualizar' : 'Registrar'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.buttonSecondary]} onPress={handleTestNotification} disabled={loading}>
-              <Text style={styles.buttonText}>Probar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
-      {/* Data */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Datos</Text>
-        <TouchableOpacity style={styles.dangerButton} onPress={handleClearHistory}>
-          <Text style={styles.dangerButtonText}>Limpiar historial local</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Informacion</Text>
-        <Text style={styles.infoText}>Version: 1.0.0</Text>
-        <Text style={styles.infoText}>Mercado: Binance Futures USDT-M</Text>
-        <View style={styles.principleBox}>
-          <Text style={styles.principleTitle}>Principio de la app</Text>
-          <Text style={styles.principleText}>
-            Settings define el marco.{'\n'}
-            Mercado describe el terreno.{'\n'}
-            Posiciones evalua la tesis.{'\n'}
-            El usuario decide.
-          </Text>
-        </View>
-      </View>
-    </ScrollView>
+      <Button label="Cerrar sesión" kind="secondary" onPress={handleLogout} style={{ marginTop: space.md }} />
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f0f1a',
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  content: {
-    paddingBottom: 100,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-  },
-  title: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  subtitle: {
-    color: '#888',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  section: {
-    backgroundColor: '#1e1e2e',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 16,
-  },
-  sectionTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  fieldLabel: {
-    color: '#888',
-    fontSize: 13,
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  helperText: {
-    color: '#888',
-    fontSize: 14,
-    marginBottom: 12,
-  },
+  buttons: { flexDirection: 'row', gap: space.md, marginTop: space.lg },
+  fieldLabel: { color: colors.textDim, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   input: {
-    backgroundColor: '#0f0f1a',
-    borderRadius: 8,
-    padding: 12,
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
-  button: {
-    flex: 1,
-    backgroundColor: '#00d4aa',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  buttonSecondary: {
-    backgroundColor: '#333',
-    marginRight: 0,
-  },
-  buttonDanger: {
-    backgroundColor: '#ff4757',
-    marginRight: 0,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  dangerButton: {
-    backgroundColor: '#ff475730',
-    borderWidth: 1,
-    borderColor: '#ff4757',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  dangerButtonText: {
-    color: '#ff4757',
-    fontWeight: '600',
-  },
-  infoText: {
-    color: '#888',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-
-  // Plan section
-  planRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a4a',
-  },
-  planLabel: {
-    color: '#888',
-    fontSize: 14,
-  },
-  planValue: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  planValuePremium: {
-    color: '#00d4aa',
-  },
-  upgradeButton: {
-    backgroundColor: '#00d4aa',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  upgradeButtonText: {
-    color: '#0a0a14',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-
-  // Disclaimer box
-  disclaimer: {
-    backgroundColor: '#1a1a30',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: '#ffd93d',
-  },
-  disclaimerText: {
-    color: '#aaa',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-
-  // Mode card
-  modeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#00d4aa15',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#00d4aa40',
-  },
-  modeIconContainer: {
-    marginRight: 12,
-  },
-  modeIcon: {
-    fontSize: 28,
-  },
-  modeContent: {
-    flex: 1,
-  },
-  modeLabel: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modeDescription: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  activeIndicator: {
-    backgroundColor: '#00d4aa',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  activeIndicatorText: {
-    color: '#0f0f1a',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // Keys status
-  keysStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#00d4aa20',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  keysStatusIcon: {
-    fontSize: 18,
-    color: '#00d4aa',
-    marginRight: 10,
-    fontWeight: 'bold',
-  },
-  keysStatusContent: {
-    flex: 1,
-  },
-  keysStatusText: {
-    color: '#00d4aa',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  keysHint: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  permissionNote: {
-    color: '#666',
-    fontSize: 11,
-    marginTop: 10,
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-
-  // Alerts
-  alertItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a4a',
-  },
-  alertInfo: {
-    flex: 1,
-  },
-  alertLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  alertHint: {
-    color: '#666',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  alertStatus: {
-    backgroundColor: '#00d4aa20',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  alertStatusText: {
-    color: '#00d4aa',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  pushSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#2a2a4a',
-  },
-  tokenRegistered: {
-    color: '#00d4aa',
-    fontSize: 13,
-    marginBottom: 8,
-  },
-
-  // Principle box
-  principleBox: {
-    backgroundColor: '#1a1a30',
-    borderRadius: 10,
-    padding: 14,
-    marginTop: 12,
-  },
-  principleTitle: {
-    color: '#888',
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  principleText: {
-    color: '#aaa',
-    fontSize: 13,
-    lineHeight: 20,
-    fontStyle: 'italic',
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    color: colors.text, fontSize: 16, minHeight: 48, paddingHorizontal: space.md,
   },
 });
 
