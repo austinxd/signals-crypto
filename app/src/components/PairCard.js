@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Chip } from './ui';
-import { colors, space, radius, type, scenarioOf, trendOf, DIRECTION, pairName, fmtPrice } from '../theme';
+import { colors, space, radius, type, pairName, fmtPrice } from '../theme';
+import { explain } from '../explain';
 
 /**
  * Summary of one coin: what it costs, whether it is a good moment, and why in one sentence.
@@ -9,10 +10,7 @@ import { colors, space, radius, type, scenarioOf, trendOf, DIRECTION, pairName, 
  */
 const PairCard = ({ pair, data, onPress, onLongPress }) => {
   const analysis = data?.analysis;
-  const scenario = scenarioOf(analysis?.scenario);
-  const direction = DIRECTION[analysis?.direction_preference];
-  const trend = trendOf(analysis?.context?.htf_bias);
-  const reading = analysis?.unified_reading || analysis?.scenario_reason;
+  const view = explain(analysis);
 
   return (
     <TouchableOpacity
@@ -36,25 +34,10 @@ const PairCard = ({ pair, data, onPress, onLongPress }) => {
         <Text style={[type.bodyDim, { marginTop: space.md }]}>Todavía no hay análisis para esta moneda.</Text>
       ) : (
         <>
-          <View style={styles.chips}>
-            <Chip label={scenario.label} color={scenario.color} solid />
-            {direction ? (
-              <Chip label={`${direction.arrow} ${direction.label}`} color={direction.color} />
-            ) : (
-              <Chip label="Sin dirección clara" color={colors.textMuted} />
-            )}
-          </View>
-
-          <Text style={[type.body, { marginTop: space.md }]} numberOfLines={3}>
-            {reading || scenario.help}
-          </Text>
-
+          <Chip label={view.headline} color={view.color} solid style={styles.verdict} />
+          <Text style={[type.body, { marginTop: space.md }]}>{view.reasons.slice(0, 2).join(' ')}</Text>
           <View style={styles.footer}>
-            <Text style={type.small}>
-              Tendencia de fondo:{' '}
-              <Text style={{ color: trend.color, fontWeight: '700' }}>{trend.arrow} {trend.label}</Text>
-            </Text>
-            <Text style={styles.more}>Ver análisis</Text>
+            <Text style={styles.more}>Ver por qué</Text>
           </View>
         </>
       )}
@@ -70,9 +53,9 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center' },
   name: { color: colors.text, fontSize: 20, fontWeight: '700' },
   price: { ...type.number, marginLeft: space.md },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md },
+  verdict: { marginTop: space.md, paddingVertical: 6, paddingHorizontal: 12 },
   footer: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
     marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.border,
   },
   more: { color: colors.accent, fontSize: 14, fontWeight: '600' },

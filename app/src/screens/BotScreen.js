@@ -84,7 +84,7 @@ const BotScreen = () => {
       setReport(await getBotReport());
       setError(null);
     } catch (err) {
-      setError('No se pudo leer el bot');
+      setError(err && err.status === 403 ? 'forbidden' : 'offline');
     }
   }, []);
 
@@ -122,7 +122,9 @@ const BotScreen = () => {
   const body = () => {
     if (!report) {
       return error
-        ? <Empty title={error} hint="Comprueba tu conexión. Si sigue igual, puede que el servidor esté reiniciándose." actionLabel="Reintentar" onAction={load} />
+        ? (error === 'forbidden'
+          ? <Empty title="El servidor aún no deja ver el bot" hint="El servidor tiene una versión anterior, que solo deja entrar al administrador. Se arregla actualizando el servidor; en la app no hay que hacer nada." actionLabel="Reintentar" onAction={load} />
+          : <Empty title="No se pudo leer el bot" hint="Comprueba tu conexión. Si sigue igual, puede que el servidor esté reiniciándose." actionLabel="Reintentar" onAction={load} />)
         : <Loading label="Leyendo el bot…" />;
     }
 

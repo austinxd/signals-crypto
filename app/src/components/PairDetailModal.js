@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getUnifiedMarketData, getVolumeProfile, getAIExplanation } from '../services/api';
+import { explain } from '../explain';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
   colors, space, radius, type, tint,
@@ -68,6 +69,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const [liveData, setLiveData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
 
   // Volume profile: fetched only when the reader asks for it
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
@@ -191,7 +193,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 
   const { analysis, htf_indicators: htfInd, ltf_indicators: ltfInd, funding, price } = data;
 
-  const scenario = scenarioOf(analysis?.scenario);
+  const view = explain(analysis);
   const direction = DIRECTION[analysis?.direction_preference] || null;
   const bias = trendOf(analysis?.context?.htf_bias || analysis?.htf_bias);
   const momentum = trendOf(analysis?.timing?.ltf_momentum);
@@ -257,26 +259,15 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
           {/* 1. What to do now */}
           <SectionTitle>Qué hacer ahora</SectionTitle>
           <Card>
-            <Chip label={scenario.label} color={scenario.color} solid style={styles.bigChip} />
-            <Text style={[type.bodyDim, { marginTop: space.sm }]}>{scenario.help}</Text>
+            <Chip label={view.headline} color={view.color} solid style={styles.bigChip} />
+            <Text style={[type.body, { marginTop: space.md }]}>{view.action}</Text>
+          </Card>
 
-            <View style={styles.directionBox}>
-              <Text style={type.small}>Dirección sugerida</Text>
-              {direction ? (
-                <Text style={[styles.direction, { color: direction.color }]}>
-                  {direction.arrow} {direction.label}
-                </Text>
-              ) : (
-                <Text style={[styles.direction, { color: colors.textDim }]}>Sin dirección clara</Text>
-              )}
-            </View>
-
-            {!!analysis?.unified_reading && (
-              <Text style={[type.body, { marginTop: space.md }]}>{analysis.unified_reading}</Text>
-            )}
-            {!!analysis?.scenario_reason && (
-              <Text style={[type.bodyDim, { marginTop: space.sm }]}>{analysis.scenario_reason}</Text>
-            )}
+          <SectionTitle>Qué está pasando</SectionTitle>
+          <Card>
+            {view.reasons.map((r, i) => (
+              <Text key={i} style={[type.body, i > 0 && { marginTop: space.sm }]}>{r}</Text>
+            ))}
           </Card>
 
           {/* 2. AI explanation */}
@@ -345,8 +336,28 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
             ) : null}
           </Card>
 
+          <Button
+            label={showDetail ? 'Ocultar el análisis completo' : 'Ver el análisis completo'}
+            kind="secondary"
+            onPress={() => setShowDetail(!showDetail)}
+            style={{ marginTop: space.sm, marginBottom: space.md }}
+          />
+          {!showDetail && (
+            <Text style={[type.small, { textAlign: 'center', marginBottom: space.md }]}>
+              Para quien quiera los números: tendencia, niveles de precio e indicadores.
+            </Text>
+          )}
+
+          {showDetail && (
+          <>
           {/* 3. Why */}
-          <SectionTitle>Por qué</SectionTitle>
+          {(!!analysis?.unified_reading || !!analysis?.scenario_reason) && (
+            <Card title="Lectura técnica">
+              {!!analysis?.unified_reading && <Text style={type.bodyDim}>{analysis.unified_reading}</Text>}
+              {!!analysis?.scenario_reason && <Text style={[type.bodyDim, { marginTop: space.xs }]}>{analysis.scenario_reason}</Text>}
+            </Card>
+          )}
+          <SectionTitle>Análisis completo</SectionTitle>
           <Card title="Tendencia de fondo (4 horas)">
             <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.context}</Text>
             <Row first label="Tendencia" value={`${bias.arrow} ${bias.label}`} color={bias.color} />
@@ -481,7 +492,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
           </Card>
 
           {/* 5. Technical data */}
-          <Collapsible title="Datos técnicos" hint="Indicadores, tasa de fondeo y volumen">
+          <Collapsible title="Datos técnicos" hint="Indicadores, tasa de fondeo y volumen" defaultOpen>
             <Text style={type.label}>Indicadores</Text>
             <View style={styles.indicatorGrid}>
               <View style={styles.indicatorCol}>
@@ -619,6 +630,8 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </View>
             )}
           </Collapsible>
+          </>
+          )}
 
           <Text style={styles.footnote}>
             {lastUpdate ? `Actualizado a las ${lastUpdate.toLocaleTimeString('es-ES')}. ` : ''}
