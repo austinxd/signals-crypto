@@ -250,11 +250,14 @@ def test_manual_open_goes_through_the_risk_engine_and_notifies(engine, monkeypat
     assert ask("X", -1) == "executed"
     symbol, side, qty, sl, tp = broker.opened[0]
     assert (side, sl, tp) == (-1, pytest.approx(102.0), None) and qty * 2.0 == pytest.approx(50.0)  # 0.5% of 10k
-    assert told == [("Bot: abrió venta (short) en X", "bot_trade", "X")]
+    # refusals are told too, in words; then the trade itself, saying it is simulated and what it wins on
+    assert [t[0] for t in told[:2]] == ["Bot (simulado): no abrió tu compra (long) de DOGE",
+                                        "Bot (simulado): no abrió tu compra (long) de X"]
+    assert told[2] == ("Bot (simulado): vendió X, gana si baja", "bot_trade", "X")
     assert "already open" in ask("X", 1)
     eng.j.add_command("close", {"symbol": "X"})
     eng._commands()
-    assert told[-1][0].startswith("Bot: cerró X con ")
+    assert told[-1][0].startswith("Bot (simulado): cerró X y ")
 
 
 def test_trailing_stop_moves_and_closes_if_price_is_through_it(engine):

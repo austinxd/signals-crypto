@@ -5,19 +5,21 @@ import { useSubscription } from '../context/SubscriptionContext';
 import { getOfferings, purchasePackage, restorePurchases } from '../services/purchases';
 import { ModalHeader, Card, Chip, Button, Notice, Loading } from '../components/ui';
 import { colors, space, type } from '../theme';
+import { friendlyError } from '../errors';
 
 const PREMIUM = [
-  'Todos los pares en Mercado',
+  'Todas las monedas que quieras en Mercado',
   'Todas tus posiciones visibles',
-  'Alertas ilimitadas',
+  'Avisos de todas tus monedas y posiciones',
   '100 consultas a la IA al mes',
   'Cancela cuando quieras',
 ];
 const FREE = [
-  { text: '1 par en Mercado', included: true },
+  { text: '1 moneda en Mercado', included: true },
   { text: '1 posición visible', included: true },
   { text: '5 consultas a la IA al mes', included: true },
-  { text: 'Sin alertas', included: false },
+  { text: 'Avisos de esa moneda', included: true },
+  { text: 'No incluye el bot: es una prueba del equipo', included: false },
 ];
 
 const Feature = ({ text, included = true }) => (
@@ -50,12 +52,14 @@ const UpgradeScreen = ({ navigation }) => {
       const pkgs = (await getOfferings()) || [];
       console.log('[UpgradeScreen] Packages received:', pkgs.length);
       if (pkgs.length === 0) {
-        setError('Ahora mismo no hay ninguna suscripción disponible en la tienda. Inténtalo más tarde.');
+        setError('La suscripción aún no está disponible en este dispositivo.');
       }
       setPackages(pkgs);
     } catch (err) {
       console.error('[UpgradeScreen] Error loading offerings:', err);
-      setError(`No se pudo conectar con la tienda. ${(err && err.message) || ''}`.trim());
+      setError(err && err.storeUnavailable
+        ? friendlyError(err, 'store')
+        : 'No se pudo conectar con la tienda. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -78,7 +82,7 @@ const UpgradeScreen = ({ navigation }) => {
       } else if (result.cancelled) {
         // User cancelled, do nothing
       } else {
-        Alert.alert('No se pudo comprar', result.error || 'No se pudo completar la compra.');
+        Alert.alert('No se pudo comprar', 'No se pudo completar la compra. No se te ha cobrado nada. Inténtalo de nuevo.');
       }
     } catch (err) {
       Alert.alert('No se pudo comprar', 'Ocurrió un error al procesar la compra.');
@@ -104,7 +108,7 @@ const UpgradeScreen = ({ navigation }) => {
       } else if (result.success) {
         Alert.alert('Sin compras', 'No se encontraron compras anteriores para restaurar.');
       } else {
-        Alert.alert('No se pudo restaurar', result.error || 'No se pudieron restaurar las compras.');
+        Alert.alert('No se pudo restaurar', 'No se pudieron restaurar las compras. Inténtalo de nuevo.');
       }
     } catch (err) {
       Alert.alert('No se pudo restaurar', 'Ocurrió un error al restaurar las compras.');
@@ -115,12 +119,12 @@ const UpgradeScreen = ({ navigation }) => {
 
   // Get the monthly package (or first available)
   const monthlyPackage = packages.find((p) => p.identifier === '$rc_monthly') || packages[0];
-  const priceString = monthlyPackage?.product?.priceString || '$4.99';
+  const priceString = monthlyPackage?.product?.priceString || null; // no package from the store = no price to show
   const store = Platform.OS === 'ios' ? 'App Store' : 'Google Play';
 
   return (
     <View style={styles.container}>
-      <ModalHeader title="Premium" subtitle="Todo el análisis, sin límites" onClose={() => navigation.goBack()} />
+      <ModalHeader title="Premium" subtitle="Más monedas, posiciones y explicaciones" onClose={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space.xl }]}>
         {isPremium && (
           <Notice tone="good" title="Ya eres Premium">
@@ -134,10 +138,12 @@ const UpgradeScreen = ({ navigation }) => {
           style={{ borderColor: colors.accent }}
         >
           {PREMIUM.map((t) => <Feature key={t} text={t} />)}
-          <View style={styles.priceLine}>
-            <Text style={[styles.price, { color: colors.accent }]}>{priceString}</Text>
-            <Text style={type.bodyDim}> al mes</Text>
-          </View>
+          {!!priceString && (
+            <View style={styles.priceLine}>
+              <Text style={[styles.price, { color: colors.accent }]}>{priceString}</Text>
+              <Text style={type.bodyDim}> al mes</Text>
+            </View>
+          )}
         </Card>
 
         <Card title="Gratis" right={!isPremium ? <Chip label="Tu plan" /> : null}>
@@ -159,7 +165,7 @@ const UpgradeScreen = ({ navigation }) => {
 
         {!isPremium && !loading && (
           <Button
-            label={monthlyPackage ? `Pasar a Premium · ${priceString}/mes` : 'No disponible'}
+            label={!monthlyPackage ? 'No disponible' : priceString ? `Pasar a Premium · ${priceString}/mes` : 'Pasar a Premium'}
             onPress={() => monthlyPackage && handlePurchase(monthlyPackage)}
             disabled={!monthlyPackage || restoring}
             loading={purchasing}

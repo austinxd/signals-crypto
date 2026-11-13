@@ -12,8 +12,11 @@ const LockedPositionCard = ({ onPress }) => (
       </View>
       <Chip label="Solo Premium" color={colors.warn} style={{ alignSelf: 'center' }} />
     </View>
-    <Text style={[type.bodyDim, { marginTop: space.sm, marginBottom: space.md }]}>
-      Con el plan gratis ves una posición. Premium muestra todas, con su riesgo y sus alertas.
+    <Text style={[type.bodyDim, { marginTop: space.sm, marginBottom: space.sm }]}>
+      Con el plan gratis ves una posición. Premium muestra todas, con su riesgo y sus avisos.
+    </Text>
+    <Text style={[type.small, { color: colors.warn, marginBottom: space.md }]}>
+      Esta posición sigue abierta en Binance con dinero real, aunque aquí no la veas.
     </Text>
     <Button label="Ver Premium" kind="secondary" onPress={onPress} />
   </Card>

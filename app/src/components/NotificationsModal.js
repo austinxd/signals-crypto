@@ -8,7 +8,9 @@ import { colors, space, radius, type, pairName, timeAgo } from '../theme';
 const KIND = {
   // Market
   htf_bias_changed: { label: 'Cambio de tendencia', color: colors.warn },
-  scenario_changed: { label: 'Cambio de situación', color: colors.info },
+  scenario_changed: { label: 'Nuevo veredicto', color: colors.info },
+  confirmation_gained: { label: 'El precio acompaña', color: colors.accent },
+  confirmation_lost: { label: 'El precio se frenó', color: colors.warn },
   volatility_changed: { label: 'Movimiento brusco', color: colors.warn },
   price_at_key_zone: { label: 'Precio en nivel importante', color: colors.info },
   favorable_conditions: { label: 'Buen momento', color: colors.accent },
@@ -53,7 +55,7 @@ const NotificationItem = ({ notification, onPress }) => {
       </View>
       <Text style={[styles.itemTitle, !unread && { color: colors.textDim }]}>{notification?.title}</Text>
       {!!notification?.message && <Text style={type.bodyDim}>{notification.message}</Text>}
-      {unread && <Text style={styles.itemHint}>Nuevo · toca para marcarlo como leído</Text>}
+      {unread && <Text style={styles.itemHint}>Nuevo · toca para marcarlo como leído. Un aviso antiguo puede no valer ya: mira el estado actual en Mercado.</Text>}
     </TouchableOpacity>
   );
 };
@@ -147,7 +149,7 @@ const NotificationsModal = ({ visible, onClose, onUnreadCountChange }) => {
             ListEmptyComponent={
               <Empty
                 title="Aún no hay avisos"
-                hint="Aquí verás los cambios importantes en las monedas que sigues y en tus posiciones."
+                hint="Aquí verás los cambios importantes en las monedas que sigues y en tus posiciones. Para que lleguen, activa los avisos en Ajustes."
               />
             }
             refreshControl={

@@ -35,8 +35,41 @@ def _coin(symbol: str) -> str:
     return symbol[:-4] if symbol.endswith("USDT") else symbol
 
 
+# Wording of the notifications. Always the action and what it wins on; never a bare "long"/"short"/"stop".
 SIDE_ES = {1: "compra (long)", -1: "venta (short)"}
-EXIT_ES = {"stop": "saltó el stop", "target": "llegó al objetivo", "manual": "cierre manual", "time": "por tiempo"}
+DID_ES = {1: "compró", -1: "vendió"}
+WINS_ES = {1: "gana si sube", -1: "gana si baja"}
+AGAINST_ES = {1: "baja", -1: "sube"}
+EXIT_ES = {"target": "llegó al precio de ganancia previsto", "manual": "la cerró el administrador",
+           "time": "llevaba demasiado tiempo abierta"}
+REFUSED_ES = {
+    "max_open_positions": "ya tiene el máximo de operaciones abiertas a la vez",
+    "max_same_direction": "ya tiene demasiadas operaciones en la misma dirección",
+    "daily_loss_limit": "hoy ya perdió el máximo permitido y no abre más hasta mañana",
+    "stop_too_tight": "el cierre automático de pérdidas quedaría demasiado cerca del precio",
+    "stop_too_wide": "el cierre automático de pérdidas quedaría demasiado lejos del precio",
+    "stop_on_wrong_side": "el precio ya pasó el nivel de cierre automático",
+    "below_min_notional": "la operación saldría más pequeña que el mínimo",
+    "no_equity": "no queda capital",
+    "bot is paused": "el bot está en pausa",
+    "position already open": "ya hay una operación abierta en esa moneda",
+    "price already reached the target": "el precio ya llegó a donde iba la operación",
+    "proposal not pending": "la propuesta ya había caducado o ya estaba respondida",
+    "not enough candles": "faltan datos de precio para calcular el cierre automático de pérdidas",
+}
+
+
+def _exit_es(reason: str, pnl: float) -> str:
+    if reason == "stop":  # a stop that closes in profit is the trailing stop doing its job
+        return ("el precio se dio la vuelta y se cerró sola asegurando ganancia" if pnl > 0
+                else "el precio fue en contra y se cerró sola para limitar la pérdida")
+    return EXIT_ES.get(reason, "cierre automático")
+
+
+def _refused_es(result: str) -> str:
+    """Spanish for an engine refusal such as 'risk engine rejected it: max_open_positions'."""
+    text = result.split("rejected it:", 1)[-1].strip()
+    return next((es for code, es in REFUSED_ES.items() if text.startswith(code)), "no cumple los límites del bot")
 
 
 class Engine:
@@ -66,8 +99,8 @@ class Engine:
         if not self._notifier:
             return
         try:
-            money = {"paper": "Dinero simulado.", "demo": "Cuenta demo."}.get(self.broker.name, "Dinero real.")
-            self._notifier(f"Bot: {title}", f"{body} {money}", kind, symbol)
+            money = {"paper": "simulado", "demo": "cuenta demo"}.get(self.broker.name, "dinero real")
+            self._notifier(f"Bot ({money}): {title}", body, kind, symbol)
         except Exception as e:
             self.j.event("warn", "notify", repr(e)[:200])
 
@@ -117,8 +150,9 @@ class Engine:
         if peak > 0 and equity <= peak * (1 - limit) and not self.j.get_state("paused"):
             self.j.set_paused(True, f"kill_switch: drawdown {1 - equity / peak:.1%} from peak (limit {limit:.0%})")
             self.j.set_state("peak_equity", equity)  # re-arm from here once the user resumes
-            self._tell("se pausó por seguridad", f"El capital cayó {1 - equity / peak:.1%} desde su máximo (límite "
-                       f"{limit:.0%}). No abrirá operaciones nuevas hasta que lo reanudes.", "bot_alert")
+            self._tell("se pausó solo por seguridad", f"El capital bajó un {1 - equity / peak:.1%} desde su punto más "
+                       f"alto (el límite es {limit:.0%}). No abrirá operaciones nuevas hasta que lo reanudes en la "
+                       f"pestaña Bot. Las abiertas siguen con su cierre automático de pérdidas.", "bot_alert")
         if time.time() - self._last_snapshot >= 300:
             self.j.equity_point(equity, acct["balance"], acct["open_pnl"])
             self._last_snapshot = time.time()
@@ -140,6 +174,8 @@ class Engine:
         except Exception as e:
             self.j.decision(symbol, bar_time, "ERROR", side, f"order_failed: {e!r}")
             self.j.event("error", "order", f"{symbol}: {e!r}")
+            self._tell(f"falló la orden de {SIDE_ES[side]} en {_coin(symbol)}",
+                       "La orden no se pudo enviar. No se abrió nada.", "bot_alert", symbol)
             return False
         now = time.time()
         tid = self.j.open_trade(
@@ -151,9 +187,9 @@ class Engine:
         self.j.decision(symbol, bar_time, "ENTER", side, note or "signal",
                         {"trade_id": tid, "entry": fill["entry"], "qty": fill["qty"], "sl": sl, "tp": tp})
         risk = fill["qty"] * abs(fill["entry"] - sl)
-        self._tell(f"abrió {SIDE_ES[side]} en {_coin(symbol)}",
-                   f"Entrada {_px(fill['entry'])}, stop en {_px(sl)}. Si salta el stop pierde unos {risk:,.0f} USDT.",
-                   "bot_trade", symbol)
+        self._tell(f"{DID_ES[side]} {_coin(symbol)}, {WINS_ES[side]}",
+                   f"{DID_ES[side].capitalize()} a {_px(fill['entry'])}. Si {AGAINST_ES[side]} a {_px(sl)} se cierra "
+                   f"sola y pierde unos {risk:,.0f} USDT.", "bot_trade", symbol)
         return True
 
     def _record_close(self, trade: dict, out: dict, reason: str):
@@ -165,9 +201,9 @@ class Engine:
                             exit_reason=reason, fees=fees, pnl=pnl, r=r)
         self.j.decision(trade["symbol"], "", "EXIT", trade["side"], reason,
                         {"trade_id": trade["id"], "exit": out["exit"], "pnl": pnl, "r": r})
-        self._tell(f"cerró {_coin(trade['symbol'])} con {'ganancia' if pnl >= 0 else 'pérdida'} de {abs(pnl):,.2f} USDT",
+        self._tell(f"cerró {_coin(trade['symbol'])} y {'ganó' if pnl >= 0 else 'perdió'} {abs(pnl):,.2f} USDT",
                    f"{SIDE_ES[trade['side']].capitalize()} de {_px(trade['entry'])} a {_px(out['exit'])}. "
-                   f"Motivo: {EXIT_ES.get(reason, reason)}.", "bot_trade", trade["symbol"])
+                   f"Motivo: {_exit_es(reason, pnl)}.", "bot_trade", trade["symbol"])
 
     def _sync_trades(self):
         for trade in self.j.open_trades():
@@ -260,9 +296,10 @@ class Engine:
             pid = self.j.add_proposal(symbol, side, price, sl, tp, expires, bar_time)
             self.j.decision(symbol, bar_time, "PROPOSE", side, "awaiting_approval",
                             {"proposal_id": pid, "price": price, "sl": sl, "tp": tp, "qty": v.qty, "ai": ai_note})
-            self._tell(f"propone {SIDE_ES[side]} en {_coin(symbol)}",
-                       f"Precio {_px(price)}, stop en {_px(sl)}. Entra a la pestaña Bot para aprobarla o rechazarla; "
-                       f"caduca en unas horas.", "bot_trade", symbol)
+            hours = max(1, round((expires - time.time()) / 3600))
+            self._tell(f"propone {SIDE_ES[side]} de {_coin(symbol)}, {WINS_ES[side]}",
+                       f"Precio {_px(price)}. Si {AGAINST_ES[side]} a {_px(sl)} se cerraría sola. Entra a la pestaña "
+                       f"Bot para aprobarla o rechazarla: tienes unas {hours} h para responder.", "bot_trade", symbol)
             return
         qty = v.qty * mult
         if mult <= 0 or qty * price < self.cfg.risk.min_notional:
@@ -331,6 +368,9 @@ class Engine:
             try:
                 if c["cmd"] == "approve":
                     result = self._approve(int(args["proposal_id"]))
+                    if result != "executed" and not result.startswith("order failed"):
+                        self._tell("no abrió la operación que aprobaste",
+                                   f"Motivo: {_refused_es(result)}. No se abrió nada.", "bot_alert")
                 elif c["cmd"] == "reject":
                     self.j.set_proposal(int(args["proposal_id"]), "rejected", "by_user")
                     result = "rejected"
@@ -343,7 +383,11 @@ class Engine:
                             closed.append(t["symbol"])
                     result = f"closed {closed}" if closed else "no matching open position"
                 elif c["cmd"] == "open":
-                    result = self._open_manual(str(args.get("symbol", "")).upper(), int(args.get("side", 0)))
+                    symbol, side = str(args.get("symbol", "")).upper(), int(args.get("side", 0))
+                    result = self._open_manual(symbol, side)
+                    if result != "executed" and not result.startswith("order failed"):
+                        self._tell(f"no abrió tu {SIDE_ES.get(side, 'operación')} de {_coin(symbol)}",
+                                   f"Motivo: {_refused_es(result)}. No se abrió nada.", "bot_alert", symbol)
                 else:
                     result = f"unknown command {c['cmd']}"
                 self.j.finish_command(c["id"], "done", result)

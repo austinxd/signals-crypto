@@ -17,6 +17,7 @@ const PositionsScreen = () => {
   const [error, setError] = useState(null);
   const [totalPnl, setTotalPnl] = useState(0);
   const [mode, setMode] = useState(null);
+  const [hasKeys, setHasKeys] = useState(null); // null = the server did not say
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -25,6 +26,7 @@ const PositionsScreen = () => {
       const pos = data.positions || [];
       setPositions(pos);
       setMode(data.mode || null);
+      setHasKeys(typeof data.has_binance_keys === 'boolean' ? data.has_binance_keys : null);
       const pnl = pos.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
       setTotalPnl(pnl);
     } catch (err) {
@@ -69,10 +71,18 @@ const PositionsScreen = () => {
     }
     if (!loaded) return <Loading label="Leyendo tus posiciones…" />;
     if (count === 0) {
+      if (hasKeys === true) {
+        return (
+          <Empty
+            title="No tienes operaciones abiertas en Binance"
+            hint="Tu cuenta está conectada. Cuando abras una operación de futuros en Binance aparecerá aquí, con su riesgo y sus avisos. Las operaciones del bot no salen aquí: están en la pestaña Bot."
+          />
+        );
+      }
       return (
         <Empty
-          title="No hay posiciones abiertas"
-          hint="Aquí aparecen las operaciones de futuros que tengas abiertas en Binance. Si aún no conectaste tu cuenta, añade tus claves de Binance en Ajustes."
+          title="Conecta tu cuenta de Binance"
+          hint="Aquí verás las operaciones de futuros que tengas abiertas en Binance: cómo van, dónde se cierran solas y si siguen teniendo sentido. Para eso la app necesita tus claves de Binance; se añaden en Ajustes."
           actionLabel="Ir a Ajustes"
           onAction={() => navigation?.navigate?.('Settings')}
         />
@@ -82,7 +92,7 @@ const PositionsScreen = () => {
       <>
         <Card>
           <StatRow>
-            <Stat label="Posiciones abiertas" value={String(count)} />
+            <Stat label="Posiciones abiertas" value={String(count)} hint="En Binance, dinero real" />
             <Stat
               label="Resultado ahora"
               value={`${fmtSigned(totalPnl)} USDT`}
@@ -120,7 +130,7 @@ const PositionsScreen = () => {
   return (
     <Screen
       title="Posiciones"
-      subtitle="Tus operaciones abiertas en Binance"
+      subtitle="Tus operaciones en Binance, con tu dinero real. Las del bot no salen aquí."
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

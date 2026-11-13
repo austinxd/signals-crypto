@@ -190,11 +190,11 @@ def send_test_notification(push_token: str) -> Dict[str, Any]:
             json=[{
                 "to": push_token,
                 "sound": "default",
-                "title": "Notificaciones Activas",
-                "body": "Las senales de trading llegaran aqui",
+                "title": "Criterio · Prueba",
+                "body": "Así te llegarán los avisos.",
                 "data": {"test": True},
                 "priority": "high",
-                "channelId": "signals",
+                "channelId": "alerts",
             }],
             timeout=10,
         )

@@ -52,8 +52,8 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
         ) : (
           <ScrollView contentContainerStyle={styles.body}>
             <Notice tone="info" title="Qué pasa al añadirla">
-              Verás su análisis en Mercado y recibirás un aviso cuando cambie la tendencia, aparezca un buen
-              momento, el precio se mueva bruscamente o llegue a un nivel importante.
+              Verás en Mercado si es buen momento para abrir long (apostar a que sube) o short (apostar a que
+              baja), y te avisaremos cuando eso cambie. Para recibir avisos tienes que activarlos en Ajustes.
             </Notice>
 
             {availablePairs.map((pair) => {

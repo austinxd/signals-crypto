@@ -24,9 +24,6 @@ const extraConfig = getExtraConfig();
 const REVENUECAT_IOS_KEY = extraConfig.revenueCatIosKey || '';
 const REVENUECAT_ANDROID_KEY = extraConfig.revenueCatAndroidKey || '';
 
-// Log for debugging
-console.log('[Purchases] Extra config:', JSON.stringify(extraConfig));
-console.log('[Purchases] iOS Key loaded:', REVENUECAT_IOS_KEY ? 'Yes (' + REVENUECAT_IOS_KEY.substring(0, 10) + '...)' : 'No');
 
 // Product identifiers (must match what you create in App Store Connect / Google Play Console)
 export const PRODUCT_IDS = {
@@ -40,17 +37,43 @@ export const ENTITLEMENTS = {
 
 let isConfigured = false;
 let configurePromise = null;
+let identifiedAs = null; // account id RevenueCat currently knows this device as
+
+/**
+ * Tell the store which account is using the app. Without it purchases are anonymous and the server
+ * cannot credit them to the account. Safe to call on every login.
+ */
+async function identify(userId) {
+  if (!userId || String(userId) === identifiedAs) return;
+  await Purchases.logIn(String(userId));
+  identifiedAs = String(userId);
+}
 
 /**
  * Initialize RevenueCat SDK
  * Call this once when the app starts, after user is authenticated
  */
 export async function initPurchases(userId) {
-  if (isConfigured) return true;
+  if (isConfigured) {
+    try {
+      await identify(userId); // a different account may have logged in on this phone
+    } catch (err) {
+      console.log('[Purchases] Could not identify the account:', err && err.message);
+    }
+    return true;
+  }
 
   // If already configuring, wait for that to complete
   if (configurePromise) {
-    return configurePromise;
+    const ok = await configurePromise;
+    if (ok) {
+      try {
+        await identify(userId);
+      } catch (err) {
+        console.log('[Purchases] Could not identify the account:', err && err.message);
+      }
+    }
+    return ok;
   }
 
   configurePromise = (async () => {
@@ -66,9 +89,7 @@ export async function initPurchases(userId) {
       Purchases.configure({ apiKey });
 
       // Identify user with their backend user ID
-      if (userId) {
-        await Purchases.logIn(String(userId));
-      }
+      await identify(userId);
 
       isConfigured = true;
       console.log('[Purchases] RevenueCat configured successfully');
@@ -104,7 +125,9 @@ export async function getOfferings() {
     const configured = await ensureConfigured();
     if (!configured) {
       console.log('[Purchases] Cannot get offerings - not configured');
-      throw new Error('RevenueCat no está configurado. Verifica la API key.');
+      const err = new Error('store not configured');
+      err.storeUnavailable = true;
+      throw err;
     }
 
     console.log('[Purchases] Fetching offerings from RevenueCat...');

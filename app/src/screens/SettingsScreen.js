@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Alert, Linking } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import {
@@ -9,26 +9,33 @@ import {
   updateBinanceKeys,
   verifyBinanceKeys,
   deleteBinanceKeys,
-  updateAccountSettings,
   logout,
 } from '../services/api';
 import {
   registerForPushNotifications,
   getStoredPushToken,
-  clearNotificationHistory,
+  getPushPermission,
 } from '../services/notifications';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
   Screen, Card, SectionTitle, Chip, Button, Row, Notice, Collapsible, Loading,
 } from '../components/ui';
-import { colors, space, radius, type, GLOSSARY } from '../theme';
+import { colors, space, radius, type } from '../theme';
+import { friendlyError, binanceOkText } from '../errors';
 
 // What the app warns about. These are always on; the list is here so people know what to expect.
 const ALERT_KINDS = [
-  { label: 'Cambio de escenario', help: 'Un par pasa a buen momento, operable, riesgo alto o espera.' },
-  { label: 'Posición contra el mercado', help: 'Una posición tuya deja de ir a favor de la tendencia.' },
-  { label: 'Idea invalidada', help: 'El motivo por el que se abrió una operación ya no se cumple.' },
-  { label: 'Demasiado riesgo', help: 'Tienes varias posiciones en contra del mercado a la vez.' },
+  { label: 'Cambia la valoración de una moneda', help: 'Pasa a ser buen momento para comprar o para vender, o deja de serlo.' },
+  { label: 'El precio llega a un nivel importante', help: 'Un precio donde otras veces se frenó o rebotó.' },
+  { label: 'Tu posición ya no va a favor', help: 'La tendencia del mercado deja de acompañar a una posición tuya.' },
+  { label: 'El motivo de tu posición ya no vale', help: 'El precio rompió el nivel que sostenía la operación.' },
+  { label: 'Varias posiciones en riesgo a la vez', help: 'Tienes más de una posición en contra del mercado.' },
+];
+
+const BINANCE_STEPS = [
+  'En Binance: Perfil > Gestión de API > Crear API.',
+  'Deja marcado solo “Habilitar lectura”. No marques trading ni retiros.',
+  'Copia la API Key y la Secret Key y pégalas aquí.',
 ];
 
 /** Result of the last action in a section, shown right under its buttons. */
@@ -52,7 +59,7 @@ const SettingsScreen = ({ onLogout }) => {
   const { isPremium, aiUsage, aiLimit, aiRemaining } = useSubscription();
 
   const [pushToken, setPushToken] = useState(null);
-  const [isRegistered, setIsRegistered] = useState(false);
+  const [permission, setPermission] = useState('undetermined'); // what the phone itself says
   const [loading, setLoading] = useState(true);
   const loadedOnce = useRef(false);
   const [busy, setBusy] = useState(null); // which action is running
@@ -65,10 +72,7 @@ const SettingsScreen = ({ onLogout }) => {
   const [binanceKey, setBinanceKey] = useState('');
   const [binanceSecret, setBinanceSecret] = useState('');
 
-  // Reference parameters
-  const [riskPercent, setRiskPercent] = useState('2');
-  const [riskFixedUsdt, setRiskFixedUsdt] = useState('');
-  const [maxLeverage, setMaxLeverage] = useState('10');
+  const [binanceOk, setBinanceOk] = useState(null); // result of the last check: null = not checked
 
   const say = (section, ok, text) => setFeedback((f) => ({ ...f, [section]: { ok, text } }));
 
@@ -83,17 +87,13 @@ const SettingsScreen = ({ onLogout }) => {
     try {
       if (!loadedOnce.current) setLoading(true);
 
-      const token = await getStoredPushToken();
-      setPushToken(token);
-      if (token) setIsRegistered(true);
+      setPermission(await getPushPermission());
+      setPushToken(await getStoredPushToken());
 
       // Load profile
       try {
         const p = await getProfile();
         setProfile(p);
-        if (p.risk_percent != null) setRiskPercent(String(p.risk_percent));
-        if (p.risk_fixed_usdt != null) setRiskFixedUsdt(String(p.risk_fixed_usdt));
-        if (p.max_leverage != null) setMaxLeverage(String(p.max_leverage));
       } catch (e) {
         console.log('Profile load error:', e.message);
       }
@@ -112,48 +112,30 @@ const SettingsScreen = ({ onLogout }) => {
       if (token) {
         setPushToken(token);
         await registerPushToken(token);
-        setIsRegistered(true);
-        say('push', true, 'Notificaciones activadas en este dispositivo.');
+        say('push', true, 'Avisos activados en este teléfono.');
       } else {
         say('push', false, 'No se pudieron activar. Revisa que la app tenga permiso de notificaciones en los ajustes del teléfono.');
       }
-    } catch {
-      say('push', false, 'No se pudieron activar las notificaciones. Inténtalo de nuevo.');
+    } catch (err) {
+      say('push', false, friendlyError(err, 'push'));
     }
+    setPermission(await getPushPermission());
     setBusy(null);
   };
 
   const handleTestNotification = async () => {
     if (!pushToken) {
-      say('push', false, 'Primero activa las notificaciones.');
+      say('push', false, 'Primero activa los avisos.');
       return;
     }
     setBusy('test');
     try {
       await sendTestNotification(pushToken);
-      say('push', true, 'Notificación de prueba enviada. Debería llegarte en unos segundos.');
-    } catch {
-      say('push', false, 'No se pudo enviar la notificación de prueba.');
+      say('push', true, 'Aviso de prueba enviado. Debería llegarte en unos segundos.');
+    } catch (err) {
+      say('push', false, friendlyError(err, 'push'));
     }
     setBusy(null);
-  };
-
-  const handleClearHistory = () => {
-    Alert.alert('Borrar historial', 'Se borrará el historial de notificaciones guardado en este teléfono.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Borrar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await clearNotificationHistory();
-            say('advanced', true, 'Historial borrado.');
-          } catch {
-            say('advanced', false, 'No se pudo borrar el historial.');
-          }
-        },
-      },
-    ]);
   };
 
   const handleSaveBinanceKeys = async () => {
@@ -164,7 +146,12 @@ const SettingsScreen = ({ onLogout }) => {
     setBusy('saveKeys');
     try {
       const result = await updateBinanceKeys(binanceKey.trim(), binanceSecret.trim());
-      say('binance', true, (result && result.message) || 'Conexión guardada.');
+      const ok = !!result && result.status === 'ok';
+      setBinanceOk(ok);
+      // The server saves the keys even when Binance refuses them: that is not a success
+      say('binance', ok, ok
+        ? 'Conexión correcta. Ya puedes ver tus posiciones en la pestaña Posiciones.'
+        : 'Las claves se guardaron pero Binance las rechaza. Revisa que estén bien copiadas y que tengan permiso de lectura de Futuros.');
       setBinanceKey('');
       setBinanceSecret('');
       // Reload profile to reflect changes
@@ -175,7 +162,7 @@ const SettingsScreen = ({ onLogout }) => {
         console.log('Profile reload error:', e.message);
       }
     } catch (err) {
-      say('binance', false, (err && err.message) || 'No se pudo guardar la conexión.');
+      say('binance', false, friendlyError(err, 'binance'));
     }
     setBusy(null);
   };
@@ -184,10 +171,11 @@ const SettingsScreen = ({ onLogout }) => {
     setBusy('verify');
     try {
       const result = await verifyBinanceKeys();
-      const ok = result && result.status === 'ok';
-      say('binance', ok, (result && result.message) || (ok ? 'La conexión funciona.' : 'La conexión no funciona.'));
+      const ok = !!result && result.status === 'ok';
+      setBinanceOk(ok);
+      say('binance', ok, ok ? binanceOkText(result.message) : friendlyError(null, 'binance'));
     } catch (err) {
-      say('binance', false, (err && err.message) || 'No se pudo verificar la conexión.');
+      say('binance', false, friendlyError(err, 'binance'));
     }
     setBusy(null);
   };
@@ -204,30 +192,15 @@ const SettingsScreen = ({ onLogout }) => {
             await deleteBinanceKeys();
             const p = await getProfile();
             setProfile(p);
+            setBinanceOk(null);
             say('binance', true, 'Binance desconectado.');
           } catch (err) {
-            say('binance', false, (err && err.message) || 'No se pudo desconectar.');
+            say('binance', false, friendlyError(err));
           }
           setBusy(null);
         },
       },
     ]);
-  };
-
-  const handleSaveReferenceParams = async () => {
-    setBusy('risk');
-    try {
-      await updateAccountSettings({
-        mode: 'recommendations', // Always recommendations mode
-        risk_percent: parseFloat(riskPercent) || 2,
-        risk_fixed_usdt: riskFixedUsdt ? parseFloat(riskFixedUsdt) : null,
-        max_leverage: parseInt(maxLeverage) || 10,
-      });
-      say('risk', true, 'Preferencias guardadas.');
-    } catch (err) {
-      say('risk', false, (err && err.message) || 'No se pudieron guardar.');
-    }
-    setBusy(null);
   };
 
   const handleLogout = () => {
@@ -255,6 +228,19 @@ const SettingsScreen = ({ onLogout }) => {
   }
 
   const connected = !!profile && profile.has_binance_keys === true;
+  const pushOn = permission === 'granted' && !!pushToken;
+  const pushBlocked = permission === 'denied';
+  const pushChip = pushOn
+    ? { label: 'Activados', color: colors.accent }
+    : pushBlocked
+      ? { label: 'Bloqueados', color: colors.danger }
+      : { label: 'Desactivados', color: colors.warn };
+  const binanceChip = !connected
+    ? { label: 'Sin conectar', color: colors.textDim }
+    : binanceOk === false
+      ? { label: 'Claves rechazadas', color: colors.danger }
+      : { label: 'Conectado', color: colors.accent };
+  const keyHint = String((profile && profile.api_key_hint) || '').replace(/^[.*…\s]+/, '');
   const version = (Constants.expoConfig && Constants.expoConfig.version) || '';
 
   return (
@@ -268,47 +254,47 @@ const SettingsScreen = ({ onLogout }) => {
         <Row
           label="Consultas a la IA este mes"
           value={`${aiUsage ?? 0} de ${aiLimit ?? 0}`}
-          help={`Te quedan ${aiRemaining ?? 0}. Se gastan al pedir una explicación de un par o de una posición.`}
+          help={`Te quedan ${aiRemaining ?? 0}. Se gastan al pedir una explicación de una moneda o de una posición.`}
         />
         {!isPremium && (
           <Button label="Pasar a Premium" onPress={() => navigation.navigate('Upgrade')} style={{ marginTop: space.md }} />
         )}
       </Card>
 
-      <SectionTitle>Notificaciones</SectionTitle>
-      <Card
-        title="Avisos en este teléfono"
-        right={<Chip label={pushToken ? 'Activadas' : 'Desactivadas'} color={pushToken ? colors.accent : colors.warn} />}
-      >
+      <SectionTitle>Avisos</SectionTitle>
+      <Card title="Avisos en este teléfono" right={<Chip label={pushChip.label} color={pushChip.color} />}>
         <Text style={type.bodyDim}>
-          {pushToken
-            ? 'Te avisamos cuando cambia algo importante. Son avisos informativos, no órdenes de compra o venta.'
-            : 'Actívalas para enterarte cuando cambie algo importante en el mercado o en tus posiciones.'}
+          {pushOn
+            ? 'Te avisamos cuando cambia algo importante. Son avisos informativos: la app no compra ni vende por ti. Para dejar de recibirlos, desactívalos en los ajustes del teléfono.'
+            : pushBlocked
+              ? 'El teléfono tiene bloqueadas las notificaciones de Criterio. Actívalas en los ajustes del teléfono y vuelve aquí.'
+              : 'Actívalos para enterarte cuando cambie algo importante en el mercado o en tus posiciones. Sin esto, la lista de avisos se queda vacía.'}
         </Text>
         <View style={styles.buttons}>
-          <Button
-            label={isRegistered ? 'Volver a activar' : 'Activar'}
-            kind={isRegistered ? 'secondary' : 'primary'}
-            onPress={handleRegisterPush}
-            loading={busy === 'push'}
-            disabled={!!busy}
-            style={{ flex: 1 }}
-          />
-          <Button
-            label="Enviar prueba"
-            kind="secondary"
-            onPress={handleTestNotification}
-            loading={busy === 'test'}
-            disabled={!!busy}
-            style={{ flex: 1 }}
-          />
+          {pushBlocked ? (
+            <Button label="Abrir ajustes del teléfono" onPress={() => Linking.openSettings()} style={{ flex: 1 }} />
+          ) : !pushOn ? (
+            <Button label="Activar avisos" onPress={handleRegisterPush} loading={busy === 'push'} disabled={!!busy} style={{ flex: 1 }} />
+          ) : (
+            <>
+              <Button
+                label="Enviar prueba"
+                kind="secondary"
+                onPress={handleTestNotification}
+                loading={busy === 'test'}
+                disabled={!!busy}
+                style={{ flex: 1 }}
+              />
+              <Button label="Ajustes del teléfono" kind="secondary" onPress={() => Linking.openSettings()} style={{ flex: 1 }} />
+            </>
+          )}
         </View>
         <Feedback value={feedback.push} />
       </Card>
-      <Collapsible title="Qué te avisamos" hint="Los cuatro tipos de aviso, siempre activos">
+      <Collapsible title="Qué te avisamos" hint="Los tipos de aviso; llegan todos">
         {ALERT_KINDS.map((a, i) => (
           <Row key={a.label} first={i === 0} label={a.label} help={a.help}>
-            <Chip label="Activo" color={colors.accent} />
+            <View />
           </Row>
         ))}
       </Collapsible>
@@ -316,7 +302,7 @@ const SettingsScreen = ({ onLogout }) => {
       <SectionTitle>Conexión con Binance</SectionTitle>
       <Card
         title="Tu cuenta de Binance"
-        right={<Chip label={connected ? 'Conectado' : 'Sin conectar'} color={connected ? colors.accent : colors.textDim} />}
+        right={<Chip label={binanceChip.label} color={binanceChip.color} />}
       >
         <Text style={type.bodyDim}>
           Sirve para mostrar tus posiciones y analizarlas. Las claves se usan solo para leer: la app no abre ni
@@ -324,8 +310,8 @@ const SettingsScreen = ({ onLogout }) => {
         </Text>
         {connected && (
           <>
-            {!!profile.api_key_hint && (
-              <Text style={[type.small, { marginTop: space.sm }]}>Clave guardada: ****{profile.api_key_hint}</Text>
+            {!!keyHint && (
+              <Text style={[type.small, { marginTop: space.sm }]}>Clave guardada: termina en {keyHint}</Text>
             )}
             <View style={styles.buttons}>
               <Button
@@ -377,42 +363,19 @@ const SettingsScreen = ({ onLogout }) => {
         />
         <Feedback value={feedback.binance} />
       </Card>
-
-      <SectionTitle>Preferencias</SectionTitle>
-      <Card title="Tu riesgo de referencia">
-        <Text style={[type.bodyDim, { marginBottom: space.lg }]}>
-          Con estos números la app calcula si una posición es grande para ti y cuándo avisarte. No abren, cierran
-          ni modifican operaciones.
+      <Collapsible title="Cómo conseguir tus claves" hint="Tres pasos en la web o la app de Binance">
+        {BINANCE_STEPS.map((step, i) => (
+          <View key={step} style={styles.step}>
+            <Text style={styles.stepNumber}>{i + 1}.</Text>
+            <Text style={[type.bodyDim, { flex: 1 }]}>{step}</Text>
+          </View>
+        ))}
+        <Text style={[type.small, { marginTop: space.sm }]}>
+          Con una clave solo de lectura nadie puede operar ni retirar dinero de tu cuenta, tampoco esta app.
         </Text>
-        <Field
-          label="Riesgo por operación (% del saldo)"
-          placeholder="2"
-          value={riskPercent}
-          onChangeText={setRiskPercent}
-          keyboardType="numeric"
-          help="Cuánto de tu saldo aceptas perder en una sola operación. Lo habitual es entre 1 y 2."
-        />
-        <Field
-          label="O una cantidad fija en USDT (opcional)"
-          placeholder="Vacío = usar el porcentaje"
-          value={riskFixedUsdt}
-          onChangeText={setRiskFixedUsdt}
-          keyboardType="numeric"
-          help="Si la rellenas, se usa en lugar del porcentaje."
-        />
-        <Field
-          label="Apalancamiento máximo"
-          placeholder="10"
-          value={maxLeverage}
-          onChangeText={setMaxLeverage}
-          keyboardType="numeric"
-          help={GLOSSARY.leverage}
-        />
-        <Button label="Guardar preferencias" onPress={handleSaveReferenceParams} loading={busy === 'risk'} disabled={!!busy} />
-        <Feedback value={feedback.risk} />
-      </Card>
+      </Collapsible>
 
-      <Collapsible title="Avanzado" hint="Datos guardados e información de la app">
+      <Collapsible title="Acerca de Criterio" hint="Versión y cómo funciona">
         <Row first label="Versión" value={version || '-'} />
         <Row label="Mercado" value="Binance Futures USDT-M" />
         <Row
@@ -421,8 +384,6 @@ const SettingsScreen = ({ onLogout }) => {
         >
           <View />
         </Row>
-        <Button label="Borrar historial de notificaciones" kind="secondary" onPress={handleClearHistory} style={{ marginTop: space.md }} />
-        <Feedback value={feedback.advanced} />
       </Collapsible>
 
       <Button label="Cerrar sesión" kind="secondary" onPress={handleLogout} style={{ marginTop: space.md }} />
@@ -432,6 +393,8 @@ const SettingsScreen = ({ onLogout }) => {
 
 const styles = StyleSheet.create({
   buttons: { flexDirection: 'row', gap: space.md, marginTop: space.lg },
+  step: { flexDirection: 'row', marginBottom: space.sm },
+  stepNumber: { color: colors.accent, fontSize: 14, fontWeight: '700', width: 22, lineHeight: 20 },
   fieldLabel: { color: colors.textDim, fontSize: 13, fontWeight: '600', marginBottom: 6 },
   input: {
     backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,

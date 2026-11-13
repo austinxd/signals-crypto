@@ -48,37 +48,25 @@ const HomeScreen = () => {
   const [lastUpdate, setLastUpdate] = useState(null);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
+    // On a failure keep whatever was loaded before: a network blip must not look like an empty account.
     try {
-      setError(null);
-
-      // Subscriptions come from the server (authenticated via JWT)
-      let subs = [];
-      try {
-        const result = await getSubscriptions();
-        subs = result?.subscriptions || [];
-        setSubscriptions(subs);
-      } catch (err) {
-        console.log('Could not fetch subscriptions, using empty list');
-        setSubscriptions([]);
-      }
+      const result = await getSubscriptions();
+      const subs = result?.subscriptions || [];
+      setSubscriptions(subs);
 
       // One unified analysis (4h + 15m) per coin
-      const uniquePairs = [...new Set(subs.map((s) => s.pair))];
-      if (uniquePairs.length > 0) {
-        try {
-          const data = await getUnifiedMarketData(uniquePairs, forceRefresh);
-          setMarketData(data?.pairs || {});
-        } catch (err) {
-          console.log('Could not fetch unified market data:', err);
-          setMarketData({});
-        }
+      const pairs = [...new Set(subs.map((s) => s.pair))];
+      if (pairs.length > 0) {
+        const data = await getUnifiedMarketData(pairs, forceRefresh);
+        setMarketData(data?.pairs || {});
       } else {
         setMarketData({});
       }
+      setError(null);
       setLastUpdate(new Date());
     } catch (err) {
       setError('No se pudo conectar con el servidor.');
-      console.error('Fetch error:', err);
+      console.log('Fetch error:', err?.message);
     } finally {
       setLoaded(true);
     }
@@ -151,15 +139,15 @@ const HomeScreen = () => {
   const renderContent = () => {
     if (!loaded) return <Loading label="Cargando el mercado…" />;
 
-    if (error) {
-      return <Empty title="Sin conexión" hint={error} actionLabel="Reintentar" onAction={onRefresh} />;
+    if (error && !lastUpdate) {
+      return <Empty title="Sin conexión" hint="No se pudo conectar con el servidor. Comprueba tu conexión." actionLabel="Reintentar" onAction={onRefresh} />;
     }
 
     if (uniquePairs.length === 0) {
       return (
         <Empty
           title="Aún no sigues ninguna moneda"
-          hint="Añade una y te diremos, en palabras sencillas, si es buen momento para operar y por qué."
+          hint="Añade una y te diremos si es buen momento para abrir long (apostar a que sube), short (apostar a que baja) o si es mejor esperar, y por qué. Es para futuros en Binance: la operación la haces tú, la app solo analiza."
           actionLabel="Añadir mi primera moneda"
           onAction={() => setAddModalVisible(true)}
         />
@@ -168,11 +156,26 @@ const HomeScreen = () => {
 
     return (
       <>
+        {!!error && (
+          <Notice tone="warn">Sin conexión. Se muestra lo último recibido.</Notice>
+        )}
+        <Text style={styles.intro}>
+          Para futuros en Binance. Long = apostar a que sube; short = apostar a que baja. La app analiza y avisa; la
+          operación la haces tú (o el bot, en su pestaña).
+        </Text>
         {uniquePairs.map((pair, index) => {
           // Free plan: only the first coin is visible, the rest are locked
           const isLocked = !isPremium && index > 0;
           if (isLocked) {
-            return <LockedPairCard key={pair} pair={pair} onPress={() => navigation.navigate('Upgrade')} />;
+            const lockedSub = subscriptions.find((s) => s.pair === pair);
+            return (
+              <LockedPairCard
+                key={pair}
+                pair={pair}
+                onPress={() => navigation.navigate('Upgrade')}
+                onRemove={() => handleRemoveSubscription(lockedSub?.id, pair)}
+              />
+            );
           }
 
           const sub = subscriptions.find((s) => s.pair === pair);
@@ -205,10 +208,10 @@ const HomeScreen = () => {
 
         <Button label="Añadir otra moneda" kind="secondary" onPress={() => setAddModalVisible(true)} />
         <Text style={styles.hint}>
-          Toca una moneda para ver el análisis completo. Mantén pulsada (o desliza a la izquierda) para dejar de seguirla.
+          Toca una moneda para ver por qué y qué hacer. Mantén pulsada (o desliza a la izquierda) para dejar de seguirla.
         </Text>
         <Notice tone="info" style={{ marginTop: space.lg }}>
-          El análisis describe el mercado; no es una recomendación de inversión. Decide siempre tú el riesgo.
+          Es una lectura automática de indicadores y puede fallar. No es una recomendación de inversión: nunca arriesgues dinero que no puedas perder.
         </Notice>
       </>
     );
@@ -258,6 +261,7 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  intro: { ...type.small, marginBottom: space.md, paddingHorizontal: space.xs },
   alertsButton: {
     flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: space.md,
     borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,

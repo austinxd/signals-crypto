@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getUnifiedMarketData, getVolumeProfile, getAIExplanation } from '../services/api';
-import { explain } from '../explain';
+import { explain, tradePlan } from '../explain';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
   colors, space, radius, type, tint,
@@ -31,13 +31,36 @@ const RSI_STATE = {
 };
 
 const ZONE = {
-  oferta: { label: 'Zona de venta', color: colors.danger },
-  demanda: { label: 'Zona de compra', color: colors.accent },
+  oferta: { label: 'Posible techo (por encima)', color: colors.textDim },
+  demanda: { label: 'Posible suelo (por debajo)', color: colors.textDim },
 };
-const zoneOf = (t) => ZONE[t] || { label: 'Zona actual', color: colors.textDim };
+const zoneOf = (t) => ZONE[t] || { label: 'Justo en el precio actual', color: colors.textDim };
+
+const AI_REASON = {
+  momentum_extreme_against_trend: 'Movimiento muy fuerte en contra de la tendencia',
+  htf_ltf_conflict: 'Los últimos minutos van en contra de la tendencia',
+  scenario_downgrade: 'La situación ha empeorado',
+  volatility_spike: 'El precio se mueve con mucha brusquedad',
+  volume_divergence: 'El volumen no acompaña al precio',
+  structural_friction: 'Hay un nivel de precio que puede frenarlo',
+};
+const STRUCTURE = {
+  extension: 'Alejándose, a favor de la tendencia',
+  retroceso: 'Retrocediendo dentro de la tendencia',
+  consolidacion: 'Quieto en un rango',
+  'en nivel clave': 'En un precio importante',
+};
 
 const BUY = colors.info;
 const SELL = colors.warn;
+
+const BIAS_TEXT = {
+  alcista: 'De subida (a favor de long)',
+  bajista: 'De bajada (a favor de short)',
+  mixto: 'No está clara',
+  neutral: 'Sin datos suficientes',
+};
+const NOW_TEXT = { alcista: 'Subiendo', bajista: 'Bajando', neutral: 'Quieto' };
 
 const words = (s) => (s == null ? '' : String(s).replace(/_/g, ' '));
 const capital = (s) => {
@@ -194,6 +217,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const { analysis, htf_indicators: htfInd, ltf_indicators: ltfInd, funding, price } = data;
 
   const view = explain(analysis);
+  const plan = tradePlan(view, price, htfInd?.atr);
   const direction = DIRECTION[analysis?.direction_preference] || null;
   const bias = trendOf(analysis?.context?.htf_bias || analysis?.htf_bias);
   const momentum = trendOf(analysis?.timing?.ltf_momentum);
@@ -257,13 +281,30 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           {/* 1. What to do now */}
-          <SectionTitle>Qué hacer ahora</SectionTitle>
+          <SectionTitle>Qué dice el análisis ahora</SectionTitle>
           <Card>
+            <Text style={[styles.mark, { color: view.markColor }]}>{view.mark}</Text>
             <Chip label={view.headline} color={view.color} solid style={styles.bigChip} />
             <Text style={[type.body, { marginTop: space.md }]}>{view.action}</Text>
+            {!!view.means && <Text style={[type.small, { marginTop: space.sm }]}>{view.means}</Text>}
           </Card>
 
-          <SectionTitle>Qué está pasando</SectionTitle>
+          {plan && (
+            <>
+              <SectionTitle>{plan.title}</SectionTitle>
+              <Card>
+                {plan.rows.map((r, i) => (
+                  <Row key={r.label} first={i === 0} label={r.label} value={r.value} help={r.help} />
+                ))}
+                <Text style={[type.small, { marginTop: space.md }]}>{plan.where}</Text>
+                <Text style={[type.small, { marginTop: space.xs }]}>
+                  Vale mientras este veredicto no cambie; si cambia, te llega un aviso.
+                </Text>
+              </Card>
+            </>
+          )}
+
+          <SectionTitle>Por qué</SectionTitle>
           <Card>
             {view.reasons.map((r, i) => (
               <Text key={i} style={[type.body, i > 0 && { marginTop: space.sm }]}>{r}</Text>
@@ -288,7 +329,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                   <Text style={[type.small, { marginTop: space.sm, textAlign: 'center' }]}>
                     {aiRemaining > 0
                       ? `Te quedan ${aiRemaining} explicaciones gratis.`
-                      : 'Ya usaste tus explicaciones gratis. Con Premium no hay límite.'}
+                      : 'Ya usaste tus explicaciones gratis. Con Premium tienes 100 al mes.'}
                   </Text>
                 )}
               </>
@@ -319,7 +360,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               </>
             ) : aiData?.explanation ? (
               <>
-                {!!aiData.reason && <Chip label={capital(aiData.reason)} color={colors.info} style={{ marginBottom: space.sm }} />}
+                {!!aiData.reason && <Chip label={AI_REASON[aiData.reason] || 'Algo no encaja'} color={colors.info} style={{ marginBottom: space.sm }} />}
                 <Text style={type.body}>{aiData.explanation}</Text>
                 <Button
                   label="Ocultar"
@@ -330,8 +371,8 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 />
               </>
             ) : aiData ? (
-              <Notice tone="good" title="Todo apunta en la misma dirección" style={{ marginBottom: 0 }}>
-                La IA no ve contradicciones relevantes entre la tendencia y el momento actual.
+              <Notice tone="good" title="Sin contradicciones" style={{ marginBottom: 0 }}>
+                La IA no ve nada que contradiga lo que dice el análisis de arriba.
               </Notice>
             ) : null}
           </Card>
@@ -344,26 +385,20 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
           />
           {!showDetail && (
             <Text style={[type.small, { textAlign: 'center', marginBottom: space.md }]}>
-              Para quien quiera los números: tendencia, niveles de precio e indicadores.
+              Opcional: tendencia, precios donde suele frenar e indicadores.
             </Text>
           )}
 
           {showDetail && (
           <>
           {/* 3. Why */}
-          {(!!analysis?.unified_reading || !!analysis?.scenario_reason) && (
-            <Card title="Lectura técnica">
-              {!!analysis?.unified_reading && <Text style={type.bodyDim}>{analysis.unified_reading}</Text>}
-              {!!analysis?.scenario_reason && <Text style={[type.bodyDim, { marginTop: space.xs }]}>{analysis.scenario_reason}</Text>}
-            </Card>
-          )}
           <SectionTitle>Análisis completo</SectionTitle>
-          <Card title="Tendencia de fondo (4 horas)">
+          <Card title="Tendencia de los últimos días">
             <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.context}</Text>
-            <Row first label="Tendencia" value={`${bias.arrow} ${bias.label}`} color={bias.color} />
+            <Row first label="Hacia dónde va" value={BIAS_TEXT[analysis?.context?.htf_bias] || 'Sin datos'} />
             <Row
-              label="Estructura"
-              value={htfStructure ? capital(htfStructure) : 'Sin datos'}
+              label="En qué punto está"
+              value={htfStructure ? STRUCTURE[htfStructure] || capital(htfStructure) : 'Sin datos'}
               help={GLOSSARY.structure}
             />
             <Row label="Volatilidad" value={volatility.label} color={volatility.color} help={GLOSSARY.volatility} />
@@ -375,62 +410,43 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 help="La media de las últimas 200 velas (EMA200). Por encima suele indicar tendencia alcista."
               />
             )}
-            {rsiState && (
+            {rsiState && rsiState.label !== 'normal' && (
               <View style={styles.subBox}>
                 <Text style={[styles.subBoxTitle, { color: rsiStateStyle.color }]}>{rsiStateStyle.label}</Text>
-                {!!rsiState.description && <Text style={type.bodyDim}>{rsiState.description}</Text>}
+                <Text style={type.bodyDim}>
+                  Lleva días moviéndose en la misma dirección casi sin descanso: es fácil que frene o retroceda. Mal
+                  momento para sumarse tarde.
+                </Text>
               </View>
             )}
           </Card>
 
-          <Card title="Momento de entrada (15 minutos)">
+          <Card title="Últimos minutos">
             <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.timing}</Text>
-            <Row first label="Fuerza" value={`${momentum.arrow} ${momentum.label}`} color={momentum.color} help={GLOSSARY.momentum} />
+            <Row first label="Ahora mismo" value={NOW_TEXT[analysis?.timing?.ltf_momentum] || 'Quieto'} help="Hacia dónde se mueve el precio en velas de 15 minutos. Sirve para elegir cuándo abrir." />
             <Row label="RSI" value={rsiZone.label} color={rsiZone.color} help={GLOSSARY.rsi} />
             <Row
-              label="Confirmación"
+              label="¿Acompaña a la tendencia?"
               value={hasConfirmation ? 'Sí' : 'Todavía no'}
               color={hasConfirmation ? colors.accent : colors.textDim}
               help={GLOSSARY.confirmation}
             />
           </Card>
 
-          {observations.length > 0 && (
-            <Card title="A tener en cuenta">
-              {observations.map((obs, idx) => (
-                <Bullet key={idx}>{obs}</Bullet>
-              ))}
-            </Card>
-          )}
-
-          {checklist && (
-            <Card title="Lista de comprobación">
-              <Text style={[type.label, { marginBottom: space.xs }]}>Tendencia de fondo (4 h)</Text>
-              {checkRows(checklist.context_4h, true)}
-              <Text style={[type.label, { marginTop: space.md, marginBottom: space.xs }]}>Momento de entrada (15 min)</Text>
-              {checkRows(checklist.timing_15m, false)}
-              {!!checklist.summary && (
-                <View style={styles.subBox}>
-                  <Text style={type.bodyDim}>{checklist.summary}</Text>
-                </View>
-              )}
-            </Card>
-          )}
-
           {/* 4. Important levels */}
-          <SectionTitle>Niveles importantes</SectionTitle>
+          <SectionTitle>Precios donde suele frenar</SectionTitle>
           <Card>
             <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.levels}</Text>
 
-            {!!analysis?.distance_to_zone?.description && (
-              <Notice
-                tone={analysis.distance_to_zone.state === 'en_zona' || analysis.distance_to_zone.state === 'cercano' ? 'warn' : 'info'}
-              >
-                {analysis.distance_to_zone.description}
+            {(analysis?.distance_to_zone?.state === 'en_zona' || analysis?.distance_to_zone?.state === 'cercano') && (
+              <Notice tone="warn">
+                {analysis.distance_to_zone.state === 'en_zona'
+                  ? 'El precio está justo en uno de estos niveles: espera a ver hacia dónde sale antes de abrir long o short.'
+                  : 'Hay uno de estos niveles muy cerca del precio: ahí puede frenarse.'}
               </Notice>
             )}
 
-            {keyLevels.map((level, idx) => {
+            {(zones.length > 0 ? [] : keyLevels).map((level, idx) => {
               const d = distanceTo(level?.price);
               return (
                 <Row
@@ -492,7 +508,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
           </Card>
 
           {/* 5. Technical data */}
-          <Collapsible title="Datos técnicos" hint="Indicadores, tasa de fondeo y volumen" defaultOpen>
+          <Collapsible title="Para expertos" hint="Indicadores, tasa de fondeo y volumen">
             <Text style={type.label}>Indicadores</Text>
             <View style={styles.indicatorGrid}>
               <View style={styles.indicatorCol}>
@@ -635,7 +651,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 
           <Text style={styles.footnote}>
             {lastUpdate ? `Actualizado a las ${lastUpdate.toLocaleTimeString('es-ES')}. ` : ''}
-            Esta información describe el estado actual del mercado. No es una recomendación de inversión.
+            Es una lectura automática de indicadores y puede fallar. No es una recomendación de inversión: nunca arriesgues dinero que no puedas perder.
           </Text>
         </ScrollView>
       </View>
@@ -646,6 +662,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   body: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: 56 },
+  mark: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, marginBottom: space.sm },
   bigChip: { paddingHorizontal: space.lg, paddingVertical: space.sm },
   directionBox: {
     marginTop: space.md, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,16 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { register, login } from '../services/api';
 import { Button, Notice } from '../components/ui';
 import { colors, space, radius, type } from '../theme';
+import { friendlyError } from '../errors';
 
-const AuthScreen = ({ onAuthSuccess }) => {
+// Set the first time anyone logs in on this phone. Until then the screen opens on "Crear cuenta".
+const HAD_SESSION_KEY = '@had_session';
+
+const AuthScreen = ({ onAuthSuccess, notice }) => {
   const insets = useSafeAreaInsets();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -22,9 +27,21 @@ const AuthScreen = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    AsyncStorage.getItem(HAD_SESSION_KEY)
+      .then((had) => {
+        if (had !== '1') setIsLogin(false); // new phone: most likely a new user
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
       setError('Escribe tu correo y tu contraseña.');
+      return;
+    }
+    if (!isLogin && password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
     setError(null);
@@ -35,9 +52,10 @@ const AuthScreen = ({ onAuthSuccess }) => {
       } else {
         await register(email.trim(), password);
       }
+      AsyncStorage.setItem(HAD_SESSION_KEY, '1').catch(() => {});
       onAuthSuccess();
     } catch (err) {
-      setError((err && err.message) || 'No se pudo entrar. Inténtalo de nuevo.');
+      setError(friendlyError(err, 'auth'));
     } finally {
       setLoading(false);
     }
@@ -64,6 +82,7 @@ const AuthScreen = ({ onAuthSuccess }) => {
         <View style={styles.form}>
           <Text style={[type.heading, { marginBottom: space.lg }]}>{isLogin ? 'Iniciar sesión' : 'Crear cuenta'}</Text>
 
+          {!!notice && !error && <Notice tone="warn">{notice}</Notice>}
           {!!error && <Notice tone="danger">{error}</Notice>}
 
           <Text style={styles.fieldLabel}>Correo electrónico</Text>
@@ -83,7 +102,7 @@ const AuthScreen = ({ onAuthSuccess }) => {
           <Text style={styles.fieldLabel}>Contraseña</Text>
           <TextInput
             style={styles.input}
-            placeholder={isLogin ? 'Tu contraseña' : 'Elige una contraseña'}
+            placeholder={isLogin ? 'Tu contraseña' : 'Mínimo 6 caracteres'}
             placeholderTextColor={colors.textMuted}
             value={password}
             onChangeText={setPassword}
@@ -91,6 +110,7 @@ const AuthScreen = ({ onAuthSuccess }) => {
             returnKeyType="go"
             onSubmitEditing={handleSubmit}
           />
+          {!isLogin && <Text style={[type.small, styles.hint]}>Mínimo 6 caracteres.</Text>}
 
           <Button
             label={isLogin ? 'Entrar' : 'Crear cuenta'}
@@ -125,6 +145,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
     color: colors.text, fontSize: 16, minHeight: 48, paddingHorizontal: space.md, marginBottom: space.lg,
   },
+  hint: { marginTop: -space.md + 4, marginBottom: space.lg },
   switch: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginTop: space.md },
   switchLink: { color: colors.accent, fontWeight: '700' },
 });

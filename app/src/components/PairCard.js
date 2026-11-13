@@ -34,10 +34,12 @@ const PairCard = ({ pair, data, onPress, onLongPress }) => {
         <Text style={[type.bodyDim, { marginTop: space.md }]}>Todavía no hay análisis para esta moneda.</Text>
       ) : (
         <>
+          <Text style={[styles.mark, { color: view.markColor }]}>{view.mark}</Text>
           <Chip label={view.headline} color={view.color} solid style={styles.verdict} />
-          <Text style={[type.body, { marginTop: space.md }]}>{view.reasons.slice(0, 2).join(' ')}</Text>
+          <Text style={[type.body, { marginTop: space.md }]}>{view.action}</Text>
+          {!!view.means && <Text style={[type.small, { marginTop: space.sm }]}>{view.means}</Text>}
           <View style={styles.footer}>
-            <Text style={styles.more}>Ver por qué</Text>
+            <Text style={styles.more}>Ver por qué y qué hacer</Text>
           </View>
         </>
       )}
@@ -53,7 +55,8 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center' },
   name: { color: colors.text, fontSize: 20, fontWeight: '700' },
   price: { ...type.number, marginLeft: space.md },
-  verdict: { marginTop: space.md, paddingVertical: 6, paddingHorizontal: 12 },
+  mark: { marginTop: space.md, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+  verdict: { marginTop: space.sm, paddingVertical: 6, paddingHorizontal: 12 },
   footer: {
     flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
     marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.border,

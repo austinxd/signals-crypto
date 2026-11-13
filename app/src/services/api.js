@@ -7,6 +7,11 @@ const USER_TIMEFRAME_KEY = '@user_timeframe';
 const USER_TRADING_MODE_KEY = '@user_trading_mode';
 const JWT_TOKEN_KEY = '@jwt_token';
 const REFRESH_TOKEN_KEY = '@refresh_token';
+const PUSH_TOKEN_KEY = '@push_token'; // same key as services/notifications.js
+
+// How long a request may take before we give up. React Native's fetch has no timeout of its own.
+const TIMEOUT_MS = 15000;
+const AI_TIMEOUT_MS = 60000; // the AI endpoints wait for a model
 
 // Default API URL (change this to your server's URL)
 // Use your computer's local IP when testing on physical device
@@ -83,6 +88,39 @@ export async function isAuthenticated() {
   return !!token;
 }
 
+/** Account id stored in the login token (its `sub` claim), or null. Used to identify the user in the store. */
+export async function getAccountId() {
+  try {
+    const token = await getJwtToken();
+    const decode = global.atob; // provided by the JS engine; missing on very old ones
+    if (!token || typeof decode !== 'function') return null;
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(decode(part + '='.repeat((4 - (part.length % 4)) % 4)));
+    return payload && payload.sub != null ? String(payload.sub) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** fetch that gives up after `ms`. Throws errors with a Spanish message and a flag saying what went wrong. */
+async function fetchWithTimeout(url, options, ms) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), ms) : null;
+  try {
+    return await fetch(url, controller ? { ...options, signal: controller.signal } : options);
+  } catch (e) {
+    const timedOut = e && e.name === 'AbortError';
+    const err = new Error(timedOut
+      ? 'El servidor tardó demasiado en responder. Inténtalo de nuevo.'
+      : 'Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.');
+    err.timeout = timedOut;
+    err.network = !timedOut;
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Flag to prevent multiple simultaneous refresh attempts
 let isRefreshing = false;
 let refreshPromise = null;
@@ -114,11 +152,9 @@ async function apiRequest(endpoint, options = {}, isRetry = false) {
   }
 
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      timeout: 10000,
-    });
+    const { timeout, ...fetchOptions } = options;
+    const ms = timeout || (/\/ai-(explanation|analysis)/.test(endpoint) ? AI_TIMEOUT_MS : TIMEOUT_MS);
+    const response = await fetchWithTimeout(url, { ...fetchOptions, headers }, ms);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -141,20 +177,24 @@ async function apiRequest(endpoint, options = {}, isRetry = false) {
           return apiRequest(endpoint, options, true);
         } catch (refreshError) {
           isRefreshing = false;
+          // No connection is not an expired session: keep the user logged in and report the network problem.
+          if (refreshError && (refreshError.network || refreshError.timeout)) throw refreshError;
           console.log('Token refresh failed, auth required');
           await clearTokens();
           if (onAuthFailedCallback) {
             onAuthFailedCallback();
           }
-          const err = new Error('Session expired. Please login again.');
+          const err = new Error('Tu sesión caducó. Vuelve a entrar para continuar.');
           err.status = 401;
           err.authFailed = true;
           throw err;
         }
       }
 
-      const err = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      const detail = typeof errorData.detail === 'string' ? errorData.detail : null;
+      const err = new Error(detail || 'No se pudo completar. Inténtalo de nuevo.');
       err.status = response.status;
+      err.detail = detail; // raw server text (often English): show it only through friendlyError()
       throw err;
     }
 
@@ -172,11 +212,11 @@ async function tryRefreshToken() {
   if (!rt) throw new Error('No refresh token');
 
   const baseUrl = await getApiUrl();
-  const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+  const response = await fetchWithTimeout(`${baseUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: rt }),
-  });
+  }, TIMEOUT_MS);
 
   if (!response.ok) {
     throw new Error('Refresh failed');
@@ -503,6 +543,21 @@ export async function refreshAccessToken() {
 }
 
 export async function logout() {
+  // Stop this phone receiving the account's alerts: otherwise the next account to log in here would get both.
+  try {
+    const pushToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+    await apiRequest('/api/account/settings', { method: 'PUT', body: JSON.stringify({ push_token: '' }), timeout: 5000 });
+    if (pushToken) {
+      await apiRequest('/api/unregister', { method: 'POST', body: JSON.stringify({ token: pushToken }), timeout: 5000 });
+    }
+  } catch {
+    // offline or session already gone: still log out locally
+  }
+  try {
+    await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
   await clearTokens();
 }
 

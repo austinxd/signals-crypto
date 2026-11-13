@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSubscriptionStatus } from '../services/api';
+import { getSubscriptionStatus, getJwtToken, getAccountId } from '../services/api';
 import {
   initPurchases,
   checkSubscriptionStatus as checkStoreSubscription,
@@ -10,63 +9,24 @@ import {
 
 const SubscriptionContext = createContext();
 
+const DEFAULTS = {
+  status: 'free',
+  isPremium: false,
+  aiUsage: 0,
+  aiLimit: 5,
+  aiRemaining: 5,
+  expiresAt: null,
+  loading: true,
+};
+
+/** Mounted only while a user is logged in (see App.js), so mounting = "someone just logged in". */
 export function SubscriptionProvider({ children }) {
-  const [subscription, setSubscription] = useState({
-    status: 'free',
-    isPremium: false,
-    aiUsage: 0,
-    aiLimit: 5,
-    aiRemaining: 5,
-    expiresAt: null,
-    loading: true,
-  });
-
-  // Initialize RevenueCat when component mounts
-  useEffect(() => {
-    const init = async () => {
-      try {
-        // Get user ID from stored token
-        const token = await AsyncStorage.getItem('access_token');
-        if (token) {
-          // Decode user ID from token (simple extraction)
-          try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            if (payload.sub) {
-              await initPurchases(payload.sub);
-            }
-          } catch (e) {
-            console.log('Could not decode token for RevenueCat init');
-          }
-        }
-      } catch (err) {
-        console.log('Error initializing purchases:', err);
-      }
-    };
-
-    init();
-  }, []);
-
-  // Set up listener for subscription changes from app store
-  useEffect(() => {
-    const removeListener = addPurchaseListener(async ({ isPremium }) => {
-      // Sync with backend
-      const token = await AsyncStorage.getItem('access_token');
-      if (token) {
-        await syncSubscriptionWithBackend(token);
-      }
-      // Refresh subscription state
-      refresh();
-    });
-
-    return () => {
-      if (removeListener) removeListener();
-    };
-  }, [refresh]);
+  const [subscription, setSubscription] = useState(DEFAULTS);
 
   const refresh = useCallback(async () => {
     try {
-      // Also check RevenueCat status and sync if needed
-      const token = await AsyncStorage.getItem('access_token');
+      // If the store says Premium, tell the server before asking it for the account status
+      const token = await getJwtToken();
       if (token) {
         try {
           const storeStatus = await checkStoreSubscription();
@@ -74,11 +34,11 @@ export function SubscriptionProvider({ children }) {
             await syncSubscriptionWithBackend(token);
           }
         } catch (e) {
-          // RevenueCat might not be available, continue with backend check
+          // the store may be unavailable; the server answer below still works
         }
       }
 
-      // Get status from backend (source of truth)
+      // The server is the source of truth
       const data = await getSubscriptionStatus();
       setSubscription({
         status: data.status || 'free',
@@ -90,13 +50,49 @@ export function SubscriptionProvider({ children }) {
         loading: false,
       });
     } catch (err) {
-      console.log('Error fetching subscription:', err);
-      setSubscription(prev => ({ ...prev, loading: false }));
+      console.log('Error fetching subscription:', err && err.message);
+      setSubscription((prev) => ({ ...prev, loading: false }));
     }
   }, []);
 
+  // Identify this account in the store, then load its status. Without the identification a purchase is
+  // anonymous and never reaches the account.
   useEffect(() => {
-    refresh();
+    let alive = true;
+    (async () => {
+      try {
+        const accountId = await getAccountId();
+        if (accountId) {
+          // Do not let a slow store hold up the account status
+          await Promise.race([initPurchases(accountId), new Promise((resolve) => setTimeout(resolve, 8000))]);
+        }
+      } catch (err) {
+        console.log('Error initializing purchases:', err && err.message);
+      }
+      if (alive) refresh();
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [refresh]);
+
+  // The store tells us when the subscription changes (purchase, renewal, expiry)
+  useEffect(() => {
+    let removeListener = null;
+    try {
+      removeListener = addPurchaseListener(async () => {
+        const token = await getJwtToken();
+        if (token) {
+          await syncSubscriptionWithBackend(token);
+        }
+        refresh();
+      });
+    } catch (err) {
+      console.log('Could not listen to the store:', err && err.message);
+    }
+    return () => {
+      if (typeof removeListener === 'function') removeListener();
+    };
   }, [refresh]);
 
   return (
@@ -109,17 +105,8 @@ export function SubscriptionProvider({ children }) {
 export const useSubscription = () => {
   const context = useContext(SubscriptionContext);
   if (context === undefined) {
-    // Return default values if used outside provider
-    return {
-      status: 'free',
-      isPremium: false,
-      aiUsage: 0,
-      aiLimit: 5,
-      aiRemaining: 5,
-      expiresAt: null,
-      loading: true,
-      refresh: () => {},
-    };
+    // Used outside the provider: behave as a free account that is still loading
+    return { ...DEFAULTS, refresh: () => {} };
   }
   return context;
 };
