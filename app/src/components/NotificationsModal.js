@@ -24,12 +24,14 @@ const KIND = {
   macd_reversal: { label: 'Posible giro', color: colors.warn },
   rsi_extreme: { label: 'Precio muy estirado', color: colors.danger },
   // Signals
+  bot_trade: { label: 'Bot', color: colors.info },
+  bot_alert: { label: 'Bot: atención', color: colors.danger },
   new_signal: { label: 'Señal nueva', color: colors.accent },
   signal_improved: { label: 'Señal mejorada', color: colors.accent },
   signal_long: { label: 'Señal de compra', color: colors.accent },
   signal_short: { label: 'Señal de venta', color: colors.danger },
 };
-const kindOf = (key) => KIND[key] || { label: 'Aviso', color: colors.textDim };
+const kindOf = (key) => KIND[String(key || '').toLowerCase()] || { label: 'Aviso', color: colors.textDim };
 
 const NotificationItem = ({ notification, onPress }) => {
   const kind = kindOf(notification?.type);

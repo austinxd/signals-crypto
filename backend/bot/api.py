@@ -46,6 +46,11 @@ class ModeBody(BaseModel):
     mode: Literal["auto", "manual"]
 
 
+class OpenBody(BaseModel):
+    symbol: str
+    side: Literal["long", "short"]
+
+
 class AiBody(BaseModel):
     mode: Literal["off", "shadow", "reduce"]
 
@@ -91,3 +96,10 @@ def proposal(proposal_id: int, action: Literal["approve", "reject"]):
 @router.post("/close/{symbol}", dependencies=ADMIN)
 def close(symbol: str):
     return {"command_id": Journal().add_command("close", {"symbol": symbol})}
+
+
+@router.post("/open", dependencies=ADMIN)
+def open_trade(body: OpenBody):
+    """Queues a trade asked for by hand. The engine sizes it and may refuse it: see the next report's decisions."""
+    return {"command_id": Journal().add_command(
+        "open", {"symbol": body.symbol.upper(), "side": 1 if body.side == "long" else -1})}

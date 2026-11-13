@@ -616,3 +616,8 @@ export async function answerBotProposal(id, action) {
 export async function closeBotPosition(symbol) {
   return apiRequest(`/api/bot/close/${symbol}`, { method: 'POST' });
 }
+
+/** Ask the bot to open a trade by hand. side: 'long' | 'short'. The bot sizes it and may refuse it. */
+export async function openBotTrade(symbol, side) {
+  return apiRequest('/api/bot/open', { method: 'POST', body: JSON.stringify({ symbol, side }) });
+}

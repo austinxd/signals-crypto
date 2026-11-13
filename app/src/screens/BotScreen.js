@@ -8,6 +8,7 @@ import {
   setBotAi,
   answerBotProposal,
   closeBotPosition,
+  openBotTrade,
 } from '../services/api';
 import {
   Screen, Card, SectionTitle, Chip, Button, Segment, Stat, StatRow, Row, Notice, Collapsible, Empty, Loading,
@@ -78,6 +79,7 @@ const BotScreen = () => {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pick, setPick] = useState(null); // coin chosen in "Abrir una operación"
 
   const load = useCallback(async () => {
     try {
@@ -139,6 +141,19 @@ const BotScreen = () => {
     const events = report.recent_events || [];
     const calls = ai.recent_calls || [];
 
+    const symbols = s.symbols || [];
+    const picked = symbols.includes(pick) ? pick : symbols[0];
+    const pickedBusy = open.some((t) => t.symbol === picked);
+    const riskPct = s.risk && s.risk.risk_per_trade != null ? fmtNum(s.risk.risk_per_trade * 100, 1) : null;
+    const askOpen = (side) =>
+      confirm(
+        `${side === 'long' ? 'Comprar' : 'Vender'} ${pairName(picked)}`,
+        `${side === 'long' ? 'Ganas si el precio sube.' : 'Ganas si el precio baja.'} El bot calcula el tamaño y pone el stop.`
+          + (riskPct ? ` Si sale mal pierdes como mucho alrededor del ${riskPct}% del capital.` : '')
+          + ' El control de riesgo puede rechazarla; lo verás en “Decisiones del bot”.',
+        side === 'long' ? 'Comprar' : 'Vender',
+        () => openBotTrade(picked, side),
+      );
     const started = s.mode != null;
     const canControl = report.can_control === true;
     const locked = busy || !canControl;
@@ -301,6 +316,45 @@ const BotScreen = () => {
             Puedes ver todo lo que hace el bot. Solo el administrador puede cambiar estos ajustes.
           </Notice>
         )}
+        <Card>
+          <Text style={type.heading}>Abrir una operación a mano</Text>
+          <Text style={[type.small, { marginTop: 2, marginBottom: space.md }]}>
+            Normalmente el bot abre solo cuando su estrategia da señal. Aquí puedes pedirle una tú: eliges moneda y
+            dirección, y el bot pone el tamaño y el stop con sus reglas de riesgo.
+          </Text>
+          {symbols.length > 1 && (
+            <View style={{ marginBottom: space.md }}>
+              <Segment
+                disabled={locked}
+                value={picked}
+                options={symbols.map((x) => ({ key: x, label: pairName(x) }))}
+                onChange={setPick}
+              />
+            </View>
+          )}
+          <View style={styles.buttons}>
+            <Button
+              label="Comprar (long)" style={{ flex: 1, marginTop: 0 }}
+              disabled={locked || !started || !s.running || s.paused || pickedBusy || !picked}
+              onPress={() => askOpen('long')}
+            />
+            <Button
+              kind="danger" label="Vender (short)" style={{ flex: 1 }}
+              disabled={locked || !started || !s.running || s.paused || pickedBusy || !picked}
+              onPress={() => askOpen('short')}
+            />
+          </View>
+          <Text style={[type.small, { marginTop: space.sm }]}>
+            {pickedBusy
+              ? `Ya hay una operación abierta en ${pairName(picked)}. Ciérrala antes de abrir otra.`
+              : s.paused
+                ? 'El bot está en pausa: reanúdalo para poder abrir.'
+                : !s.running
+                  ? 'El bot está parado: no puede ejecutar órdenes.'
+                  : 'Comprar gana si el precio sube; vender gana si baja.'}
+          </Text>
+        </Card>
+
         <Card>
           <Text style={type.heading}>Entradas nuevas</Text>
           <Text style={[type.small, { marginTop: 2, marginBottom: space.md }]}>

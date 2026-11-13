@@ -156,7 +156,8 @@ def _ago(ts):
 
 def cmd_run(args):
     from .engine import Engine
-    Engine().run(once=args.once)
+    from . import notify
+    Engine(notifier=notify.send).run(once=args.once)
 
 
 def cmd_report(args):
@@ -181,6 +182,9 @@ def cmd_control(args):
     elif args.command in ("approve", "reject"):
         cid = j.add_command(args.command, {"proposal_id": args.id})
         print(f"command #{cid} queued; the running engine executes it on its next tick")
+    elif args.command == "open":
+        cid = j.add_command("open", {"symbol": args.symbol.upper(), "side": 1 if args.side == "long" else -1})
+        print(f"command #{cid} queued; the engine sizes it with the risk rules and may refuse it (see `report`)")
     elif args.command == "close":
         cid = j.add_command("close", {"symbol": args.symbol})
         print(f"command #{cid} queued; the running engine executes it on its next tick")
@@ -244,6 +248,10 @@ def main(argv=None):
         sp = sub.add_parser(name, help=f"{name} a pending proposal (manual mode)")
         sp.add_argument("id", type=int)
         sp.set_defaults(func=cmd_control)
+    sp = sub.add_parser("open", help="open a trade by hand: sized and checked by the risk engine")
+    sp.add_argument("symbol")
+    sp.add_argument("side", choices=["long", "short"])
+    sp.set_defaults(func=cmd_control)
     sp = sub.add_parser("close", help="close a position at market (symbol or 'all')")
     sp.add_argument("symbol")
     sp.set_defaults(func=cmd_control)

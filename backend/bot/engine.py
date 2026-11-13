@@ -27,8 +27,21 @@ def _num(x) -> Optional[float]:
     return None if x is None or x != x else float(x)
 
 
+def _px(x: float) -> str:
+    return f"{x:,.0f}" if x >= 1000 else f"{x:,.2f}" if x >= 1 else f"{x:.4f}"
+
+
+def _coin(symbol: str) -> str:
+    return symbol[:-4] if symbol.endswith("USDT") else symbol
+
+
+SIDE_ES = {1: "compra (long)", -1: "venta (short)"}
+EXIT_ES = {"stop": "saltó el stop", "target": "llegó al objetivo", "manual": "cierre manual", "time": "por tiempo"}
+
+
 class Engine:
-    def __init__(self, cfg: Optional[BotConfig] = None, journal: Optional[Journal] = None, broker=None):
+    def __init__(self, cfg: Optional[BotConfig] = None, journal: Optional[Journal] = None, broker=None,
+                 notifier=None):
         self.cfg = cfg or load_config()
         self.j = journal or Journal()
         self.strategy = make_strategy(self.cfg.strategy, **self.cfg.params)
@@ -45,7 +58,18 @@ class Engine:
             self.j.set_state("ai", "off")
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
+        self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
+
+    def _tell(self, title: str, body: str, kind: str = "bot_trade", symbol: str = None):
+        """Push + in-app notice to the admins. Never lets a notification problem touch the trading loop."""
+        if not self._notifier:
+            return
+        try:
+            money = {"paper": "Dinero simulado.", "demo": "Cuenta demo."}.get(self.broker.name, "Dinero real.")
+            self._notifier(f"Bot: {title}", f"{body} {money}", kind, symbol)
+        except Exception as e:
+            self.j.event("warn", "notify", repr(e)[:200])
 
     # -- main loop ----------------------------------------------------------------------------
     def run(self, once: bool = False):
@@ -93,6 +117,8 @@ class Engine:
         if peak > 0 and equity <= peak * (1 - limit) and not self.j.get_state("paused"):
             self.j.set_paused(True, f"kill_switch: drawdown {1 - equity / peak:.1%} from peak (limit {limit:.0%})")
             self.j.set_state("peak_equity", equity)  # re-arm from here once the user resumes
+            self._tell("se pausó por seguridad", f"El capital cayó {1 - equity / peak:.1%} desde su máximo (límite "
+                       f"{limit:.0%}). No abrirá operaciones nuevas hasta que lo reanudes.", "bot_alert")
         if time.time() - self._last_snapshot >= 300:
             self.j.equity_point(equity, acct["balance"], acct["open_pnl"])
             self._last_snapshot = time.time()
@@ -123,6 +149,10 @@ class Engine:
         self.desk.link_trade(briefing_id, tid)
         self.j.decision(symbol, bar_time, "ENTER", side, note or "signal",
                         {"trade_id": tid, "entry": fill["entry"], "qty": fill["qty"], "sl": sl, "tp": tp})
+        risk = fill["qty"] * abs(fill["entry"] - sl)
+        self._tell(f"abrió {SIDE_ES[side]} en {_coin(symbol)}",
+                   f"Entrada {_px(fill['entry'])}, stop en {_px(sl)}. Si salta el stop pierde unos {risk:,.0f} USDT.",
+                   "bot_trade", symbol)
         return True
 
     def _record_close(self, trade: dict, out: dict, reason: str):
@@ -134,6 +164,9 @@ class Engine:
                             exit_reason=reason, fees=fees, pnl=pnl, r=r)
         self.j.decision(trade["symbol"], "", "EXIT", trade["side"], reason,
                         {"trade_id": trade["id"], "exit": out["exit"], "pnl": pnl, "r": r})
+        self._tell(f"cerró {_coin(trade['symbol'])} con {'ganancia' if pnl >= 0 else 'pérdida'} de {abs(pnl):,.2f} USDT",
+                   f"{SIDE_ES[trade['side']].capitalize()} de {_px(trade['entry'])} a {_px(out['exit'])}. "
+                   f"Motivo: {EXIT_ES.get(reason, reason)}.", "bot_trade", trade["symbol"])
 
     def _sync_trades(self):
         for trade in self.j.open_trades():
@@ -226,6 +259,9 @@ class Engine:
             pid = self.j.add_proposal(symbol, side, price, sl, tp, expires, bar_time)
             self.j.decision(symbol, bar_time, "PROPOSE", side, "awaiting_approval",
                             {"proposal_id": pid, "price": price, "sl": sl, "tp": tp, "qty": v.qty, "ai": ai_note})
+            self._tell(f"propone {SIDE_ES[side]} en {_coin(symbol)}",
+                       f"Precio {_px(price)}, stop en {_px(sl)}. Entra a la pestaña Bot para aprobarla o rechazarla; "
+                       f"caduca en unas horas.", "bot_trade", symbol)
             return
         qty = v.qty * mult
         if mult <= 0 or qty * price < self.cfg.risk.min_notional:
@@ -264,6 +300,30 @@ class Engine:
         self.j.set_proposal(pid, "executed")
         return "executed"
 
+    def _open_manual(self, symbol: str, side: int) -> str:
+        """A trade the user asks for. Same stop distance as the strategy, same risk engine, same management."""
+        if symbol not in self.cfg.symbols:
+            return f"{symbol} is not one of the bot's symbols {self.cfg.symbols}"
+        if side not in (1, -1):
+            return "side must be long or short"
+        if self.j.get_state("paused"):
+            return "bot is paused; resume it before opening a trade"
+        if any(t["symbol"] == symbol for t in self.j.open_trades()):
+            return "position already open on this symbol"
+        prepared = self.strategy.prepare(data.recent_klines(symbol, self.tf))
+        atr = _num(prepared.iloc[-1]["atr"]) if len(prepared) else None
+        if not atr:
+            return "not enough candles to place a stop"
+        price = data.last_price(symbol)
+        sl = price - side * float(self.strategy.p.get("sl_atr") or 2.5) * atr
+        v = self._risk(side, price, sl)  # asking by hand does not bypass the risk engine
+        if not v.ok:
+            self.j.decision(symbol, "", "REJECT", side, f"manual: {v.reason}", {"price": price, "sl": sl})
+            return f"risk engine rejected it: {v.reason}"
+        if not self._enter(symbol, side, v.qty, sl, None, "", "manual_by_user"):
+            return "order failed, see events"
+        return "executed"
+
     def _commands(self):
         for c in self.j.pending_commands():
             args = c.get("args") or {}
@@ -281,6 +341,8 @@ class Engine:
                             self._record_close(t, self.broker.close(t), "manual")
                             closed.append(t["symbol"])
                     result = f"closed {closed}" if closed else "no matching open position"
+                elif c["cmd"] == "open":
+                    result = self._open_manual(str(args.get("symbol", "")).upper(), int(args.get("side", 0)))
                 else:
                     result = f"unknown command {c['cmd']}"
                 self.j.finish_command(c["id"], "done", result)

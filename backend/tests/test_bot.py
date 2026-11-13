@@ -227,6 +227,35 @@ def test_close_command_and_trade_economics(engine):
     assert t["r"] == pytest.approx(2.0) and t["pnl"] == pytest.approx(100.0)
 
 
+def test_manual_open_goes_through_the_risk_engine_and_notifies(engine, monkeypatch):
+    import pandas as pd
+    from bot import data
+    eng, broker = engine
+    told = []
+    eng._notifier = lambda title, body, kind, symbol: told.append((title, kind, symbol))
+    monkeypatch.setattr(data, "recent_klines", lambda s, tf: None)
+    monkeypatch.setattr(eng.strategy, "prepare", lambda df: pd.DataFrame({"atr": [0.8]}))  # stop = 2.5 ATR = 2.0
+
+    def ask(symbol, side):
+        eng.j.add_command("open", {"symbol": symbol, "side": side})
+        eng._commands()
+        return eng.j.rows("SELECT result FROM commands ORDER BY id DESC LIMIT 1")[0]["result"]
+
+    assert "not one of the bot's symbols" in ask("DOGEUSDT", 1)
+    eng.j.set_paused(True, "test")
+    assert "paused" in ask("X", 1)
+    eng.j.set_paused(False, "")
+    assert broker.opened == []
+    assert ask("X", -1) == "executed"
+    symbol, side, qty, sl, tp = broker.opened[0]
+    assert (side, sl, tp) == (-1, pytest.approx(102.0), None) and qty * 2.0 == pytest.approx(50.0)  # 0.5% of 10k
+    assert told == [("Bot: abrió venta (short) en X", "bot_trade", "X")]
+    assert "already open" in ask("X", 1)
+    eng.j.add_command("close", {"symbol": "X"})
+    eng._commands()
+    assert told[-1][0].startswith("Bot: cerró X con ")
+
+
 def test_trailing_stop_moves_and_closes_if_price_is_through_it(engine):
     eng, broker = engine
     eng.strategy.p["trail_atr"] = 2.0
@@ -296,9 +325,14 @@ def test_api_accepts_admin_login_and_refuses_other_accounts(tmp_path, monkeypatc
     assert seen.status_code == 200 and seen.json()["can_control"] is False
     for path in ("/api/bot/pause", "/api/bot/resume", "/api/bot/close/BTCUSDT", "/api/bot/proposals/1/approve"):
         assert client.post(path, json={}, headers={"Authorization": "Bearer user"}).status_code == 403
-    for path, body in (("/api/bot/mode", {"mode": "manual"}), ("/api/bot/ai", {"mode": "reduce"})):
+    for path, body in (("/api/bot/mode", {"mode": "manual"}), ("/api/bot/ai", {"mode": "reduce"}),
+                       ("/api/bot/open", {"symbol": "btcusdt", "side": "long"})):
         assert client.post(path, json=body, headers={"Authorization": "Bearer user"}).status_code == 403
     assert client.get("/api/bot/report", headers={"Authorization": "Bearer bad"}).status_code == 401
+    r = client.post("/api/bot/open", json={"symbol": "btcusdt", "side": "short"}, headers={"Authorization": "Bearer admin"})
+    assert r.status_code == 200
+    from bot.journal import Journal
+    assert Journal().pending_commands()[-1]["args"] == {"symbol": "BTCUSDT", "side": -1}
 
 
 def test_openai_compatible_decision_is_parsed(monkeypatch):

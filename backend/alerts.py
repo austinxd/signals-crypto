@@ -524,8 +524,12 @@ def check_unified_pair_changes(
             new_label = bias_labels.get(current_bias, current_bias)
             old_label = bias_labels.get(previous_bias, previous_bias)
 
-            title = f"{pair_short} - Cambio de contexto"
-            body = f"Sesgo cambio de {old_label} a {new_label}."
+            title = f"{pair_short}: la tendencia cambió"
+            body = {
+                "alcista": "En las últimas horas el precio pasó a subir.",
+                "bajista": "En las últimas horas el precio pasó a bajar.",
+                "mixto": "La tendencia dejó de estar clara: unas señales apuntan arriba y otras abajo.",
+            }.get(current_bias, "El precio se quedó de lado, sin tendencia.")
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
@@ -553,22 +557,24 @@ def check_unified_pair_changes(
             new_label = scenario_labels.get(current_scenario, current_scenario)
 
             # Build message based on scenario
-            if current_scenario == "favorable":
-                title = f"{pair_short} - Escenario FAVORABLE"
-                body = f"Contexto y timing alineados."
-                if current_direction:
-                    body += f" Preferencia: {current_direction.upper()}."
+            verb = {"long": "comprar", "short": "vender"}.get(current_direction)
+            means = {"long": " Comprar (long) gana si el precio sube.",
+                     "short": " Vender (short) gana si el precio baja."}.get(current_direction, "")
+            if current_scenario in ("favorable", "operable") and not verb:
+                title = f"{pair_short}: espera un mejor precio"
+                body = "Hay tendencia, pero el precio ya se movió demasiado rápido para entrar ahora."
+            elif current_scenario == "favorable":
+                title = f"{pair_short}: buen momento para {verb}"
+                body = "La tendencia y el momento coinciden." + means
             elif current_scenario == "operable":
-                title = f"{pair_short} - Escenario OPERABLE"
-                body = f"Condiciones aceptables para operar."
-                if current_direction:
-                    body += f" Direccion: {current_direction.upper()}."
+                title = f"{pair_short}: se puede {verb}, con cuidado"
+                body = "Hay condiciones, pero no todas a favor. Si entras, que sea con poco tamaño." + means
             elif current_scenario == "alto_riesgo":
-                title = f"{pair_short} - ALTO RIESGO"
-                body = "Condiciones adversas. Precaucion."
+                title = f"{pair_short}: riesgo alto, mejor no entrar"
+                body = "Las señales se contradicen o el precio se mueve con mucha brusquedad."
             else:
-                title = f"{pair_short} - En espera"
-                body = "Sin condiciones claras para operar."
+                title = f"{pair_short}: mejor esperar"
+                body = "Ya no hay una ventaja clara ni para comprar ni para vender."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
@@ -588,10 +594,9 @@ def check_unified_pair_changes(
     # --- Confirmation Gained (LTF confirms HTF) ---
     if current_confirmation and not previous_confirmation:
         if not _is_on_cooldown(AlertType.CONFIRMATION_GAINED, cache_key):
-            title = f"{pair_short} - Confirmacion de timing"
-            body = "El timeframe menor confirma la direccion del contexto."
-            if current_direction:
-                body = f"Timing confirma direccion {current_direction.upper()}."
+            title = f"{pair_short}: el movimiento arrancó"
+            way = {"alcista": "hacia arriba", "bajista": "hacia abajo"}.get(current_bias, "en la misma dirección")
+            body = f"En los últimos minutos el precio ya va {way}, igual que la tendencia de fondo."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
@@ -610,8 +615,8 @@ def check_unified_pair_changes(
     # --- Confirmation Lost ---
     if previous_confirmation and not current_confirmation and previous.get("htf_bias"):
         if not _is_on_cooldown(AlertType.CONFIRMATION_LOST, cache_key):
-            title = f"{pair_short} - Perdio confirmacion"
-            body = "El timing ya no confirma el contexto."
+            title = f"{pair_short}: el movimiento se frenó"
+            body = "En los últimos minutos el precio dejó de acompañar a la tendencia. Mejor esperar antes de entrar."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
@@ -655,12 +660,11 @@ def check_unified_pair_changes(
                 price_str = ""
 
             # Build notification with specific details
+            title = f"{pair_short} en {price_str}: nivel importante" if price_str else f"{pair_short}: nivel importante"
+            body = "El precio llegó a un nivel donde suele frenar o rebotar"
+            body += f" (Fibonacci {fibo_level}%)." if fibo_level else "."
             if trend_label:
-                title = f"{pair_short} {price_str} - Fibo {fibo_level}%" if fibo_level and price_str else f"{pair_short} - Zona clave ({trend_label})"
-                body = f"Precio en nivel Fibo {fibo_level}%. Tendencia {trend_label}." if fibo_level else f"El precio entro en nivel clave de Fibonacci. Tendencia {trend_label}."
-            else:
-                title = f"{pair_short} {price_str} - Fibo {fibo_level}%" if fibo_level and price_str else f"{pair_short} - Zona de decision"
-                body = f"Precio en nivel Fibo {fibo_level}%." if fibo_level else "El precio entro en nivel clave de Fibonacci."
+                body += f" La tendencia de fondo es {'subir' if current_bias == 'alcista' else 'bajar'}."
 
             for token, user_id in subscribed_tokens:
                 _send_alert_notification(
@@ -725,8 +729,8 @@ def check_position_state_changes(
 
     if current_invalidated and not previous_invalidated:
         if not _is_on_cooldown(AlertType.THESIS_INVALIDATED, cache_key):
-            title = f"{symbol_short} {side} - TESIS INVALIDADA"
-            body = f"La estructura definida para este trade fue INVALIDADA segun las reglas establecidas."
+            title = f"{symbol_short} {side}: el motivo de tu posición ya no vale"
+            body = "El precio rompió el nivel que sostenía esta operación. Revisa si quieres seguir dentro."
 
             _send_alert_notification(
                 push_token, title, body, AlertType.THESIS_INVALIDATED,
@@ -760,8 +764,9 @@ def check_position_state_changes(
             new_label = coherence_labels.get(current_coherence, current_coherence)
             old_label = coherence_labels.get(previous_coherence, previous_coherence)
 
-            title = f"{symbol_short} {side} - Coherencia cambio"
-            body = f"Tu posicion paso de {old_label} a {new_label} segun HTF."
+            title = f"{symbol_short} {side}: el mercado ya no acompaña"
+            body = ("La tendencia ahora va en contra de tu posición." if current_coherence == "contra"
+                    else "La tendencia dejó de ir a favor de tu posición.")
 
             _send_alert_notification(
                 push_token, title, body, AlertType.COHERENCE_CHANGED,
@@ -788,8 +793,8 @@ def check_position_state_changes(
         )
 
         if momentum_against and not _is_on_cooldown(AlertType.HTF_MOMENTUM_CHANGED, cache_key):
-            title = f"{symbol_short} {side} - Momentum HTF"
-            body = f"El sesgo HTF cambio a {'bajista' if is_long else 'alcista'}, en contra de la posicion."
+            title = f"{symbol_short} {side}: la tendencia giró en tu contra"
+            body = f"En las últimas horas el precio pasó a {'bajar' if is_long else 'subir'}, al revés de tu posición."
 
             _send_alert_notification(
                 push_token, title, body, AlertType.HTF_MOMENTUM_CHANGED,
@@ -850,8 +855,8 @@ def check_meta_alerts(
     # --- Multiple Against Context ---
     if against_context_count >= 2:
         if not _is_on_cooldown(AlertType.MULTIPLE_AGAINST_CONTEXT, cache_key):
-            title = "Exposicion contra contexto"
-            body = f"Tienes {against_context_count} posiciones activas contra contexto HTF."
+            title = "Varias posiciones contra la tendencia"
+            body = f"Tienes {against_context_count} posiciones abiertas que van en contra de la tendencia del mercado."
 
             _send_alert_notification(
                 push_token, title, body, AlertType.MULTIPLE_AGAINST_CONTEXT,
@@ -868,8 +873,8 @@ def check_meta_alerts(
     # --- High Risk Exposure ---
     if high_risk_count >= 2:
         if not _is_on_cooldown(AlertType.HIGH_RISK_EXPOSURE, cache_key):
-            title = "Alto riesgo acumulado"
-            body = f"Tienes {high_risk_count} posiciones con tesis invalidada."
+            title = "Demasiado riesgo abierto"
+            body = f"Tienes {high_risk_count} posiciones cuyo motivo ya no vale. Revísalas."
 
             _send_alert_notification(
                 push_token, title, body, AlertType.HIGH_RISK_EXPOSURE,
