@@ -20,7 +20,7 @@ import {
   addNotificationResponseListener,
   saveNotificationToHistory,
 } from './src/services/notifications';
-import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated, setOnAuthFailed, getProfile } from './src/services/api';
+import { registerPushToken, getUserPairs, getUserTimeframe, isAuthenticated, setOnAuthFailed } from './src/services/api';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -54,7 +54,6 @@ async function syncPushToken() {
 
 export default function App() {
   const [authed, setAuthed] = useState(null); // null = loading
-  const [isAdmin, setIsAdmin] = useState(false); // admins get the trading bot tab
 
   useEffect(() => {
     isAuthenticated().then(setAuthed);
@@ -67,16 +66,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!authed) {
-      setIsAdmin(false);
-      return;
-    }
+    if (!authed) return;
 
     syncPushToken();
-    getProfile()
-      .then((p) => setIsAdmin(!!p.is_admin))
-      .catch(() => setIsAdmin(false));
-
     const notificationListener = addNotificationListener((notification) => {
       console.log('Notification received:', notification.request.content.title);
     });
@@ -136,16 +128,14 @@ export default function App() {
           tabBarIcon: ({ focused }) => <PositionsIcon focused={focused} />,
         }}
       />
-      {isAdmin && (
-        <Tab.Screen
-          name="Bot"
-          component={BotScreen}
-          options={{
-            tabBarLabel: 'Bot',
-            tabBarIcon: ({ focused }) => <BotIcon focused={focused} />,
-          }}
-        />
-      )}
+      <Tab.Screen
+        name="Bot"
+        component={BotScreen}
+        options={{
+          tabBarLabel: 'Bot',
+          tabBarIcon: ({ focused }) => <BotIcon focused={focused} />,
+        }}
+      />
       <Tab.Screen
         name="Settings"
         options={{

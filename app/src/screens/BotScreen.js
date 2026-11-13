@@ -114,7 +114,7 @@ const BotScreen = () => {
       setReport(await getBotReport());
       setError(null);
     } catch (err) {
-      setError(err.status === 403 ? 'Esta pantalla es solo para administradores' : 'No se pudo leer el bot');
+      setError('No se pudo leer el bot');
     }
   }, []);
 
@@ -170,9 +170,17 @@ const BotScreen = () => {
     const perf = report.performance || {};
     const aiMode = ai.mode || 'off';
     const paper = s.broker === 'paper';
+    const canControl = report.can_control === true;
+    const locked = busy || !canControl;
+    const dim = !canControl && { opacity: 0.45 };
 
     return (
       <>
+        {!canControl && (
+          <Text style={styles.banner}>
+            Modo lectura: ves todo lo que hace el bot. Solo el administrador puede pausarlo o cambiar sus ajustes.
+          </Text>
+        )}
         <Card
           title="Motor"
           right={
@@ -206,8 +214,8 @@ const BotScreen = () => {
                 </Text>
               )}
               <TouchableOpacity
-                disabled={busy}
-                style={[styles.button, { backgroundColor: s.paused ? GREEN : AMBER }]}
+                disabled={locked}
+                style={[styles.button, { backgroundColor: s.paused ? GREEN : AMBER }, dim]}
                 onPress={() =>
                   s.paused
                     ? confirm('Reanudar el bot', 'Volverá a abrir operaciones cuando haya señal.', 'Reanudar',
@@ -221,7 +229,7 @@ const BotScreen = () => {
 
               <Text style={styles.label}>Quién decide las entradas</Text>
               <Segment
-                disabled={busy}
+                disabled={locked}
                 value={s.mode}
                 options={[{ key: 'auto', label: 'Automático' }, { key: 'manual', label: 'Manual' }]}
                 onChange={(m) => run(() => setBotMode(m))}
@@ -248,16 +256,16 @@ const BotScreen = () => {
                 <Text style={styles.muted}>ref {price(p.ref_price)} · stop {price(p.sl)}</Text>
                 <View style={styles.rowButtons}>
                   <TouchableOpacity
-                    disabled={busy}
-                    style={[styles.smallButton, { backgroundColor: GREEN }]}
+                    disabled={locked}
+                    style={[styles.smallButton, { backgroundColor: GREEN }, dim]}
                     onPress={() => confirm('Aprobar', `${sideLabel(p.side)} ${p.symbol}. El motor de riesgo la revisa de nuevo.`,
                       'Aprobar', () => answerBotProposal(p.id, 'approve'))}
                   >
                     <Text style={styles.buttonText}>Aprobar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    disabled={busy}
-                    style={[styles.smallButton, styles.ghost]}
+                    disabled={locked}
+                    style={[styles.smallButton, styles.ghost, dim]}
                     onPress={() => run(() => answerBotProposal(p.id, 'reject'))}
                   >
                     <Text style={styles.ghostText}>Rechazar</Text>
@@ -286,8 +294,8 @@ const BotScreen = () => {
                   entrada {price(t.entry)} · ahora {price(t.price)} · stop {price(t.sl)} · {ago(t.entry_ts)}
                 </Text>
                 <TouchableOpacity
-                  disabled={busy}
-                  style={[styles.smallButton, styles.ghost, { alignSelf: 'flex-start', marginTop: 8 }]}
+                  disabled={locked}
+                  style={[styles.smallButton, styles.ghost, { alignSelf: 'flex-start', marginTop: 8 }, dim]}
                   onPress={() => confirm('Cerrar posición', `Se cerrará ${t.symbol} a mercado.`, 'Cerrar',
                     () => closeBotPosition(t.symbol), true)}
                 >
@@ -323,7 +331,7 @@ const BotScreen = () => {
           )}
           <Text style={styles.label}>Autoridad de la IA</Text>
           <Segment
-            disabled={busy}
+            disabled={locked}
             value={aiMode}
             options={AI_MODES}
             onChange={(m) =>
@@ -434,7 +442,9 @@ const BotScreen = () => {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Bot</Text>
-          <Text style={styles.muted}>Solo administradores</Text>
+          <Text style={styles.muted}>
+            {!report ? '' : report.can_control ? 'Administrador' : 'Solo lectura'}
+          </Text>
         </View>
         {body()}
       </ScrollView>
@@ -471,6 +481,10 @@ const styles = StyleSheet.create({
   smallButton: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center' },
   ghost: { borderWidth: 1, borderColor: '#444' },
   ghostText: { color: '#ccc', fontWeight: '600', fontSize: 14 },
+  banner: {
+    color: '#bbb', fontSize: 13, lineHeight: 18, backgroundColor: '#1e1e2e', borderRadius: 12,
+    borderLeftWidth: 3, borderLeftColor: AMBER, padding: 12, marginBottom: 14,
+  },
   segment: { flexDirection: 'row', backgroundColor: '#12121c', borderRadius: 10, padding: 3 },
   segmentItem: { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center' },
   segmentItemActive: { backgroundColor: GREEN },

@@ -291,7 +291,13 @@ def test_api_accepts_admin_login_and_refuses_other_accounts(tmp_path, monkeypatc
     app.include_router(api.router)
     client = TestClient(app)
     assert client.get("/api/bot/report", headers={"Authorization": "Bearer admin"}).status_code == 200
-    assert client.post("/api/bot/pause", json={}, headers={"Authorization": "Bearer user"}).status_code == 403
+    assert client.get("/api/bot/report", headers={"Authorization": "Bearer admin"}).json()["can_control"] is True
+    seen = client.get("/api/bot/report", headers={"Authorization": "Bearer user"})  # any account may look
+    assert seen.status_code == 200 and seen.json()["can_control"] is False
+    for path in ("/api/bot/pause", "/api/bot/resume", "/api/bot/close/BTCUSDT", "/api/bot/proposals/1/approve"):
+        assert client.post(path, json={}, headers={"Authorization": "Bearer user"}).status_code == 403
+    for path, body in (("/api/bot/mode", {"mode": "manual"}), ("/api/bot/ai", {"mode": "reduce"})):
+        assert client.post(path, json=body, headers={"Authorization": "Bearer user"}).status_code == 403
     assert client.get("/api/bot/report", headers={"Authorization": "Bearer bad"}).status_code == 401
 
 
