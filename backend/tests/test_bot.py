@@ -269,6 +269,30 @@ def test_api_requires_token_and_controls_the_bot(tmp_path, monkeypatch):
     assert rep["status"]["paused"] is True and rep["status"]["pause_reason"] == "from app"
     assert client.post("/api/bot/mode", json={"mode": "turbo"}, headers=h).status_code == 422
     assert client.post("/api/bot/proposals/7/approve", headers=h).json() == {"command_id": 1}
+    assert client.post("/api/bot/ai", json={"mode": "shadow"}, headers=h).json() == {"ai": "shadow"}
+    assert client.get("/api/bot/report", headers=h).json()["ai"]["mode"] == "shadow"
+
+
+def test_api_accepts_admin_login_and_refuses_other_accounts(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    import sys
+    from bot import api, journal
+    monkeypatch.setattr(journal, "DATA_DIR", tmp_path)
+    monkeypatch.delenv("BOT_API_TOKEN", raising=False)
+
+    def fake_user(credentials):
+        if credentials.credentials == "bad":
+            raise HTTPException(401, "Invalid or expired token")
+        return SimpleNamespace(is_admin=credentials.credentials == "admin")
+    monkeypatch.setitem(sys.modules, "auth", SimpleNamespace(get_current_user=fake_user))  # stands in for backend/auth.py
+    app = FastAPI()
+    app.include_router(api.router)
+    client = TestClient(app)
+    assert client.get("/api/bot/report", headers={"Authorization": "Bearer admin"}).status_code == 200
+    assert client.post("/api/bot/pause", json={}, headers={"Authorization": "Bearer user"}).status_code == 403
+    assert client.get("/api/bot/report", headers={"Authorization": "Bearer bad"}).status_code == 401
 
 
 def test_openai_compatible_decision_is_parsed(monkeypatch):

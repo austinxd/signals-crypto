@@ -320,21 +320,26 @@ def ask(system: str, schema: dict, shape: str, context: str, model: str, effort:
                 "messages": [{"role": "system", "content": system +
                               "\n\nReply with a single JSON object and nothing else: " + shape},
                              {"role": "user", "content": context}]}
+        tin = tout = 0
         for attempt in range(retries + 1):
             r = requests.post(f"{base}/chat/completions", json=body, timeout=timeout,
                               headers={"Authorization": f"Bearer {key}"})
             if r.status_code in (429, 500, 502, 503, 529) and attempt < retries:
                 time.sleep(2 ** attempt * 2)
                 continue
-            break
-        if r.status_code != 200:
-            raise RuntimeError(f"{model}: HTTP {r.status_code} {r.text[:300]}")
-        out = r.json()
-        if out["choices"][0].get("finish_reason") != "stop":
-            raise RuntimeError(f"{model}: finish_reason={out['choices'][0].get('finish_reason')}")
-        data = json.loads(out["choices"][0]["message"]["content"])
-        usage = out.get("usage") or {}
-        tin, tout = int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+            if r.status_code != 200:
+                raise RuntimeError(f"{model}: HTTP {r.status_code} {r.text[:300]}")
+            out = r.json()
+            usage = out.get("usage") or {}
+            tin, tout = tin + int(usage.get("prompt_tokens", 0)), tout + int(usage.get("completion_tokens", 0))
+            if out["choices"][0].get("finish_reason") != "stop":
+                raise RuntimeError(f"{model}: finish_reason={out['choices'][0].get('finish_reason')}")
+            try:
+                data = json.loads(out["choices"][0]["message"]["content"])
+                break
+            except json.JSONDecodeError:  # JSON mode without a schema can still emit broken JSON; ask again
+                if attempt >= retries:
+                    raise
     if not isinstance(data, dict):
         raise RuntimeError(f"{model}: answer is not a JSON object")
     missing = [k for k in schema["required"] if k not in data]

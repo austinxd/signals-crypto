@@ -585,3 +585,34 @@ export async function markAllNotificationsRead() {
 export async function getSubscriptionStatus() {
   return apiRequest('/api/account/subscription');
 }
+
+// ============================================================
+// Trading bot (admin accounts only)
+// ============================================================
+
+export async function getBotReport() {
+  return apiRequest('/api/bot/report?trades=10&decisions=12');
+}
+
+export async function setBotPaused(paused, reason = 'desde la app') {
+  return apiRequest(paused ? '/api/bot/pause' : '/api/bot/resume', {
+    method: 'POST',
+    body: JSON.stringify(paused ? { reason } : {}),
+  });
+}
+
+export async function setBotMode(mode) {
+  return apiRequest('/api/bot/mode', { method: 'POST', body: JSON.stringify({ mode }) });
+}
+
+export async function setBotAi(mode) {
+  return apiRequest('/api/bot/ai', { method: 'POST', body: JSON.stringify({ mode }) });
+}
+
+export async function answerBotProposal(id, action) {
+  return apiRequest(`/api/bot/proposals/${id}/${action}`, { method: 'POST' });
+}
+
+export async function closeBotPosition(symbol) {
+  return apiRequest(`/api/bot/close/${symbol}`, { method: 'POST' });
+}

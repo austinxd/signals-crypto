@@ -1,7 +1,7 @@
 """HTTP access to the bot journal and controls, for the app and for remote analysis.
 
-Mounted by main.py under /api/bot. Every call needs the header  X-Bot-Token: $BOT_API_TOKEN.
-If BOT_API_TOKEN is not set the endpoints are disabled.
+Mounted by main.py under /api/bot. Every call needs either the header  X-Bot-Token: $BOT_API_TOKEN
+or the app login (Authorization: Bearer ...) of an account with is_admin.
 """
 import hmac
 import os
@@ -14,12 +14,21 @@ from . import report
 from .journal import Journal
 
 
-def _auth(x_bot_token: Optional[str] = Header(None)):
+def _auth(x_bot_token: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
+    """Two ways in: the server-side bot token, or the app login of an admin account."""
     expected = os.getenv("BOT_API_TOKEN")
+    if expected and x_bot_token and hmac.compare_digest(x_bot_token, expected):
+        return
+    if authorization and authorization.lower().startswith("bearer "):
+        from fastapi.security import HTTPAuthorizationCredentials
+        from auth import get_current_user  # backend/auth.py; raises 401 on a bad or expired login
+        user = get_current_user(HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization[7:].strip()))
+        if not user.is_admin:
+            raise HTTPException(403, "admin account required")
+        return
     if not expected:
         raise HTTPException(503, "BOT_API_TOKEN is not configured")
-    if not x_bot_token or not hmac.compare_digest(x_bot_token, expected):
-        raise HTTPException(401, "invalid bot token")
+    raise HTTPException(401, "invalid bot token")
 
 
 router = APIRouter(prefix="/api/bot", dependencies=[Depends(_auth)])
@@ -31,6 +40,18 @@ class PauseBody(BaseModel):
 
 class ModeBody(BaseModel):
     mode: Literal["auto", "manual"]
+
+
+class AiBody(BaseModel):
+    mode: Literal["off", "shadow", "reduce"]
+
+
+@router.post("/ai")
+def set_ai(body: AiBody):
+    j = Journal()
+    j.set_state("ai", body.mode)
+    j.event("info", "ai", f"ai set to {body.mode}")
+    return {"ai": body.mode}
 
 
 @router.get("/report")

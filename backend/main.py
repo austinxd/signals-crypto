@@ -712,6 +712,7 @@ async def get_profile(user: UserAccount = Depends(get_current_user)):
         # Subscription fields
         "subscription_status": user.subscription_status or "free",
         "is_premium": user.is_premium(),
+        "is_admin": bool(user.is_admin),
     }
 
 
