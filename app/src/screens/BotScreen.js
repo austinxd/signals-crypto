@@ -91,6 +91,147 @@ const Item = ({ title, right, rightColor, lines, children, first }) => (
 const tradeTitle = (symbol, side) => `${pairName(symbol)} · ${sideOf(side).noun} ${sideOf(side).arrow}`;
 
 /** One open trade: the result is always visible, the rest opens with a tap. */
+// One outcome of a trade, as a coloured tile: what closes it, at which price, and what it would pay.
+const Outcome = ({ label, value, price, color, note }) => (
+  <View style={[styles.outcome, { backgroundColor: `${color}1f`, borderColor: `${color}66` }]}>
+    <Text style={[styles.outcomeLabel, { color }]}>{label}</Text>
+    <Text style={[styles.outcomeValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    {!!price && <Text style={styles.outcomePrice}>{price}</Text>}
+    {!!note && <Text style={styles.outcomeNote}>{note}</Text>}
+  </View>
+);
+
+const Dot = ({ color, label, value }) => (
+  <View style={styles.legendItem}>
+    <View style={[styles.legendDot, { backgroundColor: color }]} />
+    <Text style={styles.legendText}>{label} <Text style={{ color: colors.text, fontWeight: '600' }}>{value}</Text></Text>
+  </View>
+);
+
+const Step = ({ color, children }) => (
+  <View style={styles.step}>
+    <View style={[styles.stepBar, { backgroundColor: color }]} />
+    <Text style={[type.small, { flex: 1, color: colors.textDim }]}>{children}</Text>
+  </View>
+);
+
+/**
+ * The inside of an open trade: where it would lose, where it is, where it would win, drawn on one line
+ * that always reads left = loses, right = wins, whatever the direction of the trade.
+ */
+const TradeDetail = ({ t, unit, equity, atr, params, maxLev, lev, size, move }) => {
+  const side = t.side > 0 ? 1 : -1;
+  const sd = sideOf(side);
+  const r = Math.abs(t.entry - t.sl0) || Math.abs(t.entry - t.sl) || 1; // what it risked, in price
+  const end = t.tp != null ? t.tp : t.entry + side * 3 * r; // right edge: the target, or 3x the risk when there is none
+  const at = (p) => Math.max(0, Math.min(1, (side * (p - t.sl0)) / (side * (end - t.sl0) || 1)));
+  const pct = (p) => `${(100 * at(p)).toFixed(1)}%`;
+  const stopResult = side * t.qty * (t.sl - t.entry);
+  const tpResult = t.tp != null ? side * t.qty * (t.tp - t.entry) : null;
+  const moved = Math.abs(t.sl - t.sl0) > 1e-9;
+  const safe = stopResult >= -1e-9; // the stop is at the entry or better: it can no longer close at a loss
+  const stopColor = safe ? colors.accent : colors.danger;
+  const be = Number(params.breakeven_r) > 0 ? Number(params.breakeven_r) : null;
+  const beAt = be ? t.entry + side * be * r : null;
+  const trail = Number(params.trail_atr) > 0 ? Number(params.trail_atr) : null;
+  const pnl = t.open_pnl || 0;
+  const dir = side > 0 ? 'sube' : 'baja';
+  const past = side > 0 ? 'por encima' : 'por debajo';
+  const toStop = t.price ? (100 * Math.abs(t.sl - t.price)) / t.price : null;
+  const toTp = t.tp != null && t.price ? (100 * Math.abs(t.tp - t.price)) / t.price : null;
+  return (
+    <View style={{ marginTop: space.md }}>
+      <View style={styles.outcomes}>
+        <Outcome
+          label={safe ? 'SI SE DA LA VUELTA' : 'SI SALE MAL'}
+          color={stopColor}
+          value={`${esSigned(stopResult, 2)}`}
+          price={`stop ${money(t.sl)}`}
+          note={toStop != null ? `a ${es(toStop, 1)} %` : null}
+        />
+        <Outcome
+          label="AHORA"
+          color={pnl >= 0 ? colors.accent : colors.danger}
+          value={`${esSigned(pnl, 2)}`}
+          price={money(t.price)}
+          note={move != null ? `${esSigned(move, 2)} % a favor` : null}
+        />
+        <Outcome
+          label="SI SALE BIEN"
+          color={t.tp != null ? colors.accent : colors.info}
+          value={tpResult != null ? `${esSigned(tpResult, 2)}` : 'Sin tope'}
+          price={t.tp != null ? `objetivo ${money(t.tp)}` : `mientras ${dir}`}
+          note={toTp != null ? `a ${es(toTp, 1)} %` : null}
+        />
+      </View>
+      <Text style={[type.small, { marginTop: 6, textAlign: 'center' }]}>Importes en {unit}</Text>
+
+      <View style={styles.track}>
+        <View style={[styles.trackLoss, { width: pct(t.entry) }]} />
+        <View style={[styles.trackWin, { left: pct(t.entry) }]} />
+        {moved && <View style={[styles.trackGone, { width: pct(t.sl) }]} />}
+        <View style={[styles.tick, { left: pct(t.entry), backgroundColor: colors.textDim }]} />
+        <View style={[styles.tick, styles.tickStop, { left: pct(t.sl), backgroundColor: stopColor }]} />
+        <View style={[styles.now, { left: pct(t.price) }]} />
+      </View>
+      <View style={styles.trackEnds}>
+        <Text style={[styles.trackEnd, { color: colors.danger }]}>◀ pierde</Text>
+        <Text style={[styles.trackEnd, { color: colors.accent }]}>gana ▶</Text>
+      </View>
+      <View style={styles.legend}>
+        <Dot color={stopColor} label="Stop" value={money(t.sl)} />
+        <Dot color={colors.textDim} label="Entrada" value={money(t.entry)} />
+        <Dot color={colors.text} label="Ahora" value={money(t.price)} />
+        {t.tp != null && <Dot color={colors.accent} label="Objetivo" value={money(t.tp)} />}
+      </View>
+
+      <Text style={[type.label, { marginTop: space.lg, marginBottom: space.xs }]}>Qué hará el bot</Text>
+      <Step color={stopColor}>
+        {moved
+          ? `Stop ya movido a tu favor: empezó en ${money(t.sl0)} y está en ${money(t.sl)}.`
+          : `Stop sin cambios desde que abrió, en ${money(t.sl)}.`}
+        {safe ? ' Esta operación ya no puede cerrar en pérdida.' : ''}
+      </Step>
+      {beAt != null && !safe && (
+        <Step color={colors.warn}>
+          Cuando una vela de 4 h cierre {past} de {money(beAt)}, el stop pasa a la entrada ({money(t.entry)}) y deja de poder perder.
+        </Step>
+      )}
+      {trail != null && (
+        <Step color={colors.info}>
+          Mientras el precio {dir}, cada 4 h el stop lo sigue a {es(trail, 0)} ATR
+          {atr != null && t.price ? ` (≈ ${es((100 * trail * atr) / t.price, 1)} %)` : ''} de distancia. Nunca retrocede.
+        </Step>
+      )}
+      <Step color={colors.accent}>
+        {t.tp != null
+          ? `Si llega a ${money(t.tp)} cierra sola con la ganancia. Ese objetivo no se mueve.`
+          : 'No tiene objetivo: la deja correr y cierra cuando el precio se da la vuelta hasta el stop.'}
+      </Step>
+
+      <View style={styles.facts}>
+        <View style={styles.fact}>
+          <Text style={styles.factLabel}>TAMAÑO</Text>
+          <Text style={styles.factValue}>{es(size, 0)}</Text>
+        </View>
+        <View style={styles.fact}>
+          <Text style={styles.factLabel}>APALANCAMIENTO</Text>
+          <Text style={styles.factValue}>{lev != null ? `${es(lev, 1)}x` : '-'}{maxLev != null ? <Text style={styles.factDim}> de {es(maxLev, 0)}x</Text> : null}</Text>
+        </View>
+        <View style={styles.fact}>
+          <Text style={styles.factLabel}>ABIERTA</Text>
+          <Text style={styles.factValue}>{timeAgo(t.entry_ts)}</Text>
+        </View>
+      </View>
+      <Text style={[type.small, { marginTop: space.sm }]}>
+        {sd.noun}: {sd.wins}.
+        {equity > 0 ? ` El resultado de ahora es ${esSigned((100 * pnl) / equity, 2)} % del capital, sin descontar comisiones.` : ''}
+        {atr != null && t.price ? ` Una vela de 4 h suele mover el precio ${es((100 * atr) / t.price, 1)} % (ATR ${money(atr)}).` : ''}
+      </Text>
+    </View>
+  );
+};
+
 const Fold = ({ title, right, rightColor, summary, first, children }) => {
   const [open, setOpen] = useState(false);
   return (
@@ -638,7 +779,6 @@ const BotScreen = ({ route, navigation }) => {
               )}
               {open.map((t, i) => {
                 const sd = sideOf(t.side);
-                const out = stopOutcome(t.side, t.qty, t.entry, t.sl);
                 const tc = pairName(t.symbol);
                 const why = whyOpened(t.id);
                 const nb = numbers(t, t.price);
@@ -648,7 +788,6 @@ const BotScreen = ({ route, navigation }) => {
                   away: t.price ? (100 * Math.abs(t.sl - t.price)) / t.price : null,
                   atr: ev && ev.features && ev.features.atr > 0 && t.price ? ev.features.atr : null,
                 };
-                const trailAtr = s.params && s.params.trail_atr > 0 ? s.params.trail_atr : null;
                 return (
                   <Fold
                     key={t.id}
@@ -656,54 +795,11 @@ const BotScreen = ({ route, navigation }) => {
                     title={tradeTitle(t.symbol, t.side)}
                     right={`${esSigned(t.open_pnl || 0)} ${cur}${nb.move != null ? ` (${esSigned(nb.move, 2)} %)` : ''}`}
                     rightColor={pnlColor(t.open_pnl)}
-                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · ` : ''}abierta ${timeAgo(t.entry_ts)}${nb.lev != null ? ` · tamaño ${es(nb.size, 0)} ${unit}` : ''}\nEntró a ${money(t.entry)} · ahora ${money(t.price)} · stop en ${money(t.sl)}${st.moved ? ' (ya movido a favor)' : ''}`}
+                    summary={`${nb.lev != null ? `${es(nb.lev, 1)}x · ` : ''}abierta ${timeAgo(t.entry_ts)} · stop ${money(t.sl)}${st.moved ? ' (movido a favor)' : ''}${t.tp != null ? ` · objetivo ${money(t.tp)}` : ''}`}
                   >
-                    <Text style={[type.small, { marginTop: space.sm, marginBottom: space.xs }]}>
-                      {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}. Importes en {unit}.
-                    </Text>
-                    <Row
-                      first
-                      label="Resultado ahora"
-                      value={signed(t.open_pnl || 0)}
-                      color={pnlColor(t.open_pnl)}
-                      help={nb.move != null
-                        ? `El precio se movió ${esSigned(nb.move, 2)} % a su favor · ${esSigned((100 * (t.open_pnl || 0)) / a.equity, 2)} % del capital. Aún sin cerrar y sin descontar comisiones.`
-                        : 'Aún sin cerrar.'}
-                    />
-                    <Row label="Precio de entrada" value={money(t.entry)} help={`Ahora: ${money(t.price)}`} />
-                    <Row
-                      label="Tamaño"
-                      value={amount(nb.size, 0)}
-                      help={nb.lev != null
-                        ? `Apalancamiento ${es(nb.lev, 1)}x: ${es(nb.lev, 1)} veces el capital del bot`
-                          + (risk.max_position_leverage != null ? ` (máximo ${es(risk.max_position_leverage, 0)}x por operación).` : '.')
-                        : undefined}
-                    />
-                    <Row
-                      label="Cierre automático (stop)"
-                      value={money(t.sl)}
-                      color={st.moved ? colors.accent : undefined}
-                      help={[
-                        st.moved
-                          ? `El bot ya lo movió a su favor: empezó en ${money(t.sl0)} y ahora está en ${money(t.sl)}.`
-                          : `Sin cambios desde que abrió (${money(t.sl0)}).`,
-                        st.away != null ? `Está a ${es(st.away, 1)} % del precio actual.` : null,
-                        out ? `Si salta, ${out}.` : null,
-                      ].filter(Boolean).join(' ')}
-                    />
-                    {st.atr != null && (
-                      <Row
-                        label="Movimiento medio por vela (ATR)"
-                        value={`${money(st.atr)} · ${es((100 * st.atr) / t.price, 1)} %`}
-                        help={trailAtr
-                          ? `Cada 4 h el bot recoloca el stop a ${es(trailAtr, 0)} ATR (≈ ${es((100 * trailAtr * st.atr) / t.price, 1)} %) del mejor precio alcanzado. Solo lo mueve a favor, nunca en contra.`
-                          : 'Es lo que suele moverse el precio en una vela de 4 h.'}
-                      />
-                    )}
-                    <Row
-                      label="Precio de ganancia"
-                      value={t.tp != null ? money(t.tp) : 'No tiene'}
-                      help={t.tp != null ? undefined : 'Deja correr la operación: se cierra cuando el precio se da la vuelta y toca el stop.'}
+                    <TradeDetail
+                      t={t} unit={unit} equity={a.equity} atr={st.atr} params={s.params || {}}
+                      maxLev={risk.max_position_leverage} lev={nb.lev} size={nb.size} move={nb.move}
                     />
                     {!!(why && why.text) && (
                       <View style={{ marginTop: space.xs }}>
@@ -974,6 +1070,32 @@ const styles = StyleSheet.create({
   itemTitleText: { color: colors.text, fontSize: 15, fontWeight: '600', lineHeight: 21 },
   itemRight: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginLeft: space.md, lineHeight: 21 },
   result: { fontSize: 14, fontWeight: '700', marginTop: space.sm },
+  outcomes: { flexDirection: 'row', gap: space.sm },
+  outcome: { flex: 1, borderWidth: 1, borderRadius: 10, paddingVertical: space.sm, paddingHorizontal: 6, alignItems: 'center' },
+  outcomeLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4, textAlign: 'center' },
+  outcomeValue: { fontSize: 17, fontWeight: '700', marginTop: 4 },
+  outcomePrice: { color: colors.textDim, fontSize: 11, marginTop: 3, textAlign: 'center' },
+  outcomeNote: { color: colors.textMuted, fontSize: 11, marginTop: 1 },
+  track: { height: 10, borderRadius: 5, backgroundColor: colors.surfaceAlt, marginTop: space.lg, marginHorizontal: 7 },
+  trackLoss: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: `${colors.danger}55`, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+  trackWin: { position: 'absolute', right: 0, top: 0, bottom: 0, backgroundColor: `${colors.accent}55`, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+  trackGone: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.surfaceAlt, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+  tick: { position: 'absolute', top: -3, width: 2, height: 16, marginLeft: -1 },
+  tickStop: { width: 4, marginLeft: -2, top: -4, height: 18, borderRadius: 2 },
+  now: { position: 'absolute', top: -3, width: 16, height: 16, borderRadius: 8, marginLeft: -8, backgroundColor: colors.text, borderWidth: 3, borderColor: colors.surface },
+  trackEnds: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  trackEnd: { fontSize: 11, fontWeight: '600' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: space.sm, columnGap: space.lg, rowGap: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center' },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  legendText: { color: colors.textDim, fontSize: 12 },
+  step: { flexDirection: 'row', marginTop: 6 },
+  stepBar: { width: 3, borderRadius: 2, marginRight: space.sm },
+  facts: { flexDirection: 'row', marginTop: space.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md },
+  fact: { flex: 1 },
+  factLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  factValue: { color: colors.text, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  factDim: { color: colors.textMuted, fontWeight: '400', fontSize: 12 },
   detail: { color: colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 3 },
   buttons: { flexDirection: 'row', gap: space.md, marginTop: space.md },
   control: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.lg, paddingTop: space.lg },
