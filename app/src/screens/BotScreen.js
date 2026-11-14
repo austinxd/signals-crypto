@@ -330,6 +330,7 @@ const BotScreen = ({ route, navigation }) => {
     const w = WORDS[kind || 'unknown'];
     const unit = kind ? MONEY[kind].unit : 'USDT';
     setReader(canControl, unit); // botText sentences say "tú" to the owner and name the kind of money
+    const cur = 'USDT'; // short form next to tight figures; the long one says whether it is simulated
     const amount = (x, d = 2) => `${es(x, d)} ${unit}`;
     const signed = (x, d = 2) => `${esSigned(x, d)} ${unit}`;
     const tag = kind ? <MoneyTag kind={kind} /> : null;
@@ -470,7 +471,8 @@ const BotScreen = ({ route, navigation }) => {
           )}
           {started && (
             <>
-              <StatRow style={{ marginTop: space.lg }}>
+              <Text style={[type.label, { marginTop: space.lg }]}>Cuenta · en {unit}</Text>
+              <StatRow style={{ marginTop: space.sm }}>
                 <Stat label={w.capital} value={es(a.equity, 0)} hint="incluye operaciones abiertas" />
                 <Stat
                   label="Hoy"
@@ -485,7 +487,7 @@ const BotScreen = ({ route, navigation }) => {
                   hint={all.trades ? `${pctOfStart(all.pnl) || ''} · ${all.trades} ${all.trades === 1 ? 'cerrada' : 'cerradas'}` : 'sin cerradas'}
                 />
               </StatRow>
-              <Text style={[type.label, { marginTop: space.lg }]}>Ganado o perdido por el bot</Text>
+              <Text style={[type.label, { marginTop: space.lg }]}>Ganado o perdido por el bot · en {unit}</Text>
               <StatRow style={{ marginTop: space.sm }}>
                 <Stat
                   label="En abiertas"
@@ -507,9 +509,8 @@ const BotScreen = ({ route, navigation }) => {
                 />
               </StatRow>
               <Text style={[type.small, { marginTop: space.md }]}>
-                Cifras en {unit}.
                 {a.drawdown_pct != null
-                  ? ` Caída desde su mejor momento: ${es(a.drawdown_pct, 1)} %`
+                  ? `Caída desde su mejor momento: ${es(a.drawdown_pct, 1)} %`
                     + (risk.max_drawdown_halt != null ? ` (se pausa solo al ${es(risk.max_drawdown_halt * 100, 0)} %).` : '.')
                   : ''}
               </Text>
@@ -641,36 +642,69 @@ const BotScreen = ({ route, navigation }) => {
                 const tc = pairName(t.symbol);
                 const why = whyOpened(t.id);
                 const nb = numbers(t, t.price);
+                const ev = (report.latest_evaluations || []).find((e) => e.symbol === t.symbol);
+                const st = {
+                  moved: t.sl != null && t.sl0 != null && Math.abs(t.sl - t.sl0) > 1e-9,
+                  away: t.price ? (100 * Math.abs(t.sl - t.price)) / t.price : null,
+                  atr: ev && ev.features && ev.features.atr > 0 && t.price ? ev.features.atr : null,
+                };
+                const trailAtr = s.params && s.params.trail_atr > 0 ? s.params.trail_atr : null;
                 return (
                   <Fold
                     key={t.id}
                     first={i === 0}
                     title={tradeTitle(t.symbol, t.side)}
-                    right={`${esSigned(t.open_pnl || 0)}${nb.move != null ? ` (${esSigned(nb.move, 2)} %)` : ''}`}
+                    right={`${esSigned(t.open_pnl || 0)} ${cur}${nb.move != null ? ` (${esSigned(nb.move, 2)} %)` : ''}`}
                     rightColor={pnlColor(t.open_pnl)}
-                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · ` : ''}abierta ${timeAgo(t.entry_ts)}${nb.lev != null ? ` · tamaño ${es(nb.size, 0)} ${unit}` : ''}\nEntró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
+                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · ` : ''}abierta ${timeAgo(t.entry_ts)}${nb.lev != null ? ` · tamaño ${es(nb.size, 0)} ${unit}` : ''}\nEntró a ${money(t.entry)} · ahora ${money(t.price)} · stop en ${money(t.sl)}${st.moved ? ' (ya movido a favor)' : ''}`}
                   >
-                    <Text style={[type.small, { marginTop: space.sm }]}>
-                      {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}.
+                    <Text style={[type.small, { marginTop: space.sm, marginBottom: space.xs }]}>
+                      {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}. Importes en {unit}.
                     </Text>
-                    {nb.lev != null && (
-                      <Text style={[type.small, { marginTop: 3 }]}>
-                        Tamaño: {es(nb.size, 0)} {unit}, que es {es(nb.lev, 1)} veces el capital del bot (apalancamiento {es(nb.lev, 1)}x
-                        {risk.max_position_leverage != null ? `; máximo ${es(risk.max_position_leverage, 0)}x por operación` : ''}).
-                        {nb.move != null ? ` El precio se ha movido ${esSigned(nb.move, 2)} % a su favor, que es ${esSigned((100 * (t.open_pnl || 0)) / a.equity, 2)} % del capital.` : ''}
-                      </Text>
+                    <Row
+                      first
+                      label="Resultado ahora"
+                      value={signed(t.open_pnl || 0)}
+                      color={pnlColor(t.open_pnl)}
+                      help={nb.move != null
+                        ? `El precio se movió ${esSigned(nb.move, 2)} % a su favor · ${esSigned((100 * (t.open_pnl || 0)) / a.equity, 2)} % del capital. Aún sin cerrar y sin descontar comisiones.`
+                        : 'Aún sin cerrar.'}
+                    />
+                    <Row label="Precio de entrada" value={money(t.entry)} help={`Ahora: ${money(t.price)}`} />
+                    <Row
+                      label="Tamaño"
+                      value={amount(nb.size, 0)}
+                      help={nb.lev != null
+                        ? `Apalancamiento ${es(nb.lev, 1)}x: ${es(nb.lev, 1)} veces el capital del bot`
+                          + (risk.max_position_leverage != null ? ` (máximo ${es(risk.max_position_leverage, 0)}x por operación).` : '.')
+                        : undefined}
+                    />
+                    <Row
+                      label="Cierre automático (stop)"
+                      value={money(t.sl)}
+                      color={st.moved ? colors.accent : undefined}
+                      help={[
+                        st.moved
+                          ? `El bot ya lo movió a su favor: empezó en ${money(t.sl0)} y ahora está en ${money(t.sl)}.`
+                          : `Sin cambios desde que abrió (${money(t.sl0)}).`,
+                        st.away != null ? `Está a ${es(st.away, 1)} % del precio actual.` : null,
+                        out ? `Si salta, ${out}.` : null,
+                      ].filter(Boolean).join(' ')}
+                    />
+                    {st.atr != null && (
+                      <Row
+                        label="Movimiento medio por vela (ATR)"
+                        value={`${money(st.atr)} · ${es((100 * st.atr) / t.price, 1)} %`}
+                        help={trailAtr
+                          ? `Cada 4 h el bot recoloca el stop a ${es(trailAtr, 0)} ATR (≈ ${es((100 * trailAtr * st.atr) / t.price, 1)} %) del mejor precio alcanzado. Solo lo mueve a favor, nunca en contra.`
+                          : 'Es lo que suele moverse el precio en una vela de 4 h.'}
+                      />
                     )}
-                    <Text style={[type.small, { marginTop: 3 }]}>
-                      {t.open_pnl != null && t.open_pnl >= 0 ? 'Va ganando' : 'Va perdiendo'} {amount(Math.abs(t.open_pnl || 0))}, aún sin cerrar.
-                    </Text>
-                    {!!out && (
-                      <Text style={[type.small, { marginTop: 3 }]}>Si salta el cierre automático en {money(t.sl)}, {out}.</Text>
-                    )}
-                    <Text style={[type.small, { marginTop: 3 }]}>
-                      {t.tp != null
-                        ? `Se cierra con ganancia si llega a ${money(t.tp)}.`
-                        : 'Sin precio de ganancia fijo: el cierre automático va siguiendo al precio.'}
-                    </Text>
+                    <Row
+                      label="Precio de ganancia"
+                      value={t.tp != null ? money(t.tp) : 'No tiene'}
+                      help={t.tp != null ? undefined : 'Deja correr la operación: se cierra cuando el precio se da la vuelta y toca el stop.'}
+                    />
                     {!!(why && why.text) && (
                       <View style={{ marginTop: space.xs }}>
                         <Text style={type.small}>Por qué la abrió:</Text>
