@@ -110,6 +110,7 @@ class BinanceBroker:
     def __init__(self, cfg: BotConfig, journal: Journal, demo: bool, key: str = None, secret: str = None):
         import ccxt
         self.cfg, self.j, self.name = cfg, journal, "demo" if demo else "live"
+        self._warned = {}  # trade id -> last time an unproven "closed" was logged
         key, secret = key or os.getenv("BOT_BINANCE_KEY"), secret or os.getenv("BOT_BINANCE_SECRET")
         if not key or not secret:
             raise RuntimeError("No Binance keys: pass them, or set BOT_BINANCE_KEY and BOT_BINANCE_SECRET")
@@ -210,8 +211,22 @@ class BinanceBroker:
             self._cancel(m, oid)
         return self._last_exit(trade)
 
+    def _closed_qty(self, trade: dict) -> float:
+        m = self._m(trade["symbol"])
+        closing = "sell" if trade["side"] > 0 else "buy"
+        return sum(float(f["amount"]) for f in self.ex.fetch_my_trades(m, since=int(trade["entry_ts"] * 1000))
+                   if f["side"] == closing)
+
     def sync(self, trade: dict) -> Optional[Dict[str, Any]]:
         if self._position_qty(trade["symbol"]) > 0:
+            return None
+        # "No position" alone is not proof: an empty answer from the exchange would look the same, and
+        # believing it would cancel the stop of a position that is still open. Require the closing fills.
+        if self._closed_qty(trade) < 0.5 * trade["qty"]:
+            if time.time() - self._warned.get(trade["id"], 0) > 600:
+                self._warned[trade["id"]] = time.time()
+                self.j.event("warn", "sync", f"{trade['symbol']}: the exchange shows no position but no closing "
+                                             f"fills either; leaving the trade and its orders as they are")
             return None
         m = self._m(trade["symbol"])
         for oid in (trade.get("orders") or {}).values():

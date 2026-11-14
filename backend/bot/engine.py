@@ -95,6 +95,7 @@ class Engine:
         self._last_snapshot = 0.0
         self._last_equity = 0.0
         self._targets_done = False
+        self._bar_fails = {}  # symbol -> failed tries at handling its latest bar
         self._late_checked = set()  # symbols already looked at for a missed trend since this start
         self._open_pnl = 0.0  # last known open result of the bot's trades, if a price cannot be read
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
@@ -299,6 +300,10 @@ class Engine:
             return
         orders = self.broker.move_stop(trade, new_sl)
         self.j.update_trade(trade["id"], sl=new_sl, orders=orders, last_check_ms=_next_minute_ms())
+        if side * (trade["sl"] - trade["entry"]) < 0 <= side * (new_sl - trade["entry"]):
+            self._tell(f"aseguró {_coin(trade['symbol'])}: ya no puede cerrar en pérdida",
+                       f"El cierre automático (stop) pasó a {_px(new_sl)}, el precio de entrada o mejor. Si el precio "
+                       f"se da la vuelta, cierra sin perder (salvo comisiones).", "bot_trade", trade["symbol"])
         self.j.decision(trade["symbol"], bar_time, "MOVE_SL", side, "trailing",
                         {"trade_id": trade["id"], "from": trade["sl"], "to": new_sl})
 
@@ -322,24 +327,33 @@ class Engine:
             row = prepared.iloc[-1]
             bar_time = str(df.index[-1])
             sig = int(row["sig"])
+            # The bar counts as handled only once the bot acted on it: a network error while moving a stop or
+            # sizing an entry must not silently lose that bar. A few tries, then it is logged and left.
+            try:
+                trade = next((t for t in self.j.open_trades() if t["symbol"] == symbol), None)
+                if trade:
+                    self._manage(trade, row, bar_time)
+                elif sig != 0 and now - (expected + self.tf_s) <= max(300, self.tf_s * 0.1):
+                    self._signal(symbol, bar_time, sig, float(row["sl"]), _num(row["tp"]), prepared)
+                else:
+                    late = self._late_signal(symbol, prepared)
+                    if late:
+                        side, sl, since, tp = late
+                        self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
+                                                           f"trend signalled on the bar of {since}, which the bot missed")
+                        self._signal(symbol, since, side, sl, tp, prepared)
+                    elif sig != 0:
+                        age = now - (expected + self.tf_s)
+                        self.j.decision(symbol, bar_time, "SKIP", sig, f"stale_signal ({age / 60:.0f} min after bar close)")
+            except Exception as e:
+                fails = self._bar_fails[symbol] = self._bar_fails.get(symbol, 0) + 1
+                if fails < 5:
+                    self.j.event("warn", "bar_retry", f"{symbol} {bar_time}: {e!r}; trying again"[:300])
+                    continue
+                self.j.event("error", "bar", f"{symbol} {bar_time}: gave up after {fails} tries: {e!r}"[:300])
+            self._bar_fails.pop(symbol, None)
             self.j.evaluation(symbol, bar_time, sig, {f: _num(row.get(f)) for f in self.strategy.features})
             self.j.set_state(key, expected)
-
-            trade = next((t for t in self.j.open_trades() if t["symbol"] == symbol), None)
-            if trade:
-                self._manage(trade, row, bar_time)
-            elif sig != 0 and now - (expected + self.tf_s) <= max(300, self.tf_s * 0.1):
-                self._signal(symbol, bar_time, sig, float(row["sl"]), _num(row["tp"]), prepared)
-            else:
-                late = self._late_signal(symbol, prepared)
-                if late:
-                    side, sl, since, tp = late
-                    self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
-                                                       f"trend signalled on the bar of {since}, which the bot missed")
-                    self._signal(symbol, since, side, sl, tp, prepared)
-                elif sig != 0:
-                    age = now - (expected + self.tf_s)
-                    self.j.decision(symbol, bar_time, "SKIP", sig, f"stale_signal ({age / 60:.0f} min after bar close)")
 
     def _late_on_start(self, symbol: str):
         """Once after starting, for a symbol whose latest bar was already handled: do not wait for the next
