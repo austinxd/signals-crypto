@@ -94,6 +94,7 @@ class Engine:
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
         self._last_equity = 0.0
+        self._seen_equity = None  # equity at the previous round, to tell transfers from results
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
 
@@ -150,6 +151,22 @@ class Engine:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self.j.get_state("day") != today:
             self.j.set_state("day", today)
+            self.j.set_state("day_start_equity", equity)
+        # Money moved in or out of the account is not a result. A jump this big between two rounds (or since
+        # the last snapshot, if the bot was off) cannot come from trading at this leverage: shift the day's
+        # starting point and the peak by the same amount, so "today" and the drawdown only measure the bot.
+        if self._seen_equity is None:
+            last = self.j.rows("SELECT equity FROM equity ORDER BY ts DESC LIMIT 1")
+            self._seen_equity = last[0]["equity"] if last else equity
+        moved = equity - self._seen_equity
+        if abs(moved) > 0.03 * max(self._seen_equity, 1.0):
+            self.j.set_state("day_start_equity", max(0.0, self.j.get_state("day_start_equity", equity) + moved))
+            self.j.set_state("peak_equity", max(0.0, self.j.get_state("peak_equity", equity) + moved))
+            self.j.event("info", "transfer", f"balance {'grew' if moved > 0 else 'fell'} by {abs(moved):.2f} "
+                                             f"outside trading (deposit or withdrawal); results not affected")
+        self._seen_equity = equity
+        # A day that more than doubled is a deposit that was counted as a gain before this rule existed.
+        if equity > 2 * (self.j.get_state("day_start_equity", equity) or equity):
             self.j.set_state("day_start_equity", equity)
         peak = max(self.j.get_state("peak_equity", equity), equity)
         self.j.set_state("peak_equity", peak)

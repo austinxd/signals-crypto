@@ -581,3 +581,27 @@ def test_runner_starts_only_enabled_accounts_and_only_with_the_live_lock_off(tmp
     j = users.journal(7)
     assert j.get_state("mode") == "manual" and j.get_state("ai") == "off" and j.get_state("broker") == "live"
     assert users.journal(9) is not None and users.status(9)["start_error"] == "hedge_mode"
+
+
+def test_a_deposit_or_withdrawal_is_not_counted_as_result(tmp_path):
+    from bot.config import BotConfig
+    from bot.engine import Engine
+    from bot.journal import Journal
+
+    class Broker:
+        name, equity = "live", 100.0
+
+        def account(self):
+            return {"equity": self.equity, "balance": self.equity, "open_pnl": 0.0}
+    j, b = Journal(tmp_path / "bot.db"), Broker()
+    eng = Engine(BotConfig(), j, b)
+    eng._account_checks()
+    b.equity = 1100.0                                   # deposit
+    eng._account_checks()
+    assert j.get_state("day_start_equity") == 1100.0 and j.get_state("peak_equity") == 1100.0
+    b.equity = 1089.0                                   # a 1 % loss from trading stays a loss
+    eng._account_checks()
+    assert j.get_state("day_start_equity") == 1100.0 and not j.get_state("paused")
+    b.equity = 589.0                                    # withdrawal: must not look like a crash and pause the bot
+    eng._account_checks()
+    assert not j.get_state("paused") and j.get_state("day_start_equity") == 600.0 and j.get_state("peak_equity") == 600.0
