@@ -49,7 +49,12 @@ def build(trades: int = 15, decisions: int = 20, journal: Journal = None, live_p
         t["open_pnl"] = t["side"] * t["qty"] * (price - t["entry"])
         t["open_r"] = t["open_pnl"] / (t["qty"] * abs(t["entry"] - t["sl0"]))
 
+    # Only the trades made with the kind of money the bot uses now: simulated results must never be added
+    # to real ones once the bot moves from paper to demo or live.
+    broker = state.get("broker")
     closed = j.rows("SELECT * FROM trades WHERE status='closed' ORDER BY exit_ts")
+    other = [t for t in closed if broker and t["broker"] and t["broker"] != broker]
+    closed = [t for t in closed if t not in other]
     last_eq = j.rows("SELECT * FROM equity ORDER BY ts DESC LIMIT 1")
     equity = last_eq[0]["equity"] if last_eq else state.get("paper_balance")
     peak = state.get("peak_equity")
@@ -89,6 +94,7 @@ def build(trades: int = 15, decisions: int = 20, journal: Journal = None, live_p
             "by_symbol": {s: _stats(ts) for s, ts in by_symbol.items()},
         },
         "recent_trades": closed[-trades:][::-1],
+        "other_broker_trades": len(other),  # closed with another kind of money; left out of everything above
         "decision_counts_30d": counts,
         "recent_decisions": j.rows("SELECT * FROM decisions ORDER BY id DESC LIMIT ?", (decisions,)),
         "latest_evaluations": j.rows(

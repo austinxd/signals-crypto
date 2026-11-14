@@ -228,12 +228,28 @@ def test_close_command_and_trade_economics(engine):
     assert t["r"] == pytest.approx(2.0) and t["pnl"] == pytest.approx(100.0)
 
 
+def test_report_does_not_mix_results_from_another_kind_of_money(engine):
+    from bot import report
+    eng, broker = engine
+    for name, pnl in (("paper", 100.0), ("paper", -40.0), ("live", 7.0)):
+        tid = eng.j.open_trade(symbol="X", side=1, qty=1.0, strategy="t", broker=name, entry_ts=1.0, entry=100.0,
+                               sl0=98.0, sl=98.0, tp=None, high_water=100.0, low_water=100.0, fees=0.0,
+                               last_check_ms=0, last_funding_ms=0, orders={})
+        eng.j.update_trade(tid, status="closed", exit_ts=2.0, exit=101.0, exit_reason="stop", fees=0.0, pnl=pnl, r=1.0)
+    rep = report.build(journal=eng.j, live_prices=False)  # the engine runs on the paper broker
+    assert rep["performance"]["all"]["trades"] == 2 and rep["performance"]["all"]["pnl"] == pytest.approx(60.0)
+    assert {t["broker"] for t in rep["recent_trades"]} == {"paper"} and rep["other_broker_trades"] == 1
+    eng.j.set_state("broker", "live")
+    rep = report.build(journal=eng.j, live_prices=False)
+    assert rep["performance"]["all"]["pnl"] == pytest.approx(7.0) and rep["other_broker_trades"] == 2
+
+
 def test_manual_open_goes_through_the_risk_engine_and_notifies(engine, monkeypatch):
     import pandas as pd
     from bot import data
     eng, broker = engine
     told = []
-    eng._notifier = lambda title, body, kind, symbol: told.append((title, kind, symbol))
+    eng._notifier = lambda title, body, kind, symbol, data=None: told.append((title, kind, symbol))
     monkeypatch.setattr(data, "recent_klines", lambda s, tf: None)
     monkeypatch.setattr(eng.strategy, "prepare", lambda df: pd.DataFrame({"atr": [0.8]}))  # stop = 2.5 ATR = 2.0
 
@@ -251,9 +267,9 @@ def test_manual_open_goes_through_the_risk_engine_and_notifies(engine, monkeypat
     symbol, side, qty, sl, tp = broker.opened[0]
     assert (side, sl, tp) == (-1, pytest.approx(102.0), None) and qty * 2.0 == pytest.approx(50.0)  # 0.5% of 10k
     # refusals are told too, in words; then the trade itself, saying it is simulated and what it wins on
-    assert [t[0] for t in told[:2]] == ["Bot (simulado): no abrió tu compra (long) de DOGE",
-                                        "Bot (simulado): no abrió tu compra (long) de X"]
-    assert told[2] == ("Bot (simulado): vendió X, gana si baja", "bot_trade", "X")
+    assert [t[0] for t in told[:2]] == ["Bot (simulado): no abrió tu long de DOGE",
+                                        "Bot (simulado): no abrió tu long de X"]
+    assert told[2] == ("Bot (simulado): abrió short de X, gana si baja", "bot_trade", "X")
     assert "already open" in ask("X", 1)
     eng.j.add_command("close", {"symbol": "X"})
     eng._commands()

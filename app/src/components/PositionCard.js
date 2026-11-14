@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import { useNavigation } from '@react-navigation/native';
 import { getPositionAlerts, getPositionAIAnalysis } from '../services/api';
 import { useSubscription } from '../context/SubscriptionContext';
-import { Card, Chip, Row, Notice, Segment } from './ui';
+import { Card, Chip, Row, Notice, Segment, Collapsible } from './ui';
 import {
   colors, space, radius, type, tint,
   GLOSSARY, trendOf, pairName, fmtPrice, pnlColor, timeAgo,
@@ -11,8 +11,8 @@ import {
 
 // Everything is phrased from the side of the person holding the position.
 const SIDE = {
-  long: { name: 'compra (long)', Name: 'Compra (long)', wins: 'ganas si el precio sube', needs: 'sube', against: 'baja', color: colors.accent },
-  short: { name: 'venta (short)', Name: 'Venta (short)', wins: 'ganas si el precio baja', needs: 'baja', against: 'sube', color: colors.danger },
+  long: { name: 'long', chip: 'LONG · gana si sube', needs: 'sube', against: 'baja', color: colors.accent },
+  short: { name: 'short', chip: 'SHORT · gana si baja', needs: 'baja', against: 'sube', color: colors.danger },
 };
 
 const RISK_TONE = { low: 'good', medium: 'warn', high: 'danger' };
@@ -38,14 +38,14 @@ const STRUCTURE = {
 // Plain titles for the alert types the server sends.
 const ALERT_TITLES = {
   htf_bias_changed: 'La tendencia de fondo cambió',
-  htf_momentum_changed: 'La tendencia giró en contra de tu posición',
+  htf_momentum_changed: 'La tendencia giró en contra de tu operación',
   scenario_changed: 'Cambió la situación del mercado',
   volatility_changed: 'El precio se mueve con más brusquedad',
   price_at_key_zone: 'El precio llegó a un nivel importante',
-  coherence_changed: 'El mercado ya no acompaña a tu posición',
-  thesis_invalidated: 'El motivo de tu posición ya no vale',
-  multiple_against_context: 'Varias posiciones van contra la tendencia',
-  high_risk_exposure: 'Varias posiciones perdieron su motivo',
+  coherence_changed: 'El mercado ya no acompaña a tu operación',
+  thesis_invalidated: 'El motivo de tu operación ya no vale',
+  multiple_against_context: 'Varias operaciones van contra la tendencia',
+  high_risk_exposure: 'Varias operaciones perdieron su motivo',
   favorable_conditions: 'Condiciones a favor',
   trailing_breakeven: 'Conviene subir el cierre automático al precio de entrada',
   trailing_update: 'Conviene mover el cierre automático',
@@ -125,14 +125,94 @@ const RSIBar = ({ value }) => {
   );
 };
 
-/** Tappable line that opens a block of detail inside the card. */
-const Toggle = ({ label, open, onPress, right }) => (
-  <TouchableOpacity style={styles.toggle} onPress={onPress} activeOpacity={0.7}>
-    <Text style={[type.body, { flex: 1, fontWeight: '600' }]}>{label}</Text>
-    {right}
-    <Text style={styles.toggleAction}>{open ? 'Ocultar' : 'Ver'}</Text>
-  </TouchableOpacity>
-);
+/** Mounted only when its section is opened, so the AI is asked (and a query spent) only on demand. */
+const AIBody = ({ symbol }) => {
+  const navigation = useNavigation();
+  const { aiRemaining, refresh } = useSubscription();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [limit, setLimit] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (!symbol || aiRemaining <= 0) {
+      setLimit(aiRemaining <= 0);
+      setLoading(false);
+      return undefined;
+    }
+    getPositionAIAnalysis(symbol)
+      .then((result) => {
+        if (!alive) return;
+        setData(result);
+        // A fresh answer uses one of the daily AI queries
+        if (!result.cached) refresh();
+      })
+      .catch((err) => {
+        if (alive && err.status === 429) setLimit(true);
+      })
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
+
+  if (loading) {
+    return (
+      <View style={styles.aiLoading}>
+        <ActivityIndicator size="small" color={colors.accent} />
+        <Text style={[type.bodyDim, { marginLeft: space.sm }]}>Analizando tu operación…</Text>
+      </View>
+    );
+  }
+  if (limit) {
+    return (
+      <TouchableOpacity style={styles.tapLine} onPress={() => navigation.navigate('Upgrade')}>
+        <Text style={[type.bodyDim, { color: colors.warn }]}>
+          Has usado todas tus consultas de hoy. Toca para ver Premium.
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+  if (!data) return <Text style={type.bodyDim}>No se pudo obtener el análisis. Inténtalo más tarde.</Text>;
+  return (
+    <>
+      <AIBlock title="Lectura" text={data.lectura} color={colors.info} />
+      <AIBlock title="Punto débil" text={data.fragilidad} color={colors.warn} />
+      <AIBlock title="↑ Si va a tu favor" text={data.si_favorece} color={colors.accent} />
+      <AIBlock title="↓ Si va en tu contra" text={data.si_contra} color={colors.danger} />
+      {!!data.generated_at && (
+        <Text style={[type.small, { textAlign: 'right' }]}>Generado {timeAgo(data.generated_at)}</Text>
+      )}
+    </>
+  );
+};
+
+/** Mounted only when opened: the alert history of one position. */
+const AlertsBody = ({ symbol }) => {
+  const [alerts, setAlerts] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    getPositionAlerts(symbol)
+      .then((data) => alive && setAlerts(data.alerts || []))
+      .catch(() => alive && setAlerts([]));
+    return () => { alive = false; };
+  }, [symbol]);
+  if (alerts == null) return <Text style={type.bodyDim}>Cargando…</Text>;
+  if (alerts.length === 0) return <Text style={type.bodyDim}>Sin avisos recientes.</Text>;
+  return alerts.map((alert, i) => {
+    const kind = alert?.type || alert?.alert_type;
+    return (
+      <Notice
+        key={alert?.id || i}
+        tone={ALERT_TONE[kind] || 'info'}
+        title={ALERT_TITLES[kind] || alert?.title || 'Aviso'}
+        style={{ marginBottom: space.sm }}
+      >
+        <Text style={type.bodyDim}>{alert?.message}</Text>
+        {!!alert?.created_at && <Text style={[type.small, { marginTop: 2 }]}>{timeAgo(alert.created_at)}</Text>}
+      </Notice>
+    );
+  });
+};
 
 const SubTitle = ({ children }) => <Text style={[type.label, styles.subTitle]}>{children}</Text>;
 
@@ -145,29 +225,10 @@ const AIBlock = ({ title, text, color }) =>
   ) : null;
 
 const PositionCard = ({ position, totalCount = 1 }) => {
-  const navigation = useNavigation();
-  const { aiRemaining, refresh: refreshSubscription } = useSubscription();
-
-  const [alerts, setAlerts] = useState([]);
-  const [showAlerts, setShowAlerts] = useState(false);
+  const { aiRemaining } = useSubscription();
   const [selectedTF, setSelectedTF] = useState('4h');
   // Open by default only when it is the only position
   const [expanded, setExpanded] = useState(totalCount <= 1);
-  const [showDetail, setShowDetail] = useState(false);
-
-  // AI analysis: only asked for when the user opens it
-  const [showAI, setShowAI] = useState(false);
-  const [aiData, setAiData] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiLimitError, setAiLimitError] = useState(false);
-
-  const handleToggleAI = () => {
-    if (!showAI && aiRemaining <= 0) {
-      navigation.navigate('Upgrade');
-      return;
-    }
-    setShowAI(!showAI);
-  };
 
   const isLong = position?.side?.toUpperCase() === 'LONG';
   const side = isLong ? SIDE.long : SIDE.short;
@@ -220,41 +281,6 @@ const PositionCard = ({ position, totalCount = 1 }) => {
   const timeframes = position?.timeframes || {};
   const ind = timeframes[selectedTF] || {};
 
-  useEffect(() => {
-    if (showAlerts && alerts.length === 0) {
-      getPositionAlerts(position.symbol)
-        .then((data) => setAlerts(data.alerts || []))
-        .catch(() => {});
-    }
-  }, [showAlerts]);
-
-  useEffect(() => {
-    if (!showAI || !position?.symbol) return;
-
-    const fetchAI = async () => {
-      try {
-        setAiLoading(true);
-        setAiLimitError(false);
-        const result = await getPositionAIAnalysis(position.symbol);
-        setAiData(result);
-        // A fresh answer uses one of the daily AI queries
-        if (!result.cached) {
-          refreshSubscription();
-        }
-      } catch (err) {
-        console.error('Error fetching position AI:', err);
-        if (err.status === 429) {
-          setAiLimitError(true);
-        }
-        setAiData(null);
-      } finally {
-        setAiLoading(false);
-      }
-    };
-
-    fetchAI();
-  }, [showAI, position?.symbol, refreshSubscription]);
-
   const distance = (level) =>
     level && current ? pct((Math.abs(current - level) / current) * 100) : null;
   const liqDistance = distance(liqPrice);
@@ -262,6 +288,30 @@ const PositionCard = ({ position, totalCount = 1 }) => {
   const invDistance = distance(invLevel);
 
   const suggestion = plainSuggestion(analysis.suggestion, side);
+  // One verdict for the card: the worst thing that is true goes in the title, the rest are lines under it.
+  const verdict = isInvalidated
+    ? {
+        tone: 'danger',
+        title: 'El motivo de la operación ya no vale',
+        lines: [
+          invLevel != null
+            ? `El precio (${fmtPrice(current)}) ${isLong ? 'bajó de' : 'subió por encima de'} ${fmtPrice(invLevel)}, el nivel que sostenía tu ${side.name}. Volvería a tener sentido si cierra ${isLong ? 'por encima' : 'por debajo'} de ${fmtPrice(invLevel)}.`
+            : `El precio rompió el nivel que sostenía tu ${side.name}. Mantenerla ya no tiene respaldo.`,
+          'La app no cierra nada por ti: decides tú en Binance.',
+        ],
+      }
+    : {
+        tone: coherence.tone === 'info' && RISK_TONE[analysis.risk_level] === 'danger' ? 'warn' : coherence.tone,
+        title: coherence.label,
+        lines: [
+          coherence.text,
+          invLevel != null
+            ? `Sigue teniendo sentido mientras el precio se mantenga ${isLong ? 'por encima' : 'por debajo'} de ${fmtPrice(invLevel)}${invDistance ? ` (está a ${invDistance})` : ''}.`
+            : null,
+        ],
+      };
+  if (suggestion) verdict.lines.push(`Ahora mismo: ${suggestion}`);
+  verdict.lines = verdict.lines.filter(Boolean);
   const sentiment = SENTIMENT[analysis.market_sentiment];
   const htf = trendOf(analysis.htf_bias === 'rango' ? 'neutral' : analysis.htf_bias);
   const ltf = trendOf(analysis.ltf_momentum);
@@ -275,10 +325,9 @@ const PositionCard = ({ position, totalCount = 1 }) => {
         <View style={{ flex: 1 }}>
           <View style={styles.headerLine}>
             <Text style={styles.symbol}>{coin}</Text>
-            <Chip label={isLong ? 'COMPRA · LONG' : 'VENTA · SHORT'} color={side.color} style={styles.headerChip} />
-            {leverage > 1 && (
-              <Chip label={`x${leverage} apalancado`} color={colors.textDim} style={styles.headerChip} />
-            )}
+            <Chip label={expanded ? side.chip : side.name.toUpperCase()} color={side.color} style={styles.headerChip} />
+            {leverage > 1 && <Chip label={`x${leverage}`} color={colors.textDim} style={styles.headerChip} />}
+            {stopLoss == null && <Chip label="SIN STOP" color={colors.danger} solid style={styles.headerChip} />}
           </View>
           <Text style={[type.small, { color: coherence.color, marginTop: 4 }]}>{coherence.label}</Text>
         </View>
@@ -292,14 +341,16 @@ const PositionCard = ({ position, totalCount = 1 }) => {
 
       {expanded && (
         <>
-          {/* 1. What it is and what makes it win */}
-          <Text style={[type.body, { marginTop: space.sm }]}>
-            {side.Name} de {coin}: {side.wins}.
-          </Text>
+          {/* 1. The verdict */}
+          <Notice tone={verdict.tone} title={verdict.title} style={{ marginTop: space.md, marginBottom: 0 }}>
+            {verdict.lines.map((line, i) => (
+              <Text key={i} style={[type.bodyDim, i > 0 && { marginTop: space.xs }]}>{line}</Text>
+            ))}
+          </Notice>
 
           {/* 2. How it is going */}
           <View style={[styles.pnlBox, { backgroundColor: tint(pnlC, 0.1) }]}>
-            <Text style={type.small}>{pnl >= 0 ? 'Vas ganando (aún sin cerrar)' : 'Vas perdiendo (aún sin cerrar)'}</Text>
+            <Text style={type.small}>{pnl >= 0 ? 'Vas ganando · dinero real, aún sin cerrar' : 'Vas perdiendo · dinero real, aún sin cerrar'}</Text>
             <Text style={[styles.pnlValue, { color: pnlC }]}>{esSigned(pnl)} USDT</Text>
             {movePct != null && (
               <Text style={[styles.pnlPercent, { color: pnlC }]}>
@@ -312,8 +363,8 @@ const PositionCard = ({ position, totalCount = 1 }) => {
           {/* 3. Where it closes by itself */}
           <SubTitle>Dónde se cierra sola</SubTitle>
           {stopLoss == null ? (
-            <Notice tone="danger" title="No tiene cierre automático de pérdidas">
-              Si el precio va en contra, nada detiene esta posición{liqPrice != null ? ' hasta la liquidación' : ''}. Puedes ponerle
+            <Notice tone="danger" title="No tiene cierre automático de pérdidas (stop)">
+              Si el precio va en contra, nada detiene esta operación{liqPrice != null ? ' hasta la liquidación' : ''}. Puedes ponerle
               un stop desde Binance.
             </Notice>
           ) : (
@@ -324,7 +375,7 @@ const PositionCard = ({ position, totalCount = 1 }) => {
               color={colors.danger}
               help={
                 stopOutcome == null
-                  ? `Si el precio ${side.against} hasta aquí, la posición se cierra sola.`
+                  ? `Si el precio ${side.against} hasta aquí, la operación se cierra sola.`
                   : stopOutcome < 0
                     ? `Si el precio ${side.against} hasta aquí se cierra sola y pierdes ≈ ${es(Math.abs(stopOutcome))} USDT.`
                     : `Ya está en zona de ganancia: si el precio ${side.against} hasta aquí se cierra sola y aseguras ≈ ${esSigned(stopOutcome)} USDT.`
@@ -340,7 +391,7 @@ const PositionCard = ({ position, totalCount = 1 }) => {
               help={
                 targetOutcome != null && targetOutcome > 0
                   ? `Si el precio ${side.needs} hasta aquí se cierra sola y ganas ≈ ${es(targetOutcome)} USDT.`
-                  : `Si el precio ${side.needs} hasta aquí, la posición se cierra sola con ganancia.`
+                  : `Si el precio ${side.needs} hasta aquí, la operación se cierra sola con ganancia.`
               }
             />
           )}
@@ -350,106 +401,47 @@ const PositionCard = ({ position, totalCount = 1 }) => {
               label="Precio en el que lo pierdes todo (liquidación)"
               value={fmtPrice(liqPrice)}
               color={colors.danger}
-              help={`${liqDistance ? `Está a ${liqDistance} del precio actual. ` : ''}Si el precio llega ahí, Binance cierra la posición y pierdes el dinero que pusiste${margin ? ` (${es(margin)} USDT)` : ''}.`}
-            />
-          )}
-
-          {/* 4. Does the reason to hold still stand */}
-          <SubTitle>¿Sigue teniendo sentido?</SubTitle>
-          {isInvalidated ? (
-            <Notice tone="danger" title="El motivo de la operación ya no vale">
-              {invLevel != null
-                ? `El precio (${fmtPrice(current)}) ${isLong ? 'bajó de' : 'subió por encima de'} ${fmtPrice(invLevel)}, el nivel que sostenía tu ${side.name}. Mantenerla ya no tiene respaldo. Volvería a tener sentido si el precio cierra ${isLong ? 'por encima' : 'por debajo'} de ${fmtPrice(invLevel)}.`
-                : `El precio rompió el nivel que sostenía tu ${side.name}. Mantenerla ya no tiene respaldo.`}
-              {' '}La app no cierra nada por ti.
-            </Notice>
-          ) : (
-            <>
-              <Notice tone={coherence.tone} title={coherence.label}>
-                {coherence.text}
-              </Notice>
-              {invLevel != null && (
-                <Notice tone="info" title="Hasta dónde aguanta la idea">
-                  {`Tu ${side.name} sigue teniendo sentido mientras el precio se mantenga ${isLong ? 'por encima' : 'por debajo'} de ${fmtPrice(invLevel)}${invDistance ? ` (está a ${invDistance})` : ''}.`}
-                </Notice>
-              )}
-            </>
-          )}
-          {!!suggestion && (
-            <Notice tone={RISK_TONE[analysis.risk_level] || 'info'} title="Ahora mismo">
-              {suggestion}
-            </Notice>
-          )}
-
-          {/* The plain facts of the position */}
-          <SubTitle>Tu posición</SubTitle>
-          <Row first label={isLong ? 'Compraste a' : 'Vendiste a'} value={fmtPrice(entry)} />
-          <Row label="Precio ahora" value={fmtPrice(current)} />
-          {qtyText(qty) != null && (
-            <Row
-              label="Cantidad"
-              value={`${qtyText(qty)} ${coin}`}
-              help={notional ? `Equivale a ≈ ${es(notional)} USDT.` : undefined}
-            />
-          )}
-          {margin != null && (
-            <Row
-              label="Dinero tuyo en juego"
-              value={`${es(margin)} USDT`}
-              help={leverage > 1
-                ? `Con x${leverage}, mueves ${leverage} veces ese dinero: las ganancias y las pérdidas se multiplican por ${leverage}.`
-                : undefined}
+              help={`${liqDistance ? `Está a ${liqDistance} del precio actual. ` : ''}Si el precio llega ahí, Binance cierra la operación y pierdes el dinero que pusiste${margin ? ` (${es(margin)} USDT)` : ''}.`}
             />
           )}
 
           <View style={{ height: space.md }} />
 
-          {/* AI analysis */}
-          <Toggle
-            label="Análisis con IA"
-            open={showAI}
-            onPress={handleToggleAI}
-            right={!showAI && aiRemaining <= 3 ? (
-              <Chip
-                label={aiRemaining > 0 ? `Quedan ${aiRemaining}` : 'Sin consultas'}
-                color={aiRemaining > 0 ? colors.warn : colors.danger}
-                style={{ alignSelf: 'center', marginRight: space.sm }}
-              />
-            ) : null}
-          />
-          {showAI && (
-            <View style={styles.block}>
-              {aiLoading ? (
-                <View style={styles.aiLoading}>
-                  <ActivityIndicator size="small" color={colors.accent} />
-                  <Text style={[type.bodyDim, { marginLeft: space.sm }]}>Analizando tu posición…</Text>
-                </View>
-              ) : aiLimitError ? (
-                <TouchableOpacity style={styles.tapLine} onPress={() => navigation.navigate('Upgrade')}>
-                  <Text style={[type.bodyDim, { color: colors.warn }]}>
-                    Has usado todas tus consultas de hoy. Toca para ver Premium.
-                  </Text>
-                </TouchableOpacity>
-              ) : aiData ? (
-                <>
-                  <AIBlock title="Lectura" text={aiData.lectura} color={colors.info} />
-                  <AIBlock title="Punto débil" text={aiData.fragilidad} color={colors.warn} />
-                  <AIBlock title="↑ Si va a tu favor" text={aiData.si_favorece} color={colors.accent} />
-                  <AIBlock title="↓ Si va en tu contra" text={aiData.si_contra} color={colors.danger} />
-                  {!!aiData.generated_at && (
-                    <Text style={[type.small, { textAlign: 'right' }]}>Generado {timeAgo(aiData.generated_at)}</Text>
-                  )}
-                </>
-              ) : (
-                <Text style={type.bodyDim}>No se pudo obtener el análisis. Inténtalo más tarde.</Text>
-              )}
-            </View>
-          )}
+          <Collapsible
+            plain
+            title="Análisis con IA"
+            right={aiRemaining <= 3 ? (aiRemaining > 0 ? `Quedan ${aiRemaining}` : 'Sin consultas') : undefined}
+            rightColor={aiRemaining > 0 ? colors.warn : colors.danger}
+          >
+            <AIBody symbol={position?.symbol} />
+          </Collapsible>
 
-          {/* Technical detail */}
-          <Toggle label="Más detalle" open={showDetail} onPress={() => setShowDetail(!showDetail)} />
-          {showDetail && (
-            <View style={styles.block}>
+          <Collapsible plain title="Avisos de esta operación">
+            <AlertsBody symbol={position?.symbol} />
+          </Collapsible>
+
+          <Collapsible plain title="Más detalle">
+            <View>
+              <SubTitle>Tu operación</SubTitle>
+              <Row first label="Entraste a" value={fmtPrice(entry)} />
+              <Row label="Precio ahora" value={fmtPrice(current)} />
+              {qtyText(qty) != null && (
+                <Row
+                  label="Cantidad"
+                  value={`${qtyText(qty)} ${coin}`}
+                  help={notional ? `Equivale a ≈ ${es(notional)} USDT.` : undefined}
+                />
+              )}
+              {margin != null && (
+                <Row
+                  label="Dinero tuyo en juego"
+                  value={`${es(margin)} USDT`}
+                  help={leverage > 1
+                    ? `Con x${leverage}, mueves ${leverage} veces ese dinero: las ganancias y las pérdidas se multiplican por ${leverage}.`
+                    : undefined}
+                />
+              )}
+
               <SubTitle>Cómo está el mercado</SubTitle>
               <Row
                 first
@@ -463,29 +455,8 @@ const PositionCard = ({ position, totalCount = 1 }) => {
                 value={STRUCTURE[analysis.htf_structure] || capital(words(analysis.htf_structure))}
                 help={GLOSSARY.structure}
               />
-              {invLevel != null && (
-                <Row
-                  label="Precio que rompe el motivo de la operación"
-                  value={invDistance ? `${fmtPrice(invLevel)} · a ${invDistance}` : fmtPrice(invLevel)}
-                  color={colors.warn}
-                />
-              )}
               {!!sentiment && (
                 <Row label="Últimos minutos" value={`${sentiment.arrow} ${sentiment.label.replace('Mercado ', '')}`} color={sentiment.color} />
-              )}
-
-              {(!!analysis.coherence_text || !!analysis.thesis_status || !!analysis.suggestion) && (
-                <>
-                  <SubTitle>Lectura técnica del servidor</SubTitle>
-                  {[analysis.coherence_text, analysis.thesis_status,
-                    isInvalidated ? analysis.recovery_condition : analysis.invalidation_condition,
-                    analysis.suggestion].filter(Boolean).map((line, i) => (
-                    <View key={i} style={styles.bulletRow}>
-                      <Text style={styles.bullet}>•</Text>
-                      <Text style={[type.small, { flex: 1 }]}>{line}</Text>
-                    </View>
-                  ))}
-                </>
               )}
               <Row
                 label="Fuerza ahora"
@@ -565,34 +536,7 @@ const PositionCard = ({ position, totalCount = 1 }) => {
                 <Text style={[type.bodyDim, { paddingVertical: space.md }]}>Sin datos para este plazo.</Text>
               )}
             </View>
-          )}
-
-          {/* Alerts */}
-          <Toggle label="Avisos de esta posición" open={showAlerts} onPress={() => setShowAlerts(!showAlerts)} />
-          {showAlerts && (
-            <View style={styles.block}>
-              {alerts.length === 0 ? (
-                <Text style={type.bodyDim}>Sin avisos recientes.</Text>
-              ) : (
-                alerts.map((alert, i) => {
-                  const kind = alert?.type || alert?.alert_type;
-                  return (
-                    <Notice
-                      key={alert?.id || i}
-                      tone={ALERT_TONE[kind] || 'info'}
-                      title={ALERT_TITLES[kind] || alert?.title || 'Aviso'}
-                      style={{ marginBottom: space.sm }}
-                    >
-                      <Text style={type.bodyDim}>{alert?.message}</Text>
-                      {!!alert?.created_at && (
-                        <Text style={[type.small, { marginTop: 2 }]}>{timeAgo(alert.created_at)}</Text>
-                      )}
-                    </Notice>
-                  );
-                })
-              )}
-            </View>
-          )}
+          </Collapsible>
         </>
       )}
     </Card>
@@ -608,12 +552,7 @@ const styles = StyleSheet.create({
   pnlBox: { borderRadius: radius.md, padding: space.lg, marginTop: space.md, marginBottom: space.sm, alignItems: 'center' },
   pnlValue: { fontSize: 30, fontWeight: '700', fontVariant: ['tabular-nums'], marginTop: 2 },
   pnlPercent: { fontSize: 13, fontWeight: '600', marginTop: 4, textAlign: 'center' },
-  toggle: {
-    flexDirection: 'row', alignItems: 'center', minHeight: 48,
-    borderTopWidth: 1, borderTopColor: colors.border,
-  },
   toggleAction: { color: colors.accent, fontSize: 14, fontWeight: '600' },
-  block: { paddingBottom: space.md },
   subTitle: { marginTop: space.lg, marginBottom: space.sm },
   value: { color: colors.text, fontSize: 14, fontWeight: '600' },
   aiBlock: {

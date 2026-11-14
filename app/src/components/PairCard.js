@@ -5,12 +5,13 @@ import { colors, space, radius, type, pairName, fmtPrice } from '../theme';
 import { explain } from '../explain';
 
 /**
- * Summary of one coin: what it costs, whether it is a good moment, and why in one sentence.
- * The full analysis lives in PairDetailModal, opened by tapping the card.
+ * One coin in the market list, answer first: name, what to do (long / short / wait), price, verdict and one sentence.
+ * Everything else lives in PairDetailModal, opened by tapping the row.
  */
 const PairCard = ({ pair, data, onPress, onLongPress }) => {
   const analysis = data?.analysis;
   const view = explain(analysis);
+  const shortMark = String(view.mark || '').split(' · ')[0]; // "↑ LONG" | "↓ SHORT" | "— ESPERAR"
 
   return (
     <TouchableOpacity
@@ -21,26 +22,19 @@ const PairCard = ({ pair, data, onPress, onLongPress }) => {
       activeOpacity={0.75}
     >
       <View style={styles.top}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{pairName(pair)}</Text>
-          <Text style={type.small}>{pair}</Text>
-        </View>
+        <Text style={styles.name}>{pairName(pair)}</Text>
+        {!!analysis && <Text style={[styles.mark, { color: view.markColor }]}>{shortMark}</Text>}
         <Text style={styles.price}>{data?.price != null ? fmtPrice(data.price) : '…'}</Text>
       </View>
 
       {!data ? (
-        <Text style={[type.bodyDim, { marginTop: space.md }]}>Cargando el análisis…</Text>
+        <Text style={[type.small, { marginTop: space.sm }]}>Cargando el análisis…</Text>
       ) : !analysis ? (
-        <Text style={[type.bodyDim, { marginTop: space.md }]}>Todavía no hay análisis para esta moneda.</Text>
+        <Text style={[type.small, { marginTop: space.sm }]}>Todavía no hay análisis para esta moneda.</Text>
       ) : (
         <>
-          <Text style={[styles.mark, { color: view.markColor }]}>{view.mark}</Text>
           <Chip label={view.headline} color={view.color} solid style={styles.verdict} />
-          <Text style={[type.body, { marginTop: space.md }]}>{view.action}</Text>
-          {!!view.means && <Text style={[type.small, { marginTop: space.sm }]}>{view.means}</Text>}
-          <View style={styles.footer}>
-            <Text style={styles.more}>Ver por qué y qué hacer</Text>
-          </View>
+          <Text style={[type.bodyDim, { marginTop: space.sm }]} numberOfLines={2}>{view.action}</Text>
         </>
       )}
     </TouchableOpacity>
@@ -49,19 +43,14 @@ const PairCard = ({ pair, data, onPress, onLongPress }) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface, borderRadius: radius.lg, padding: space.lg, marginBottom: space.md,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radius.lg, paddingHorizontal: space.lg, paddingVertical: space.md,
+    marginBottom: space.sm, borderWidth: 1, borderColor: colors.border,
   },
-  top: { flexDirection: 'row', alignItems: 'center' },
-  name: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  price: { ...type.number, marginLeft: space.md },
-  mark: { marginTop: space.md, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
-  verdict: { marginTop: space.sm, paddingVertical: 6, paddingHorizontal: 12 },
-  footer: {
-    flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
-    marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.border,
-  },
-  more: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  top: { flexDirection: 'row', alignItems: 'baseline' },
+  name: { color: colors.text, fontSize: 19, fontWeight: '700' },
+  mark: { flex: 1, marginLeft: space.md, fontSize: 13, fontWeight: '800', letterSpacing: 0.5 },
+  price: { ...type.number, fontSize: 17, marginLeft: 'auto', paddingLeft: space.md },
+  verdict: { marginTop: space.sm, paddingVertical: 5, paddingHorizontal: 12 },
 });
 
 export default PairCard;

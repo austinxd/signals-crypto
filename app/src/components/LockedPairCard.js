@@ -8,31 +8,27 @@ const LockedPairCard = ({ pair, onPress, onRemove }) => (
   <TouchableOpacity onPress={onPress} style={styles.card} activeOpacity={0.75}>
     <View style={styles.top}>
       <Text style={styles.name}>{pairName(pair) || 'Moneda'}</Text>
-      <Chip label="Premium" color={colors.warn} />
-    </View>
-    <Text style={[type.bodyDim, { marginTop: space.sm }]}>
-      El plan gratuito muestra el análisis de una sola moneda: la primera que añadiste.
-    </Text>
-    <View style={styles.actions}>
-      <Text style={styles.more}>Desbloquear con Premium</Text>
+      <Chip label="Premium" color={colors.warn} style={{ marginLeft: space.md }} />
+      <View style={{ flex: 1 }} />
       {!!onRemove && (
         <TouchableOpacity onPress={onRemove} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.remove}>Quitar</Text>
         </TouchableOpacity>
       )}
     </View>
+    <Text style={[type.small, { marginTop: space.xs }]}>
+      El plan gratis solo analiza tu primera moneda. Toca para ver Premium.
+    </Text>
   </TouchableOpacity>
 );
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface, borderRadius: radius.lg, padding: space.lg, marginBottom: space.md,
-    borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', minHeight: 44,
+    backgroundColor: colors.surface, borderRadius: radius.lg, paddingHorizontal: space.lg, paddingVertical: space.md,
+    marginBottom: space.sm, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', minHeight: 44,
   },
-  top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  name: { color: colors.textDim, fontSize: 20, fontWeight: '700' },
-  actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: space.md },
-  more: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  top: { flexDirection: 'row', alignItems: 'center' },
+  name: { color: colors.textDim, fontSize: 19, fontWeight: '700' },
   remove: { color: colors.textDim, fontSize: 14, fontWeight: '600' },
 });
 

@@ -733,7 +733,7 @@ def check_position_state_changes(
 
     symbol_short = symbol.replace("/USDT", "").replace(":USDT", "")
     going_long = side.upper() == "LONG"
-    mine = "compra (long)" if going_long else "venta (short)"  # how the user's position is named in every text
+    mine = "long real" if going_long else "short real"  # how the user's position is named in every text
     not_closed = " La app no cerró nada: decides tú."
 
     # --- Thesis Invalidated ---
@@ -866,7 +866,7 @@ def check_meta_alerts(
     # --- Multiple Against Context ---
     if against_context_count >= 2:
         if not _is_on_cooldown(AlertType.MULTIPLE_AGAINST_CONTEXT, cache_key):
-            title = "Varias posiciones contra la tendencia"
+            title = "Tu Binance: varias operaciones reales van contra la tendencia"
             body = (f"Tienes {against_context_count} posiciones abiertas en Binance que van en contra de la tendencia "
                     f"de fondo. Revísalas en la pestaña Posiciones; la app no cerró nada.")
 
@@ -885,7 +885,7 @@ def check_meta_alerts(
     # --- High Risk Exposure ---
     if high_risk_count >= 2:
         if not _is_on_cooldown(AlertType.HIGH_RISK_EXPOSURE, cache_key):
-            title = "Varias posiciones perdieron su motivo"
+            title = "Tu Binance: varias operaciones reales perdieron su motivo"
             body = (f"Tienes {high_risk_count} posiciones cuyo nivel de apoyo se rompió. Revísalas una a una en "
                     f"Posiciones; la app no cerró nada.")
 
@@ -983,8 +983,12 @@ def send_signal_notification(
     emoji = "🟢" if signal_type == "LONG" else "🔴"
     quality_emoji = {"OPTIMA": "✅", "BUENA": "👍", "TEMPRANA": "⚡"}.get(quality, "")
 
-    title = f"{emoji} {pair_short} - Senal {signal_type}"
-    body = f"{quality_emoji} {quality} ({score:.1f} pts)\nEntrada: ${entry_price:,.2f}\nTP: ${take_profit:,.2f} | SL: ${stop_loss:,.2f}"
+    side_txt = "long (apostar a que sube)" if signal_type == "LONG" else "short (apostar a que baja)"
+    title = f"Sugerencia · {pair_short}: posible {signal_type.lower()}"
+    body = (
+        f"Solo es un análisis, no se ha abierto nada. Idea: {side_txt} cerca de ${entry_price:,.2f}, "
+        f"con cierre de pérdidas (stop) en ${stop_loss:,.2f} y objetivo en ${take_profit:,.2f}."
+    )
 
     notifications_sent = []
 

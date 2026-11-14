@@ -5,8 +5,8 @@ import { getPositions } from '../services/api';
 import PositionCard from '../components/PositionCard';
 import LockedPositionCard from '../components/LockedPositionCard';
 import { useSubscription } from '../context/SubscriptionContext';
-import { Screen, Card, Stat, StatRow, Notice, Empty, Loading, Button } from '../components/ui';
-import { space, type, fmtSigned, pnlColor } from '../theme';
+import { Screen, Card, Stat, StatRow, Notice, Empty, Loading, Button, Help } from '../components/ui';
+import { colors, space, type, fmtSigned, pnlColor } from '../theme';
 
 const PositionsScreen = () => {
   const navigation = useNavigation();
@@ -31,9 +31,9 @@ const PositionsScreen = () => {
       setTotalPnl(pnl);
     } catch (err) {
       if (err.status === 401) {
-        setError('Inicia sesión para ver tus posiciones.');
+        setError('Inicia sesión para ver tus operaciones.');
       } else {
-        setError('No se pudieron cargar tus posiciones. Revisa tu conexión.');
+        setError('No se pudieron cargar tus operaciones. Revisa tu conexión.');
       }
       console.error('Positions error:', err);
     } finally {
@@ -59,6 +59,15 @@ const PositionsScreen = () => {
   }, [fetchPositions]);
 
   const count = positions.length;
+  const noStop = positions.filter((p) => !(Number(p.current_stop_loss ?? p.stop_loss) > 0)).length;
+
+  const scope = (
+    <Help label="¿Qué aparece aquí?" style={{ marginBottom: space.md }}>
+      Solo tus operaciones de futuros en Binance (USDT-M), con tu dinero real. Las monedas que tengas compradas en tu
+      billetera spot, en Earn o en Funding no aparecen aquí ni se analizan. Las operaciones del bot son simuladas y
+      están en la pestaña Bot.
+    </Help>
+  );
 
   const body = () => {
     if (error) {
@@ -69,20 +78,20 @@ const PositionsScreen = () => {
         </Notice>
       );
     }
-    if (!loaded) return <Loading label="Leyendo tus posiciones…" />;
+    if (!loaded) return <Loading label="Leyendo tus futuros en Binance…" />;
     if (count === 0) {
       if (hasKeys === true) {
         return (
           <Empty
-            title="No tienes operaciones abiertas en Binance"
-            hint="Tu cuenta está conectada. Cuando abras una operación de futuros en Binance aparecerá aquí, con su riesgo y sus avisos. Las operaciones del bot no salen aquí: están en la pestaña Bot."
+            title="No tienes futuros abiertos en Binance"
+            hint="Tu cuenta está conectada. Cuando abras un long o un short en Binance Futuros aparecerá aquí. Las monedas de tu billetera spot no aparecen: la app solo lee futuros."
           />
         );
       }
       return (
         <Empty
           title="Conecta tu cuenta de Binance"
-          hint="Aquí verás las operaciones de futuros que tengas abiertas en Binance: cómo van, dónde se cierran solas y si siguen teniendo sentido. Para eso la app necesita tus claves de Binance; se añaden en Ajustes."
+          hint="Verás tus operaciones de futuros con dinero real: cuánto ganan o pierden, dónde se cierran solas y si siguen teniendo sentido. No se lee tu billetera spot. Las claves se añaden en Ajustes."
           actionLabel="Ir a Ajustes"
           onAction={() => navigation?.navigate?.('Settings')}
         />
@@ -92,12 +101,17 @@ const PositionsScreen = () => {
       <>
         <Card>
           <StatRow>
-            <Stat label="Posiciones abiertas" value={String(count)} hint="En Binance, dinero real" />
             <Stat
-              label="Resultado ahora"
+              label={count === 1 ? 'Resultado de tu operación' : `Resultado de tus ${count} operaciones`}
               value={`${fmtSigned(totalPnl)} USDT`}
               color={pnlColor(totalPnl)}
-              hint="Sin cerrar: cambia con el precio"
+              hint="Dinero real, aún sin cerrar"
+            />
+            <Stat
+              label="Sin cierre automático (stop)"
+              value={String(noStop)}
+              color={noStop > 0 ? colors.danger : colors.accent}
+              hint={noStop > 0 ? 'Nada limita su pérdida' : 'Todas tienen stop'}
             />
           </StatRow>
         </Card>
@@ -129,11 +143,13 @@ const PositionsScreen = () => {
 
   return (
     <Screen
-      title="Posiciones"
-      subtitle="Tus operaciones en Binance, con tu dinero real. Las del bot no salen aquí."
+      title="Mi Binance"
+      subtitle="Tus futuros abiertos"
+      money="real"
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      {loaded && !error && scope}
       {body()}
     </Screen>
   );

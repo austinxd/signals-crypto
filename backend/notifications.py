@@ -136,20 +136,18 @@ def send_exit_notification(
 
     pair_short = symbol.replace("/USDT", "")
 
-    # Determine urgency
+    # These are about a real position on the user's own Binance account: the title says so.
     if alert_type in ("MACD_REVERSAL", "RSI_DIVERGENCE"):
-        urgency = "URGENTE"
-        title = f"URGENTE {pair_short} - {alert_type.replace('_', ' ')}"
+        title = f"Tu posición real · {pair_short}: posible giro en contra"
     elif alert_type == "RSI_EXTREME":
-        urgency = "Atencion"
-        title = f"Atencion {pair_short} - RSI Extremo"
+        title = f"Tu posición real · {pair_short}: el precio se movió muy rápido"
     else:
-        title = f"{pair_short} - Trailing Stop"
+        title = f"Tu posición real · {pair_short}: cierre automático (stop)"
 
     if was_executed:
-        body = f"[BOT] SL movido automaticamente.\n{message}"
+        body = f"Stop movido automáticamente en tu cuenta real de Binance.\n{message}"
     else:
-        body = f"Recomendacion: {message}"
+        body = f"Sugerencia, no se ha tocado nada: {message}"
 
     try:
         response = requests.post(

@@ -41,7 +41,7 @@ const tabIcon = ({ focused }) => <View style={[styles.tabMark, focused && styles
 
 const TABS = [
   { name: 'Home', label: 'Mercado', component: HomeScreen },
-  { name: 'Positions', label: 'Posiciones', component: PositionsScreen },
+  { name: 'Positions', label: 'Mi Binance', component: PositionsScreen },
   { name: 'Bot', label: 'Bot', component: BotScreen },
   { name: 'Settings', label: 'Ajustes', component: SettingsTab },
 ];

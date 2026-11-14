@@ -1,24 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { getConfig } from '../services/api';
-import { ModalHeader, Button, Loading, Notice } from './ui';
-import { colors, space, radius, type, tint, pairName } from '../theme';
+import { ModalHeader, Loading } from './ui';
+import { useSubscription } from '../context/SubscriptionContext';
+import { colors, space, radius, type, pairName } from '../theme';
 
 const FALLBACK_PAIRS = [
   'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT',
   'XRP/USDT', 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT',
 ];
 
+/** Pick a coin to follow: one tap on a row adds it and closes. */
 const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions = [] }) => {
-  const [selectedPair, setSelectedPair] = useState(null);
+  const { isPremium } = useSubscription();
   const [availablePairs, setAvailablePairs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (visible) {
-      loadConfig();
-      setSelectedPair(null);
-    }
+    if (visible) loadConfig();
   }, [visible]);
 
   const loadConfig = async () => {
@@ -33,60 +32,47 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
     }
   };
 
-  const isAlreadySubscribed = (pair) => (existingSubscriptions || []).some((sub) => sub?.pair === pair);
+  const followed = (existingSubscriptions || []).filter((s) => s?.pair);
+  const isAlreadySubscribed = (pair) => followed.some((sub) => sub.pair === pair);
 
-  const handleAdd = () => {
-    if (selectedPair) {
-      onAdd(selectedPair);
-      onClose();
-    }
+  const add = (pair) => {
+    onAdd(pair);
+    onClose();
   };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        <ModalHeader title="Añadir moneda" subtitle="Elige una para seguirla" onClose={onClose} />
+        <ModalHeader title="Añadir moneda" subtitle="Toca una para seguirla" onClose={onClose} />
 
         {loading ? (
           <Loading label="Cargando monedas…" />
         ) : (
           <ScrollView contentContainerStyle={styles.body}>
-            <Notice tone="info" title="Qué pasa al añadirla">
-              Verás en Mercado si es buen momento para abrir long (apostar a que sube) o short (apostar a que
-              baja), y te avisaremos cuando eso cambie. Para recibir avisos tienes que activarlos en Ajustes.
-            </Notice>
+            <Text style={[type.small, { marginBottom: space.md }]}>
+              Verás su análisis en Mercado. Para que te lleguen sus avisos, actívalos en Ajustes.
+              {!isPremium && followed.length >= 1 ? ' Con el plan gratis solo se analiza tu primera moneda; las demás quedan bloqueadas hasta pasar a Premium.' : ''}
+            </Text>
 
             {availablePairs.map((pair) => {
               const added = isAlreadySubscribed(pair);
-              const on = selectedPair === pair;
               return (
                 <TouchableOpacity
                   key={pair}
-                  style={[styles.option, on && styles.optionOn, added && { opacity: 0.45 }]}
-                  onPress={() => setSelectedPair(pair)}
+                  style={[styles.option, added && { opacity: 0.45 }]}
+                  onPress={() => add(pair)}
                   disabled={added}
                   activeOpacity={0.75}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.optionName}>{pairName(pair)}</Text>
-                    <Text style={type.small}>{pair}</Text>
-                  </View>
-                  <Text style={[styles.optionState, on && { color: colors.accent }]}>
-                    {added ? 'Ya la sigues' : on ? 'Elegida' : ''}
+                  <Text style={styles.optionName}>{pairName(pair)}</Text>
+                  <Text style={[styles.optionState, !added && { color: colors.accent }]}>
+                    {added ? 'Ya la sigues' : 'Añadir'}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
         )}
-
-        <View style={styles.footer}>
-          <Button
-            label={selectedPair ? `Añadir ${pairName(selectedPair)}` : 'Elige una moneda'}
-            onPress={handleAdd}
-            disabled={!selectedPair}
-          />
-        </View>
       </View>
     </Modal>
   );
@@ -94,19 +80,14 @@ const AddSubscriptionModal = ({ visible, onClose, onAdd, existingSubscriptions =
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  body: { padding: space.lg, paddingBottom: space.xl },
+  body: { padding: space.lg, paddingBottom: 48 },
   option: {
-    flexDirection: 'row', alignItems: 'center', minHeight: 60, paddingHorizontal: space.lg, paddingVertical: space.md,
+    flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: space.lg, paddingVertical: space.sm,
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     marginBottom: space.sm,
   },
-  optionOn: { borderColor: colors.accent, backgroundColor: tint(colors.accent, 0.1) },
-  optionName: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  optionState: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginLeft: space.md },
-  footer: {
-    padding: space.lg, paddingBottom: space.xl, borderTopWidth: 1, borderTopColor: colors.border,
-    backgroundColor: colors.bg,
-  },
+  optionName: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '700' },
+  optionState: { color: colors.textMuted, fontSize: 14, fontWeight: '600', marginLeft: space.md },
 });
 
 export default AddSubscriptionModal;

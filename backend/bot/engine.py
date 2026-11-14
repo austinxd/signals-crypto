@@ -36,11 +36,13 @@ def _coin(symbol: str) -> str:
 
 
 # Wording of the notifications. Always the action and what it wins on; never a bare "long"/"short"/"stop".
-SIDE_ES = {1: "compra (long)", -1: "venta (short)"}
-DID_ES = {1: "compró", -1: "vendió"}
+SIDE_ES = {1: "long", -1: "short"}
+DID_ES = {1: "abrió long", -1: "abrió short"}
+# What kind of money the bot moves: word for the title, unit for every amount in the body.
+MONEY_ES = {"paper": ("simulado", "USDT simulados"), "demo": ("cuenta demo", "USDT de prueba")}
 WINS_ES = {1: "gana si sube", -1: "gana si baja"}
 AGAINST_ES = {1: "baja", -1: "sube"}
-EXIT_ES = {"target": "llegó al precio de ganancia previsto", "manual": "la cerró el administrador",
+EXIT_ES = {"target": "llegó al precio de ganancia previsto", "manual": "se cerró a mano desde la app",
            "time": "llevaba demasiado tiempo abierta"}
 REFUSED_ES = {
     "max_open_positions": "ya tiene el máximo de operaciones abiertas a la vez",
@@ -94,13 +96,17 @@ class Engine:
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
 
+    @property
+    def _unit(self) -> str:
+        return MONEY_ES.get(self.broker.name, ("dinero real", "USDT"))[1]
+
     def _tell(self, title: str, body: str, kind: str = "bot_trade", symbol: str = None):
         """Push + in-app notice to the admins. Never lets a notification problem touch the trading loop."""
         if not self._notifier:
             return
         try:
-            money = {"paper": "simulado", "demo": "cuenta demo"}.get(self.broker.name, "dinero real")
-            self._notifier(f"Bot ({money}): {title}", body, kind, symbol)
+            money = MONEY_ES.get(self.broker.name, ("dinero real", "USDT"))[0]
+            self._notifier(f"Bot ({money}): {title}", body, kind, symbol, {"broker": self.broker.name, "tab": "Bot"})
         except Exception as e:
             self.j.event("warn", "notify", repr(e)[:200])
 
@@ -174,7 +180,7 @@ class Engine:
         except Exception as e:
             self.j.decision(symbol, bar_time, "ERROR", side, f"order_failed: {e!r}")
             self.j.event("error", "order", f"{symbol}: {e!r}")
-            self._tell(f"falló la orden de {SIDE_ES[side]} en {_coin(symbol)}",
+            self._tell(f"falló la orden de {SIDE_ES[side]} de {_coin(symbol)}",
                        "La orden no se pudo enviar. No se abrió nada.", "bot_alert", symbol)
             return False
         now = time.time()
@@ -187,9 +193,9 @@ class Engine:
         self.j.decision(symbol, bar_time, "ENTER", side, note or "signal",
                         {"trade_id": tid, "entry": fill["entry"], "qty": fill["qty"], "sl": sl, "tp": tp})
         risk = fill["qty"] * abs(fill["entry"] - sl)
-        self._tell(f"{DID_ES[side]} {_coin(symbol)}, {WINS_ES[side]}",
-                   f"{DID_ES[side].capitalize()} a {_px(fill['entry'])}. Si {AGAINST_ES[side]} a {_px(sl)} se cierra "
-                   f"sola y pierde unos {risk:,.0f} USDT.", "bot_trade", symbol)
+        self._tell(f"{DID_ES[side]} de {_coin(symbol)}, {WINS_ES[side]}",
+                   f"Entró a {_px(fill['entry'])}. Si {AGAINST_ES[side]} a {_px(sl)} se cierra "
+                   f"sola y pierde unos {risk:,.0f} {self._unit}.", "bot_trade", symbol)
         return True
 
     def _record_close(self, trade: dict, out: dict, reason: str):
@@ -201,8 +207,8 @@ class Engine:
                             exit_reason=reason, fees=fees, pnl=pnl, r=r)
         self.j.decision(trade["symbol"], "", "EXIT", trade["side"], reason,
                         {"trade_id": trade["id"], "exit": out["exit"], "pnl": pnl, "r": r})
-        self._tell(f"cerró {_coin(trade['symbol'])} y {'ganó' if pnl >= 0 else 'perdió'} {abs(pnl):,.2f} USDT",
-                   f"{SIDE_ES[trade['side']].capitalize()} de {_px(trade['entry'])} a {_px(out['exit'])}. "
+        self._tell(f"cerró {_coin(trade['symbol'])} y {'ganó' if pnl >= 0 else 'perdió'} {abs(pnl):,.2f} {self._unit}",
+                   f"{SIDE_ES[trade['side']].capitalize()}: entró a {_px(trade['entry'])} y cerró a {_px(out['exit'])}. "
                    f"Motivo: {_exit_es(reason, pnl)}.", "bot_trade", trade["symbol"])
 
     def _sync_trades(self):
@@ -297,7 +303,7 @@ class Engine:
             self.j.decision(symbol, bar_time, "PROPOSE", side, "awaiting_approval",
                             {"proposal_id": pid, "price": price, "sl": sl, "tp": tp, "qty": v.qty, "ai": ai_note})
             hours = max(1, round((expires - time.time()) / 3600))
-            self._tell(f"propone {SIDE_ES[side]} de {_coin(symbol)}, {WINS_ES[side]}",
+            self._tell(f"propone abrir {SIDE_ES[side]} de {_coin(symbol)}, {WINS_ES[side]}",
                        f"Precio {_px(price)}. Si {AGAINST_ES[side]} a {_px(sl)} se cerraría sola. Entra a la pestaña "
                        f"Bot para aprobarla o rechazarla: tienes unas {hours} h para responder.", "bot_trade", symbol)
             return

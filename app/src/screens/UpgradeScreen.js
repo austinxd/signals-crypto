@@ -9,14 +9,14 @@ import { friendlyError } from '../errors';
 
 const PREMIUM = [
   'Todas las monedas que quieras en Mercado',
-  'Todas tus posiciones visibles',
-  'Avisos de todas tus monedas y posiciones',
+  'Todas tus operaciones de Binance visibles',
+  'Avisos de todas tus monedas y operaciones',
   '100 consultas a la IA al mes',
   'Cancela cuando quieras',
 ];
 const FREE = [
   { text: '1 moneda en Mercado', included: true },
-  { text: '1 posición visible', included: true },
+  { text: '1 operación de Binance visible', included: true },
   { text: '5 consultas a la IA al mes', included: true },
   { text: 'Avisos de esa moneda', included: true },
   { text: 'No incluye el bot: es una prueba del equipo', included: false },
@@ -124,7 +124,7 @@ const UpgradeScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <ModalHeader title="Premium" subtitle="Más monedas, posiciones y explicaciones" onClose={() => navigation.goBack()} />
+      <ModalHeader title="Premium" subtitle="Más monedas, operaciones y explicaciones" onClose={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space.xl }]}>
         {isPremium && (
           <Notice tone="good" title="Ya eres Premium">
@@ -146,14 +146,6 @@ const UpgradeScreen = ({ navigation }) => {
           )}
         </Card>
 
-        <Card title="Gratis" right={!isPremium ? <Chip label="Tu plan" /> : null}>
-          {FREE.map((f) => <Feature key={f.text} text={f.text} included={f.included} />)}
-          <View style={styles.priceLine}>
-            <Text style={styles.price}>$0</Text>
-            <Text style={type.bodyDim}> para siempre</Text>
-          </View>
-        </Card>
-
         {loading && <Loading label="Cargando opciones de la tienda…" />}
 
         {!!error && !loading && (
@@ -171,6 +163,11 @@ const UpgradeScreen = ({ navigation }) => {
             loading={purchasing}
           />
         )}
+
+        <Text style={[type.small, { marginTop: space.md, marginBottom: space.sm }]}>
+          {isPremium ? 'Plan gratis: ' : 'Tu plan ahora (gratis): '}
+          {FREE.filter((f) => f.included !== false).map((f) => f.text).join(' · ')}.
+        </Text>
 
         <Button
           label="Restaurar compras"

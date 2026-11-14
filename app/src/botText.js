@@ -21,18 +21,29 @@ export const money = (x) => {
   const n = Number(x);
   return `$${es(n, n >= 1000 ? 0 : n >= 1 ? 2 : 4)}`;
 };
+
+// ---- who is reading and what money the bot moves. The screen sets this on every render. ----
+
+let own = false; // true when the reader is the one who controls the bot: sentences then say "tú"
+let unit = 'USDT'; // 'USDT simulados' | 'USDT de prueba' | 'USDT'
+export const setReader = (canControl, moneyUnit) => {
+  own = !!canControl;
+  unit = moneyUnit || 'USDT';
+};
+const who = (you, owner) => (own ? you : owner);
+
 const pct = (s) => String(s).replace('.', ',').replace('%', ' %');
 
 // ---- one vocabulary for the two directions ----
 
 export const SIDE = {
   1: {
-    noun: 'Compra (long)', wins: 'gana si el precio sube', bet: 'apostar a que sube', chip: 'COMPRA · LONG',
-    bought: 'Compró', against: 'baja', stopMove: 'Subió',
+    noun: 'Long', arrow: '↑', wins: 'gana si el precio sube', bet: 'apostar a que sube',
+    against: 'baja', stopMove: 'Subió',
   },
   '-1': {
-    noun: 'Venta (short)', wins: 'gana si el precio baja', bet: 'apostar a que baja', chip: 'VENTA · SHORT',
-    bought: 'Vendió', against: 'sube', stopMove: 'Bajó',
+    noun: 'Short', arrow: '↓', wins: 'gana si el precio baja', bet: 'apostar a que baja',
+    against: 'sube', stopMove: 'Bajó',
   },
 };
 export const sideOf = (s) => SIDE[s > 0 ? 1 : -1];
@@ -42,8 +53,8 @@ export function stopOutcome(side, qty, entry, sl) {
   if ([qty, entry, sl].some((v) => v == null || Number.isNaN(Number(v)))) return null;
   const result = (side > 0 ? 1 : -1) * qty * (sl - entry);
   return result >= 0
-    ? `aseguraría unos ${esSigned(result, 2)} USDT`
-    : `perdería unos ${es(Math.abs(result), 2)} USDT`;
+    ? `aseguraría unos ${esSigned(result, 2)} ${unit}`
+    : `perdería unos ${es(Math.abs(result), 2)} ${unit}`;
 }
 
 // ---- A. decision reasons ----
@@ -99,9 +110,9 @@ function onePart(part, risk) {
   const p = part.trim();
   if (!p) return null;
   if (p === 'signal') return { text: 'Se cumplieron las reglas de su estrategia.' };
-  if (p === 'manual_by_user') return { text: 'La pidió el administrador a mano.' };
-  if (p === 'approved_by_user') return { text: 'El administrador aprobó la propuesta.' };
-  if (p === 'awaiting_approval') return { text: 'Espera a que el administrador la apruebe o la rechace.' };
+  if (p === 'manual_by_user') return { text: who('La pediste tú a mano.', 'La pidió a mano el dueño del bot.') };
+  if (p === 'approved_by_user') return { text: who('Aprobaste la propuesta.', 'El dueño del bot aprobó la propuesta.') };
+  if (p === 'awaiting_approval') return { text: who('Espera tu respuesta: apruébala o recházala.', 'Espera a que el dueño del bot la apruebe o la rechace.') };
   if (p === 'capped_by_position_leverage') {
     return { text: `Entró con menos cantidad: una sola operación no puede superar ${risk.max_position_leverage ? es(risk.max_position_leverage, 0) : 'varias'} veces el capital.` };
   }
@@ -142,7 +153,6 @@ function onePart(part, risk) {
 
 const EXIT_WHY = {
   target: 'llegó al precio de ganancia previsto',
-  manual: 'la cerró el administrador',
   time: 'llevaba demasiado tiempo abierta',
 };
 /** Why a trade closed. A stop that closes in profit is the trailing stop doing its job, so say so. */
@@ -152,6 +162,7 @@ export function exitWhy(reason, pnl) {
       ? 'el precio se dio la vuelta y se cerró sola asegurando ganancia'
       : 'el precio fue en contra y se cerró sola para limitar la pérdida';
   }
+  if (reason === 'manual') return who('la cerraste tú a mano', 'la cerró a mano el dueño del bot');
   return EXIT_WHY[reason] || 'cierre automático';
 }
 
@@ -171,7 +182,7 @@ export function decisionText(d, risk = {}) {
   const reason = String((d && d.reason) || '');
   if (d && d.action === 'EXIT') {
     const why = exitWhy(reason, data.pnl);
-    const result = data.pnl != null ? ` Resultado: ${esSigned(data.pnl)} USDT.` : '';
+    const result = data.pnl != null ? ` Resultado: ${esSigned(data.pnl)} ${unit}.` : '';
     return { text: `Motivo: ${why}.${result}` };
   }
   if (d && d.action === 'MOVE_SL') {
@@ -186,7 +197,7 @@ export function decisionText(d, risk = {}) {
   if (parts.length === 0) return { text: '' };
   const extra = [];
   if (d && d.action === 'ENTER' && data.entry != null && data.sl != null) {
-    extra.push(`Precio ${money(data.entry)}; se cierra sola si ${sideOf(d.side).against} a ${money(data.sl)}.`);
+    extra.push(`Entró a ${money(data.entry)}; se cierra sola si ${sideOf(d.side).against} a ${money(data.sl)}.`);
   }
   return {
     text: [...parts.map((p) => p.text), ...extra].filter(Boolean).join(' '),
@@ -202,12 +213,13 @@ export function pauseText(reason) {
   const k = r.match(/^kill_switch: drawdown ([\d.]+%) from peak \(limit ([\d.]+%)\)/);
   if (k) {
     return {
-      text: `Se pausó solo por seguridad: el capital bajó un ${pct(k[1])} desde su punto más alto (el límite es ${pct(k[2])}). No abrirá operaciones nuevas hasta que el administrador pulse «Reanudar el bot».`,
+      text: `Se pausó solo por seguridad: el capital cayó un ${pct(k[1])} desde su mejor momento (el límite es ${pct(k[2])}). No abrirá operaciones nuevas hasta que ${who('pulses «Reanudar»', 'su dueño lo reanude')}.`,
     };
   }
   if (r.startsWith('kill_switch')) return { text: 'Se pausó solo por seguridad, porque el capital bajó demasiado.', detail: r };
-  if (!r || r === 'manual' || r === 'desde la app') return { text: 'Lo pausó el administrador.' };
-  return { text: 'Lo pausó el administrador.', detail: r };
+  const by = who('Lo pausaste tú.', 'Lo pausó su dueño.');
+  if (!r || r === 'manual' || r === 'desde la app') return { text: by };
+  return { text: by, detail: r };
 }
 
 // ---- B. system events ----

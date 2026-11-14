@@ -10,10 +10,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, space, radius, type, tint } from '../theme';
+import { colors, space, radius, type, tint, MONEY } from '../theme';
 
 /** Page frame: big title, optional subtitle and right-hand action, scrolling body with pull-to-refresh. */
-export const Screen = ({ title, subtitle, right, children, refreshing = false, onRefresh, scroll = true, footer }) => {
+export const Screen = ({ title, subtitle, right, money, children, refreshing = false, onRefresh, scroll = true, footer }) => {
   const insets = useSafeAreaInsets();
   const head = (
     <View style={[styles.screenHead, { paddingTop: insets.top + space.md }]}>
@@ -27,6 +27,7 @@ export const Screen = ({ title, subtitle, right, children, refreshing = false, o
   return (
     <View style={styles.screen}>
       {head}
+      {!!money && <MoneyBand kind={money} />}
       {scroll ? (
         <ScrollView
           contentContainerStyle={styles.screenBody}
@@ -43,6 +44,42 @@ export const Screen = ({ title, subtitle, right, children, refreshing = false, o
         <View style={{ flex: 1 }}>{children}</View>
       )}
       {footer}
+    </View>
+  );
+};
+
+/**
+ * Fixed strip under a screen title saying whose money the figures below are. It does not scroll away.
+ * kind: real | sim | demo | market (see MONEY in theme).
+ */
+export const MoneyBand = ({ kind, style }) => {
+  const m = MONEY[kind];
+  if (!m) return null;
+  return (
+    <View style={[styles.band, { backgroundColor: tint(m.color, 0.16), borderColor: tint(m.color, 0.5) }, style]}>
+      <Text style={[styles.bandLabel, { color: m.color }]}>{m.label.toUpperCase()}</Text>
+      <Text style={styles.bandText} numberOfLines={2}>{m.note}</Text>
+    </View>
+  );
+};
+
+/** Small tag for one card or line: "Simulado", "Dinero real"… */
+export const MoneyTag = ({ kind, style }) => {
+  const m = MONEY[kind];
+  return m ? <Chip label={m.label} color={m.color} style={style} /> : null;
+};
+
+/** A question the reader can tap to read its answer. For explanations nobody needs twice. */
+export const Help = ({ label, children, style }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={style}>
+      <TouchableOpacity onPress={() => setOpen(!open)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={styles.helpLabel}>{label} {open ? '▴' : '▾'}</Text>
+      </TouchableOpacity>
+      {open && (typeof children === 'string'
+        ? <Text style={[type.bodyDim, { marginTop: space.xs }]}>{children}</Text>
+        : <View style={{ marginTop: space.xs }}>{children}</View>)}
     </View>
   );
 };
@@ -180,15 +217,16 @@ export const Notice = ({ tone = 'info', title, children, style }) => {
 };
 
 /** Section that starts closed: for detail most people do not need. */
-export const Collapsible = ({ title, hint, children, defaultOpen = false }) => {
+export const Collapsible = ({ title, hint, right, rightColor, plain = false, children, defaultOpen = false }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <View style={styles.card}>
+    <View style={plain ? styles.collapsePlain : styles.card}>
       <TouchableOpacity style={styles.collapseHead} onPress={() => setOpen(!open)} activeOpacity={0.7}>
         <View style={{ flex: 1 }}>
-          <Text style={type.heading}>{title}</Text>
+          <Text style={plain ? styles.collapsePlainTitle : type.heading}>{title}</Text>
           {!!hint && !open && <Text style={type.small}>{hint}</Text>}
         </View>
+        {right != null && <Text style={[styles.rowValue, rightColor && { color: rightColor }]}>{right}</Text>}
         <Text style={styles.collapseToggle}>{open ? 'Ocultar' : 'Ver'}</Text>
       </TouchableOpacity>
       {open && <View style={{ marginTop: space.md }}>{children}</View>}
@@ -254,6 +292,15 @@ const styles = StyleSheet.create({
   rowValue: { color: colors.text, fontSize: 15, fontWeight: '600', marginLeft: space.md, flexShrink: 1, textAlign: 'right' },
   notice: { borderLeftWidth: 3, borderRadius: radius.md, padding: space.md, marginBottom: space.md },
   noticeTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  band: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginBottom: space.sm,
+    paddingHorizontal: space.md, paddingVertical: 7, borderRadius: radius.md, borderWidth: 1,
+  },
+  bandLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  bandText: { color: colors.textDim, fontSize: 12, flex: 1 },
+  helpLabel: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  collapsePlain: { paddingVertical: space.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  collapsePlainTitle: { color: colors.textDim, fontSize: 14, fontWeight: '600' },
   collapseHead: { flexDirection: 'row', alignItems: 'center' },
   collapseToggle: { color: colors.accent, fontSize: 14, fontWeight: '600', marginLeft: space.md },
   empty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: space.xl },

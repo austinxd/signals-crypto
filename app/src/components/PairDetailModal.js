@@ -6,10 +6,10 @@ import { explain, tradePlan } from '../explain';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
   colors, space, radius, type, tint,
-  scenarioOf, trendOf, DIRECTION, GLOSSARY, pairName, fmtPrice,
+  GLOSSARY, pairName, fmtPrice,
 } from '../theme';
 import {
-  ModalHeader, Card, SectionTitle, Chip, Button, Segment, Stat, StatRow, Row, Notice, Collapsible, Loading,
+  ModalHeader, Card, SectionTitle, Chip, Button, Segment, Stat, StatRow, Row, Notice, Collapsible, Loading, Help,
 } from './ui';
 
 const VOLATILITY = {
@@ -79,20 +79,19 @@ const formatVolume = (value) => {
   return `$${v.toFixed(0)}`;
 };
 
-const Bullet = ({ children, color = colors.textMuted }) => (
-  <View style={styles.bullet}>
-    <Text style={[styles.bulletDot, { color }]}>•</Text>
+const Reason = ({ children }) => (
+  <View style={styles.reason}>
+    <Text style={styles.reasonDot}>•</Text>
     <Text style={[type.bodyDim, { flex: 1 }]}>{children}</Text>
   </View>
 );
 
-const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
+const PairDetailModal = ({ visible, onClose, pair, data: initialData, onRemove }) => {
   const navigation = useNavigation();
   const { aiRemaining, isPremium, refresh: refreshSubscription } = useSubscription();
   const [liveData, setLiveData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [showDetail, setShowDetail] = useState(false);
 
   // Volume profile: fetched only when the reader asks for it
   const [showVolumeProfile, setShowVolumeProfile] = useState(false);
@@ -114,6 +113,11 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   };
   // Out of AI uses: offer Premium instead of asking the server for an answer it will refuse.
   const askAI = () => (!isPremium && aiRemaining <= 0 ? goPremium() : setShowAIExplanation(true));
+  // The bot tab opens with this coin and side already chosen; the bot decides the size and sets the stop.
+  const practiceWithBot = (side) => {
+    navigation.navigate('Bot', { symbol: `${pairName(pair)}USDT`, side, ts: Date.now() });
+    onClose && onClose();
+  };
 
   // Fresh data while the modal is open
   useEffect(() => {
@@ -218,9 +222,6 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
 
   const view = explain(analysis);
   const plan = tradePlan(view, price, htfInd?.atr);
-  const direction = DIRECTION[analysis?.direction_preference] || null;
-  const bias = trendOf(analysis?.context?.htf_bias || analysis?.htf_bias);
-  const momentum = trendOf(analysis?.timing?.ltf_momentum);
   const hasConfirmation = !!analysis?.timing?.has_confirmation;
   const rsiZoneKey = analysis?.timing?.rsi_zone || 'neutral';
   const rsiZone = RSI_ZONE[rsiZoneKey] || RSI_ZONE.neutral;
@@ -228,10 +229,8 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const volatility = VOLATILITY[volatilityKey] || VOLATILITY.normal;
   const htfStructure = analysis?.context?.htf_structure || analysis?.htf_structure || null;
 
-  const observations = Array.isArray(analysis?.observations) ? analysis.observations : [];
   const keyLevels = Array.isArray(analysis?.key_levels) ? analysis.key_levels : [];
   const zones = Array.isArray(analysis?.structural_zones) ? analysis.structural_zones.slice(0, 4) : [];
-  const checklist = analysis?.checklist || null;
   const rsiState = analysis?.rsi_htf_state || null;
   const rsiStateStyle = rsiState ? RSI_STATE[rsiState.label] || RSI_STATE.agotamiento_potencial : null;
   const gap = data?.gap;
@@ -240,26 +239,12 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
   const fundingRate = funding?.funding_rate_percent;
   const fundingText =
     typeof fundingRate !== 'number' ? null
-      : fundingRate > 0.05 ? { text: 'Muy positiva: hay mucha más gente comprada que vendida.', color: colors.danger }
-      : fundingRate < -0.05 ? { text: 'Muy negativa: hay mucha más gente vendida que comprada.', color: colors.accent }
+      : fundingRate > 0.05 ? { text: 'Muy positiva: hay mucha más gente en long que en short.', color: colors.danger }
+      : fundingRate < -0.05 ? { text: 'Muy negativa: hay mucha más gente en short que en long.', color: colors.accent }
       : { text: 'En rango normal.', color: colors.textDim };
 
   const distanceTo = (level) =>
     typeof price === 'number' && price > 0 && typeof level === 'number' ? ((level - price) / price) * 100 : null;
-
-  const checkRows = (group, allowWarning) =>
-    Object.entries(group || {}).map(([key, item]) => {
-      const warn = allowWarning && item?.warning;
-      const color = warn ? colors.warn : item?.checked ? colors.accent : colors.textMuted;
-      return (
-        <View key={key} style={styles.checkItem}>
-          <Text style={[styles.checkMark, { color }]}>{warn ? '!' : item?.checked ? '✓' : '×'}</Text>
-          <Text style={[type.bodyDim, { flex: 1, color: item?.checked || warn ? colors.text : colors.textMuted }]}>
-            {item?.label}
-          </Text>
-        </View>
-      );
-    });
 
   const summary = volumeData?.summary;
   const profile = Array.isArray(volumeData?.volume_profile) ? volumeData.volume_profile.slice(-10) : [];
@@ -280,15 +265,18 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
         />
 
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-          {/* 1. What to do now */}
-          <SectionTitle>Qué dice el análisis ahora</SectionTitle>
+          {/* 1. The answer and why */}
           <Card>
             <Text style={[styles.mark, { color: view.markColor }]}>{view.mark}</Text>
             <Chip label={view.headline} color={view.color} solid style={styles.bigChip} />
-            <Text style={[type.body, { marginTop: space.md }]}>{view.action}</Text>
-            {!!view.means && <Text style={[type.small, { marginTop: space.sm }]}>{view.means}</Text>}
+            <Text style={[type.body, { marginTop: space.md, marginBottom: space.md }]}>{view.action}</Text>
+            {view.reasons.map((r, i) => <Reason key={i}>{r}</Reason>)}
+            {!!view.means && (
+              <Help label={`¿Qué es ${view.side}?`} style={{ marginTop: space.sm }}>{view.means}</Help>
+            )}
           </Card>
 
+          {/* 2. What to do with it: a suggestion, and the two places to act on it */}
           {plan && (
             <>
               <SectionTitle>{plan.title}</SectionTitle>
@@ -296,40 +284,40 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 {plan.rows.map((r, i) => (
                   <Row key={r.label} first={i === 0} label={r.label} value={r.value} help={r.help} />
                 ))}
-                <Text style={[type.small, { marginTop: space.md }]}>{plan.where}</Text>
-                <Text style={[type.small, { marginTop: space.xs }]}>
-                  Vale mientras este veredicto no cambie; si cambia, te llega un aviso.
+                <Text style={[type.small, { marginTop: space.sm }]}>
+                  Es una sugerencia, no una orden. Vale mientras el veredicto no cambie.
                 </Text>
+                <View style={styles.exits}>
+                  <Text style={type.bodyDim}>
+                    <Text style={styles.exitName}>Con dinero real: </Text>lo haces tú en Binance Futuros.
+                  </Text>
+                  <Text style={[type.bodyDim, { marginTop: space.xs }]}>
+                    <Text style={styles.exitName}>Sin dinero: </Text>el bot lo abre con dinero simulado.
+                  </Text>
+                  <Button
+                    label="Practicar con el bot (simulado)"
+                    kind="secondary"
+                    onPress={() => practiceWithBot(view.side)}
+                    style={{ marginTop: space.md }}
+                  />
+                </View>
               </Card>
             </>
           )}
 
-          <SectionTitle>Por qué</SectionTitle>
-          <Card>
-            {view.reasons.map((r, i) => (
-              <Text key={i} style={[type.body, i > 0 && { marginTop: space.sm }]}>{r}</Text>
-            ))}
-          </Card>
-
-          {/* 2. AI explanation */}
-          <SectionTitle>Explicación con IA</SectionTitle>
+          {/* 3. AI explanation */}
           <Card>
             {!showAIExplanation ? (
               <>
-                <Text style={type.bodyDim}>
-                  Un resumen en lenguaje sencillo de lo que está pasando con {name} y qué vigilar.
-                </Text>
-                <Button
-                  label="Pedir explicación"
-                  kind="secondary"
-                  onPress={askAI}
-                  style={{ marginTop: space.md }}
-                />
+                <View style={styles.aiRow}>
+                  <Text style={[type.heading, { flex: 1 }]}>Explicación con IA</Text>
+                  <Button label="Pedir" kind="secondary" small onPress={askAI} />
+                </View>
                 {!isPremium && typeof aiRemaining === 'number' && (
-                  <Text style={[type.small, { marginTop: space.sm, textAlign: 'center' }]}>
+                  <Text style={[type.small, { marginTop: space.xs }]}>
                     {aiRemaining > 0
-                      ? `Te quedan ${aiRemaining} explicaciones gratis.`
-                      : 'Ya usaste tus explicaciones gratis. Con Premium tienes 100 al mes.'}
+                      ? `Te quedan ${aiRemaining} gratis.`
+                      : 'Ya usaste las gratis. Con Premium tienes 100 al mes.'}
                   </Text>
                 )}
               </>
@@ -377,69 +365,48 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
             ) : null}
           </Card>
 
-          <Button
-            label={showDetail ? 'Ocultar el análisis completo' : 'Ver el análisis completo'}
-            kind="secondary"
-            onPress={() => setShowDetail(!showDetail)}
-            style={{ marginTop: space.sm, marginBottom: space.md }}
-          />
-          {!showDetail && (
-            <Text style={[type.small, { textAlign: 'center', marginBottom: space.md }]}>
-              Opcional: tendencia, precios donde suele frenar e indicadores.
-            </Text>
-          )}
-
-          {showDetail && (
-          <>
-          {/* 3. Why */}
-          <SectionTitle>Análisis completo</SectionTitle>
-          <Card title="Tendencia de los últimos días">
-            <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.context}</Text>
+          {/* 4. Everything behind the verdict, closed by default */}
+          <Collapsible title="Análisis completo" hint="Tendencia, precios donde suele frenar e indicadores">
+            <Text style={type.label}>Tendencia de los últimos días</Text>
             <Row first label="Hacia dónde va" value={BIAS_TEXT[analysis?.context?.htf_bias] || 'Sin datos'} />
             <Row
               label="En qué punto está"
               value={htfStructure ? STRUCTURE[htfStructure] || capital(htfStructure) : 'Sin datos'}
-              help={GLOSSARY.structure}
             />
-            <Row label="Volatilidad" value={volatility.label} color={volatility.color} help={GLOSSARY.volatility} />
+            <Row label="Volatilidad" value={volatility.label} color={volatility.color} />
             {htfInd?.price_above_ema !== undefined && htfInd?.price_above_ema !== null && (
               <Row
                 label="Precio frente a su media larga"
                 value={htfInd.price_above_ema ? 'Por encima' : 'Por debajo'}
                 color={htfInd.price_above_ema ? colors.accent : colors.danger}
-                help="La media de las últimas 200 velas (EMA200). Por encima suele indicar tendencia alcista."
               />
             )}
             {rsiState && rsiState.label !== 'normal' && (
               <View style={styles.subBox}>
                 <Text style={[styles.subBoxTitle, { color: rsiStateStyle.color }]}>{rsiStateStyle.label}</Text>
                 <Text style={type.bodyDim}>
-                  Lleva días moviéndose en la misma dirección casi sin descanso: es fácil que frene o retroceda. Mal
-                  momento para sumarse tarde.
+                  Lleva días moviéndose en la misma dirección casi sin descanso: es fácil que frene o retroceda.
                 </Text>
               </View>
             )}
-          </Card>
 
-          <Card title="Últimos minutos">
-            <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.timing}</Text>
-            <Row first label="Ahora mismo" value={NOW_TEXT[analysis?.timing?.ltf_momentum] || 'Quieto'} help="Hacia dónde se mueve el precio en velas de 15 minutos. Sirve para elegir cuándo abrir." />
-            <Row label="RSI" value={rsiZone.label} color={rsiZone.color} help={GLOSSARY.rsi} />
+            <Text style={[type.label, styles.group]}>Últimos minutos</Text>
+            <Row first label="Ahora mismo" value={NOW_TEXT[analysis?.timing?.ltf_momentum] || 'Quieto'} />
+            <Row label="RSI" value={rsiZone.label} color={rsiZone.color} />
             <Row
               label="¿Acompaña a la tendencia?"
               value={hasConfirmation ? 'Sí' : 'Todavía no'}
               color={hasConfirmation ? colors.accent : colors.textDim}
-              help={GLOSSARY.confirmation}
             />
-          </Card>
+            <Help label="¿Qué significan estos datos?" style={{ marginTop: space.sm }}>
+              {`${GLOSSARY.context} ${GLOSSARY.timing} Volatilidad: ${GLOSSARY.volatility.charAt(0).toLowerCase()}${GLOSSARY.volatility.slice(1)} `
+                + `La media larga es la de las últimas 200 velas (EMA200): por encima suele indicar tendencia alcista. RSI: ${GLOSSARY.rsi.charAt(0).toLowerCase()}${GLOSSARY.rsi.slice(1)} `
+                + `“Acompaña”: ${GLOSSARY.confirmation.charAt(0).toLowerCase()}${GLOSSARY.confirmation.slice(1)}`}
+            </Help>
 
-          {/* 4. Important levels */}
-          <SectionTitle>Precios donde suele frenar</SectionTitle>
-          <Card>
-            <Text style={[type.small, { marginBottom: space.sm }]}>{GLOSSARY.levels}</Text>
-
+            <Text style={[type.label, styles.group]}>Precios donde suele frenar</Text>
             {(analysis?.distance_to_zone?.state === 'en_zona' || analysis?.distance_to_zone?.state === 'cercano') && (
-              <Notice tone="warn">
+              <Notice tone="warn" style={{ marginTop: space.sm, marginBottom: 0 }}>
                 {analysis.distance_to_zone.state === 'en_zona'
                   ? 'El precio está justo en uno de estos niveles: espera a ver hacia dónde sale antes de abrir long o short.'
                   : 'Hay uno de estos niveles muy cerca del precio: ahí puede frenarse.'}
@@ -464,7 +431,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
               const d = typeof zone?.distance_percent === 'number' ? zone.distance_percent : distanceTo(zone?.price);
               const confluence = Array.isArray(zone?.confluence) ? zone.confluence.join(' + ') : '';
               return (
-                <View key={`z${idx}`} style={[styles.row, keyLevels.length === 0 && idx === 0 && { borderTopWidth: 0 }]}>
+                <View key={`z${idx}`} style={[styles.row, idx === 0 && { borderTopWidth: 0 }]}>
                   <View style={styles.rowLine}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.zoneLabel, { color: z.color }]}>{z.label}</Text>
@@ -480,16 +447,13 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
             })}
 
             {keyLevels.length === 0 && zones.length === 0 && (
-              <Text style={type.bodyDim}>No hay niveles cercanos destacados ahora mismo.</Text>
+              <Text style={[type.bodyDim, { marginTop: space.sm }]}>No hay niveles cercanos destacados ahora mismo.</Text>
             )}
-          </Card>
+            <Help label="¿Qué son estos precios?" style={{ marginTop: space.sm }}>{GLOSSARY.levels}</Help>
 
-          <Card title="Hueco de precio pendiente">
-            <Text style={[type.small, { marginBottom: space.sm }]}>
-              Un tramo de precios por el que el mercado pasó sin negociar (velas diarias). A menudo el precio vuelve a visitarlo.
-            </Text>
-            {gapOpen ? (
+            {gapOpen && (
               <>
+                <Text style={[type.label, styles.group]}>Hueco de precio pendiente</Text>
                 <Row first label="Zona" value={`${fmtPrice(gap.low)} – ${fmtPrice(gap.high)}`} />
                 {typeof gap.distance_pct === 'number' && (
                   <Row
@@ -501,14 +465,15 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                     value={`${gap.distance_pct.toFixed(1)}%`}
                   />
                 )}
+                <Help label="¿Qué es un hueco?" style={{ marginTop: space.sm }}>
+                  Un tramo de precios por el que el mercado pasó sin negociar (velas diarias). A menudo el precio vuelve a visitarlo.
+                </Help>
               </>
-            ) : (
-              <Text style={type.bodyDim}>No hay ninguno abierto.</Text>
             )}
-          </Card>
 
           {/* 5. Technical data */}
-          <Collapsible title="Para expertos" hint="Indicadores, tasa de fondeo y volumen">
+            <View style={{ marginTop: space.lg }} />
+            <Collapsible plain title="Para expertos" hint="Indicadores, tasa de fondeo y volumen">
             <Text style={type.label}>Indicadores</Text>
             <View style={styles.indicatorGrid}>
               <View style={styles.indicatorCol}>
@@ -538,8 +503,7 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 />
               </View>
             </View>
-            <Text style={[type.small, { marginTop: space.sm }]}>{GLOSSARY.rsi}</Text>
-            <Text style={[type.small, { marginTop: space.xs }]}>{GLOSSARY.volume}</Text>
+            <Help label="¿Cómo se leen?" style={{ marginTop: space.sm }}>{`RSI: ${GLOSSARY.rsi} Volumen: ${GLOSSARY.volume}`}</Help>
 
             {funding && (
               <>
@@ -549,20 +513,17 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                   label="Tasa actual"
                   value={typeof fundingRate === 'number' ? `${fundingRate >= 0 ? '+' : ''}${fundingRate.toFixed(4)}%` : '—'}
                   color={fundingRate > 0 ? colors.danger : fundingRate < 0 ? colors.accent : undefined}
-                  help={GLOSSARY.funding}
                 />
                 {fundingText && (
                   <Text style={[type.bodyDim, { color: fundingText.color, marginTop: space.xs }]}>{fundingText.text}</Text>
                 )}
+                <Help label="¿Qué es el fondeo?" style={{ marginTop: space.xs }}>{GLOSSARY.funding}</Help>
               </>
             )}
 
             <Text style={[type.label, { marginTop: space.lg }]}>Volumen negociado</Text>
             {!showVolumeProfile ? (
               <>
-                <Text style={[type.small, { marginTop: space.xs }]}>
-                  Cuánto se compró y se vendió, y a qué precios hubo más actividad.
-                </Text>
                 <Button
                   label="Ver volumen"
                   kind="secondary"
@@ -645,13 +606,16 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData }) => {
                 />
               </View>
             )}
+            </Collapsible>
           </Collapsible>
-          </>
+
+          {!!onRemove && (
+            <Button label={`Quitar ${name} de mi lista`} kind="ghost" onPress={onRemove} />
           )}
 
           <Text style={styles.footnote}>
             {lastUpdate ? `Actualizado a las ${lastUpdate.toLocaleTimeString('es-ES')}. ` : ''}
-            Es una lectura automática de indicadores y puede fallar. No es una recomendación de inversión: nunca arriesgues dinero que no puedas perder.
+            Solo futuros de Binance. Lectura automática que puede fallar; no es una recomendación de inversión.
           </Text>
         </ScrollView>
       </View>
@@ -664,20 +628,18 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: 56 },
   mark: { fontSize: 13, fontWeight: '800', letterSpacing: 0.5, marginBottom: space.sm },
   bigChip: { paddingHorizontal: space.lg, paddingVertical: space.sm },
-  directionBox: {
-    marginTop: space.md, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt,
-  },
-  direction: { fontSize: 18, fontWeight: '700', marginTop: 2 },
   inlineLoading: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
   ghostAction: { alignSelf: 'flex-start', marginTop: space.sm, minHeight: 44, paddingHorizontal: 0 },
-  bullet: { flexDirection: 'row', marginBottom: space.sm },
-  bulletDot: { width: 16, fontSize: 14, lineHeight: 20 },
+  reason: { flexDirection: 'row', marginBottom: space.xs },
+  reasonDot: { width: 16, fontSize: 14, lineHeight: 20, color: colors.textMuted },
+  exits: { marginTop: space.md, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.border },
+  exitName: { color: colors.text, fontWeight: '700' },
+  aiRow: { flexDirection: 'row', alignItems: 'center' },
+  group: { marginTop: space.xl },
   subBox: {
     marginTop: space.md, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt,
   },
   subBoxTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  checkItem: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 5 },
-  checkMark: { width: 22, fontSize: 15, fontWeight: '700', lineHeight: 20 },
   row: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border },
   rowLine: { flexDirection: 'row', alignItems: 'center' },
   zoneLabel: { fontSize: 14, fontWeight: '600' },

@@ -22,10 +22,10 @@ const WAIT_MARK = '— ESPERAR';
  * explain(analysis) -> {
  *   side:     'long' | 'short' | null   the direction the idea points to, even when the advice is to wait
  *   act:      true when the analysis says it can be done now
- *   mark:     "↑ COMPRAR (long)" | "↓ VENDER (short)" | "— ESPERAR"   and markColor
+ *   mark:     "↑ LONG · apostar a que sube" | "↓ SHORT · apostar a que baja" | "— ESPERAR"   and markColor
  *   headline: the verdict in a few words; color = how good the moment is (never the direction)
  *   action:   what to do, in one or two sentences
- *   means:    what comprar/vender means, for whoever does not know (null when there is no direction)
+ *   means:    what long/short means, for whoever does not know (null when there is no direction)
  *   reasons:  why, in short sentences
  * }
  */
@@ -91,7 +91,7 @@ export function explain(analysis) {
 
 /**
  * A concrete plan for the verdict above, from the price and the 4-hour ATR (the usual size of a move).
- * Same stop distance the bot uses (2.5 ATR). Returns null when there is nothing to do now or data is missing.
+ * Same stop distance the bot uses (2.5 ATR). It is a suggestion, never an order. Returns null when there is nothing to do now or data is missing.
  */
 export function tradePlan(view, price, atr) {
   if (!view?.act || !view.side || !(price > 0) || !(atr > 0)) return null;
@@ -100,7 +100,7 @@ export function tradePlan(view, price, atr) {
   const pct = (Math.abs(stop - price) / price) * 100;
   if (stop <= 0 || pct > 25) return null;
   return {
-    title: `Si decides abrir ${up ? 'long' : 'short'}`,
+    title: `Sugerencia: si decides abrir ${up ? 'long' : 'short'}`,
     rows: [
       { label: 'Abrir cerca de', value: fmtPrice(price) },
       {
@@ -112,6 +112,5 @@ export function tradePlan(view, price, atr) {
         help: 'Elige el tamaño para que, si salta el stop, no pierdas más del 1 % de tu cuenta.',
       },
     ],
-    where: 'Dónde: en Binance Futuros, o pídeselo al bot en la pestaña Bot (“Abrir una operación a mano”), que calcula el tamaño y pone el stop por ti.',
   };
 }

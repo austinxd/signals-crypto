@@ -25,11 +25,12 @@ import { friendlyError, binanceOkText } from '../errors';
 
 // What the app warns about. These are always on; the list is here so people know what to expect.
 const ALERT_KINDS = [
-  { label: 'Cambia la valoración de una moneda', help: 'Pasa a ser buen momento para comprar o para vender, o deja de serlo.' },
+  { label: 'Cambia la valoración de una moneda', help: 'Pasa a ser buen momento para abrir long o short, o deja de serlo.' },
   { label: 'El precio llega a un nivel importante', help: 'Un precio donde otras veces se frenó o rebotó.' },
-  { label: 'Tu posición ya no va a favor', help: 'La tendencia del mercado deja de acompañar a una posición tuya.' },
-  { label: 'El motivo de tu posición ya no vale', help: 'El precio rompió el nivel que sostenía la operación.' },
-  { label: 'Varias posiciones en riesgo a la vez', help: 'Tienes más de una posición en contra del mercado.' },
+  { label: 'Tu operación real ya no va a favor', help: 'La tendencia del mercado deja de acompañar a una operación tuya en Binance.' },
+  { label: 'El motivo de tu operación ya no vale', help: 'El precio rompió el nivel que la sostenía.' },
+  { label: 'Varias operaciones en riesgo a la vez', help: 'Tienes más de una operación en contra del mercado.' },
+  { label: 'Lo que hace el bot', help: 'Solo si administras el bot: cuándo abre o cierra una operación (hoy, simulada).' },
 ];
 
 const BINANCE_STEPS = [
@@ -45,6 +46,14 @@ const Feedback = ({ value }) =>
       {value.text}
     </Notice>
   ) : null;
+
+/** A fact with its explanation underneath (no value on the right). */
+const Info = ({ title, text, first = false }) => (
+  <View style={[styles.info, first && { borderTopWidth: 0 }]}>
+    <Text style={[type.body, { fontWeight: '600' }]}>{title}</Text>
+    <Text style={[type.small, { marginTop: 2 }]}>{text}</Text>
+  </View>
+);
 
 const Field = ({ label, help, ...input }) => (
   <View style={{ marginBottom: space.md }}>
@@ -73,6 +82,7 @@ const SettingsScreen = ({ onLogout }) => {
   const [binanceSecret, setBinanceSecret] = useState('');
 
   const [binanceOk, setBinanceOk] = useState(null); // result of the last check: null = not checked
+  const [changingKeys, setChangingKeys] = useState(false);
 
   const say = (section, ok, text) => setFeedback((f) => ({ ...f, [section]: { ok, text } }));
 
@@ -150,10 +160,11 @@ const SettingsScreen = ({ onLogout }) => {
       setBinanceOk(ok);
       // The server saves the keys even when Binance refuses them: that is not a success
       say('binance', ok, ok
-        ? 'Conexión correcta. Ya puedes ver tus posiciones en la pestaña Posiciones.'
+        ? 'Conexión correcta. Tus futuros abiertos están en la pestaña Mi Binance.'
         : 'Las claves se guardaron pero Binance las rechaza. Revisa que estén bien copiadas y que tengan permiso de lectura de Futuros.');
       setBinanceKey('');
       setBinanceSecret('');
+      setChangingKeys(false);
       // Reload profile to reflect changes
       try {
         const p = await getProfile();
@@ -181,7 +192,7 @@ const SettingsScreen = ({ onLogout }) => {
   };
 
   const handleDeleteBinance = () => {
-    Alert.alert('Desconectar Binance', 'Se borrarán tus claves del servidor y dejarás de ver tus posiciones.', [
+    Alert.alert('Desconectar Binance', 'Se borrarán tus claves del servidor y dejarás de ver tus operaciones de Binance. No se cierra nada en Binance.', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Desconectar',
@@ -254,7 +265,7 @@ const SettingsScreen = ({ onLogout }) => {
         <Row
           label="Consultas a la IA este mes"
           value={`${aiUsage ?? 0} de ${aiLimit ?? 0}`}
-          help={`Te quedan ${aiRemaining ?? 0}. Se gastan al pedir una explicación de una moneda o de una posición.`}
+          help={`Te quedan ${aiRemaining ?? 0}. Se gastan al pedir una explicación de una moneda o de una operación.`}
         />
         {!isPremium && (
           <Button label="Pasar a Premium" onPress={() => navigation.navigate('Upgrade')} style={{ marginTop: space.md }} />
@@ -263,14 +274,14 @@ const SettingsScreen = ({ onLogout }) => {
 
       <SectionTitle>Avisos</SectionTitle>
       <Card title="Avisos en este teléfono" right={<Chip label={pushChip.label} color={pushChip.color} />}>
-        <Text style={type.bodyDim}>
-          {pushOn
-            ? 'Te avisamos cuando cambia algo importante. Son avisos informativos: la app no compra ni vende por ti. Para dejar de recibirlos, desactívalos en los ajustes del teléfono.'
-            : pushBlocked
+        {!pushOn && (
+          <Text style={type.bodyDim}>
+            {pushBlocked
               ? 'El teléfono tiene bloqueadas las notificaciones de Criterio. Actívalas en los ajustes del teléfono y vuelve aquí.'
-              : 'Actívalos para enterarte cuando cambie algo importante en el mercado o en tus posiciones. Sin esto, la lista de avisos se queda vacía.'}
-        </Text>
-        <View style={styles.buttons}>
+              : 'Actívalos para enterarte cuando cambie algo en una moneda que sigues o en tus operaciones. Sin esto no llega ningún aviso.'}
+          </Text>
+        )}
+        <View style={[styles.buttons, pushOn && { marginTop: 0 }]}>
           {pushBlocked ? (
             <Button label="Abrir ajustes del teléfono" onPress={() => Linking.openSettings()} style={{ flex: 1 }} />
           ) : !pushOn ? (
@@ -293,9 +304,7 @@ const SettingsScreen = ({ onLogout }) => {
       </Card>
       <Collapsible title="Qué te avisamos" hint="Los tipos de aviso; llegan todos">
         {ALERT_KINDS.map((a, i) => (
-          <Row key={a.label} first={i === 0} label={a.label} help={a.help}>
-            <View />
-          </Row>
+          <Info key={a.label} first={i === 0} title={a.label} text={a.help} />
         ))}
       </Collapsible>
 
@@ -305,8 +314,8 @@ const SettingsScreen = ({ onLogout }) => {
         right={<Chip label={binanceChip.label} color={binanceChip.color} />}
       >
         <Text style={type.bodyDim}>
-          Sirve para mostrar tus posiciones y analizarlas. Las claves se usan solo para leer: la app no abre ni
-          cierra operaciones con ellas.
+          Para ver y analizar tus operaciones reales en la pestaña Mi Binance. Solo lee tus futuros (USDT-M). No ve
+          tu billetera spot. La app no abre ni cierra operaciones con tus claves.
         </Text>
         {connected && (
           <>
@@ -334,8 +343,18 @@ const SettingsScreen = ({ onLogout }) => {
           </>
         )}
 
+        {connected && !changingKeys ? (
+          <Button
+            label="Cambiar las claves"
+            kind="ghost"
+            small
+            onPress={() => setChangingKeys(true)}
+            style={{ marginTop: space.sm, alignSelf: 'flex-start', paddingHorizontal: 0 }}
+          />
+        ) : (
+          <>
         <Text style={[type.label, { marginTop: space.lg, marginBottom: space.md }]}>
-          {connected ? 'Cambiar las claves' : 'Conectar'}
+          {connected ? 'Claves nuevas' : 'Conectar'}
         </Text>
         <Field
           label="API Key"
@@ -361,9 +380,16 @@ const SettingsScreen = ({ onLogout }) => {
           loading={busy === 'saveKeys'}
           disabled={!!busy}
         />
+          </>
+        )}
         <Feedback value={feedback.binance} />
       </Card>
-      <Collapsible title="Cómo conseguir tus claves" hint="Tres pasos en la web o la app de Binance">
+      <Collapsible
+        key={connected ? 'keys-connected' : 'keys-missing'}
+        title="Cómo conseguir tus claves"
+        hint="Tres pasos en la web o la app de Binance"
+        defaultOpen={!connected}
+      >
         {BINANCE_STEPS.map((step, i) => (
           <View key={step} style={styles.step}>
             <Text style={styles.stepNumber}>{i + 1}.</Text>
@@ -377,13 +403,9 @@ const SettingsScreen = ({ onLogout }) => {
 
       <Collapsible title="Acerca de Criterio" hint="Versión y cómo funciona">
         <Row first label="Versión" value={version || '-'} />
-        <Row label="Mercado" value="Binance Futures USDT-M" />
-        <Row
-          label="Cómo funciona"
-          help="La app analiza el mercado y te avisa de los cambios. No ejecuta operaciones con tu cuenta: tú decides."
-        >
-          <View />
-        </Row>
+        <Row label="Mercado" value="Futuros de Binance (USDT-M)" />
+        <Info title="Qué mira" text="Solo futuros. No analiza ni lee las monedas que tengas compradas en spot." />
+        <Info title="Qué dinero toca" text="Ninguno. Mercado es análisis, Mi Binance muestra tus operaciones reales sin tocarlas y el bot opera hoy con dinero simulado." />
       </Collapsible>
 
       <Button label="Cerrar sesión" kind="secondary" onPress={handleLogout} style={{ marginTop: space.md }} />
@@ -393,6 +415,7 @@ const SettingsScreen = ({ onLogout }) => {
 
 const styles = StyleSheet.create({
   buttons: { flexDirection: 'row', gap: space.md, marginTop: space.lg },
+  info: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border },
   step: { flexDirection: 'row', marginBottom: space.sm },
   stepNumber: { color: colors.accent, fontSize: 14, fontWeight: '700', width: 22, lineHeight: 20 },
   fieldLabel: { color: colors.textDim, fontSize: 13, fontWeight: '600', marginBottom: 6 },

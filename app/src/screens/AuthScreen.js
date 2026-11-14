@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   KeyboardAvoidingView,
@@ -12,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { register, login } from '../services/api';
-import { Button, Notice } from '../components/ui';
+import { Button, Notice, Segment } from '../components/ui';
 import { colors, space, radius, type } from '../theme';
 import { friendlyError } from '../errors';
 
@@ -61,8 +60,8 @@ const AuthScreen = ({ onAuthSuccess, notice }) => {
     }
   };
 
-  const switchMode = () => {
-    setIsLogin(!isLogin);
+  const setMode = (key) => {
+    setIsLogin(key === 'login');
     setError(null);
   };
 
@@ -75,12 +74,23 @@ const AuthScreen = ({ onAuthSuccess, notice }) => {
         <View style={styles.brand}>
           <Text style={styles.brandName}>Criterio</Text>
           <Text style={[type.bodyDim, { textAlign: 'center', marginTop: space.sm }]}>
-            Análisis claro del mercado de futuros cripto y avisos cuando algo cambia.
+            Futuros de cripto, explicados claro.
+          </Text>
+          <Text style={[type.small, { textAlign: 'center', marginTop: space.sm }]}>
+            Mercado: análisis de cuándo abrir long o short · Mi Binance: tus futuros con dinero real · Bot: práctica
+            con dinero simulado.
           </Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={[type.heading, { marginBottom: space.lg }]}>{isLogin ? 'Iniciar sesión' : 'Crear cuenta'}</Text>
+          <View style={{ marginBottom: space.lg }}>
+            <Segment
+              options={[{ key: 'login', label: 'Entrar' }, { key: 'signup', label: 'Crear cuenta' }]}
+              value={isLogin ? 'login' : 'signup'}
+              onChange={setMode}
+              disabled={loading}
+            />
+          </View>
 
           {!!notice && !error && <Notice tone="warn">{notice}</Notice>}
           {!!error && <Notice tone="danger">{error}</Notice>}
@@ -110,7 +120,6 @@ const AuthScreen = ({ onAuthSuccess, notice }) => {
             returnKeyType="go"
             onSubmitEditing={handleSubmit}
           />
-          {!isLogin && <Text style={[type.small, styles.hint]}>Mínimo 6 caracteres.</Text>}
 
           <Button
             label={isLogin ? 'Entrar' : 'Crear cuenta'}
@@ -119,12 +128,6 @@ const AuthScreen = ({ onAuthSuccess, notice }) => {
             style={{ marginTop: space.sm }}
           />
 
-          <TouchableOpacity style={styles.switch} onPress={switchMode} disabled={loading}>
-            <Text style={type.bodyDim}>
-              {isLogin ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
-              <Text style={styles.switchLink}>{isLogin ? 'Crear cuenta' : 'Iniciar sesión'}</Text>
-            </Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -145,9 +148,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
     color: colors.text, fontSize: 16, minHeight: 48, paddingHorizontal: space.md, marginBottom: space.lg,
   },
-  hint: { marginTop: -space.md + 4, marginBottom: space.lg },
-  switch: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginTop: space.md },
-  switchLink: { color: colors.accent, fontWeight: '700' },
 });
 
 export default AuthScreen;

@@ -32,6 +32,17 @@ export const type = {
 export const tint = (hex, alpha = 0.14) =>
   hex + Math.round(alpha * 255).toString(16).padStart(2, '0');
 
+// ---- Whose money a figure is. Every screen that shows money says which of these it is. ----
+export const MONEY = {
+  real: { label: 'Dinero real', unit: 'USDT', color: colors.warn, note: 'Tu cuenta de futuros en Binance.' },
+  sim: { label: 'Simulado', unit: 'USDT simulados', color: colors.info, note: 'Dinero ficticio con precios reales. Nada de esto es tuyo.' },
+  demo: { label: 'Demo', unit: 'USDT de prueba', color: colors.info, note: 'Cuenta de prueba de Binance. No es dinero real.' },
+  live: { label: 'Dinero real', unit: 'USDT', color: colors.danger, note: 'El bot opera con dinero de verdad en Binance.' },
+  market: { label: 'Solo análisis', unit: '', color: colors.textDim, note: 'Futuros de Binance. No mira tu cuenta ni tu billetera spot.' },
+};
+/** Bot broker name from the server (paper | demo | live) to a MONEY key. */
+export const moneyOfBroker = (broker) => ({ paper: 'sim', demo: 'demo', live: 'live' }[broker] || 'sim');
+
 // ---- What the analysis words mean, said plainly. Used by the market list and the pair detail. ----
 
 export const SCENARIO = {
@@ -51,8 +62,8 @@ export const TREND = {
 export const trendOf = (key) => TREND[key] || TREND.neutral;
 
 export const DIRECTION = {
-  long: { label: 'Comprar (long)', short: 'LONG', arrow: '↑', color: colors.accent },
-  short: { label: 'Vender (short)', short: 'SHORT', arrow: '↓', color: colors.danger },
+  long: { label: 'Long (apostar a que sube)', short: 'LONG', arrow: '↑', color: colors.accent },
+  short: { label: 'Short (apostar a que baja)', short: 'SHORT', arrow: '↓', color: colors.danger },
 };
 
 /** Short explanations shown under a technical term, so nobody needs to know the jargon. */
@@ -64,8 +75,8 @@ export const GLOSSARY = {
   momentum: 'La fuerza del movimiento ahora mismo.',
   rsi: 'De 0 a 100. Por encima de 70 el precio viene muy subido; por debajo de 30, muy caído.',
   confirmation: 'Si el movimiento corto ya acompaña a la tendencia de fondo.',
-  funding: 'Lo que pagan los long a los short (o al revés) cada 8 h. Muy positivo = demasiada gente comprada.',
-  levels: 'Precios donde antes hubo mucha compra o venta. Suelen frenar o rebotar el precio.',
+  funding: 'Lo que pagan los long a los short (o al revés) cada 8 h. Muy positivo = demasiada gente apostando a que sube.',
+  levels: 'Precios donde antes se negoció mucho. Suelen frenar o rebotar el precio.',
   volume: 'Cuánto se negocia frente a lo normal. Más de 1,5x = movimiento con respaldo.',
   leverage: 'Cuántas veces se multiplica tu dinero en la posición. Multiplica ganancias y pérdidas.',
   liquidation: 'Precio al que el exchange cierra tu posición y pierdes el margen.',

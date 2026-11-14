@@ -10,7 +10,7 @@ const KNOWN = [
   [/at least 6 characters/i, 'La contraseña debe tener al menos 6 caracteres.'],
   [/invalid email|valid email|value is not a valid email/i, 'Ese correo no parece válido. Revísalo.'],
   [/ai limit|limit reached/i, 'Ya usaste todas tus consultas a la IA de este mes.'],
-  [/admin account required/i, 'Solo el administrador puede hacer esto.'],
+  [/admin account required/i, 'Solo el dueño del bot puede hacer esto.'],
   [/no binance|binance keys not/i, 'Primero conecta tu cuenta de Binance.'],
   [/invalid push token/i, 'Este teléfono no pudo registrarse para recibir avisos.'],
 ];

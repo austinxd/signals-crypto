@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, FlatList, RefreshControl } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../services/api';
 import { ModalHeader, Chip, Empty, Loading } from './ui';
-import { colors, space, radius, type, pairName, timeAgo } from '../theme';
+import { colors, space, radius, type, pairName, timeAgo, MONEY } from '../theme';
 
 // What each kind of alert is about, in plain words.
 const KIND = {
@@ -30,13 +31,45 @@ const KIND = {
   bot_alert: { label: 'Bot: atención', color: colors.danger },
   new_signal: { label: 'Señal nueva', color: colors.accent },
   signal_improved: { label: 'Señal mejorada', color: colors.accent },
-  signal_long: { label: 'Señal de compra', color: colors.accent },
-  signal_short: { label: 'Señal de venta', color: colors.danger },
+  signal_long: { label: 'Sugerencia de long', color: colors.accent },
+  signal_short: { label: 'Sugerencia de short', color: colors.danger },
 };
 const kindOf = (key) => KIND[String(key || '').toLowerCase()] || { label: 'Aviso', color: colors.textDim };
 
+const POSITION_KINDS = [
+  'coherence_changed', 'thesis_invalidated', 'htf_momentum_changed', 'multiple_against_context', 'high_risk_exposure',
+  'trailing_breakeven', 'trailing_update', 'macd_reversal', 'rsi_extreme',
+];
+const BOT_ORIGIN = {
+  live: { label: 'Bot · dinero real', color: MONEY.live.color },
+  demo: { label: 'Bot · demo', color: MONEY.demo.color },
+  paper: { label: 'Bot · simulado', color: MONEY.sim.color },
+};
+
+/** Extra data stored with an alert; the server may send it as an object or as JSON text. */
+const dataOf = (notification) => {
+  const d = notification?.data;
+  if (d && typeof d === 'object') return d;
+  if (typeof d === 'string') {
+    try { return JSON.parse(d) || {}; } catch (e) { return {}; }
+  }
+  return {};
+};
+
+/**
+ * Where an alert comes from, which is also whose money it talks about, and the tab that shows it:
+ * the bot (simulated unless told otherwise), your own Binance positions (real), or the market analysis (no money).
+ */
+const originOf = (notification) => {
+  const key = String(notification?.type || '').toLowerCase();
+  if (key.startsWith('bot_')) return { ...(BOT_ORIGIN[dataOf(notification).broker] || BOT_ORIGIN.paper), tab: 'Bot' };
+  if (POSITION_KINDS.includes(key)) return { label: 'Tu posición · real', color: MONEY.real.color, tab: 'Positions' };
+  return { label: 'Mercado · análisis', color: MONEY.market.color, tab: 'Home' };
+};
+
 const NotificationItem = ({ notification, onPress }) => {
   const kind = kindOf(notification?.type);
+  const origin = originOf(notification);
   const unread = !notification?.is_read;
   const symbol = pairName(notification?.symbol);
 
@@ -48,19 +81,21 @@ const NotificationItem = ({ notification, onPress }) => {
     >
       <View style={styles.itemTop}>
         <View style={styles.itemChips}>
-          <Chip label={kind.label} color={kind.color} />
+          <Chip label={origin.label} color={origin.color} />
           {!!symbol && <Chip label={symbol} color={colors.textDim} />}
+          {unread && <Chip label="Nuevo" color={kind.color} solid />}
         </View>
         <Text style={type.small}>{timeAgo(notification?.created_at)}</Text>
       </View>
+      <Text style={[styles.itemKind, { color: kind.color }]}>{kind.label}</Text>
       <Text style={[styles.itemTitle, !unread && { color: colors.textDim }]}>{notification?.title}</Text>
       {!!notification?.message && <Text style={type.bodyDim}>{notification.message}</Text>}
-      {unread && <Text style={styles.itemHint}>Nuevo · toca para marcarlo como leído. Un aviso antiguo puede no valer ya: mira el estado actual en Mercado.</Text>}
     </TouchableOpacity>
   );
 };
 
 const NotificationsModal = ({ visible, onClose, onUnreadCountChange }) => {
+  const navigation = useNavigation();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,7 +129,11 @@ const NotificationsModal = ({ visible, onClose, onUnreadCountChange }) => {
     fetchNotifications();
   };
 
+  // Tapping an alert marks it read and opens the tab that shows its current state.
   const handleNotificationPress = async (notification) => {
+    const tab = originOf(notification).tab;
+    onClose && onClose();
+    if (tab !== 'Home') navigation.navigate(tab);
     if (notification && !notification.is_read) {
       try {
         await markNotificationRead(notification.id);
@@ -128,7 +167,7 @@ const NotificationsModal = ({ visible, onClose, onUnreadCountChange }) => {
       <View style={styles.container}>
         <ModalHeader
           title="Avisos"
-          subtitle={unreadCount > 0 ? `${unreadCount} sin leer` : 'Todo leído'}
+          subtitle={unreadCount > 0 ? `${unreadCount} sin leer · toca uno para ver cómo está ahora` : 'Toca uno para ver cómo está ahora'}
           onClose={onClose}
           right={
             unreadCount > 0 ? (
@@ -149,7 +188,12 @@ const NotificationsModal = ({ visible, onClose, onUnreadCountChange }) => {
             ListEmptyComponent={
               <Empty
                 title="Aún no hay avisos"
-                hint="Aquí verás los cambios importantes en las monedas que sigues y en tus posiciones. Para que lleguen, activa los avisos en Ajustes."
+                hint="Aquí verás los cambios en las monedas que sigues, en tus posiciones de Binance y en el bot. Para que te lleguen al teléfono, actívalos en Ajustes."
+                actionLabel="Activar avisos"
+                onAction={() => {
+                  onClose && onClose();
+                  navigation.navigate('Settings');
+                }}
               />
             }
             refreshControl={
@@ -180,7 +224,7 @@ const styles = StyleSheet.create({
   itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.sm },
   itemChips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, flex: 1, marginRight: space.sm },
   itemTitle: { color: colors.text, fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  itemHint: { color: colors.textMuted, fontSize: 12, marginTop: space.sm },
+  itemKind: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
 });
 
 export default NotificationsModal;

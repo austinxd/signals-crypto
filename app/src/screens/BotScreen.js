@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   getBotReport,
@@ -12,10 +12,11 @@ import {
 } from '../services/api';
 import {
   Screen, Card, SectionTitle, Chip, Button, Segment, Stat, StatRow, Row, Notice, Collapsible, Empty, Loading,
+  MoneyTag, Help,
 } from '../components/ui';
-import { colors, space, type, pairName, pnlColor, timeAgo } from '../theme';
+import { colors, space, type, pairName, pnlColor, timeAgo, MONEY, moneyOfBroker } from '../theme';
 import {
-  es, esSigned, usdt, money, sideOf, stopOutcome, exitWhy, ACTION,
+  es, esSigned, money, sideOf, stopOutcome, exitWhy, ACTION, setReader,
   decisionText, pauseText, eventText, commandText, aiErrorText,
 } from '../botText';
 
@@ -40,26 +41,15 @@ const VERDICT = {
 };
 const KIND = { daily: 'Revisión diaria', event: 'Revisión por una noticia o movimiento', signal: 'Opinión sobre una operación' };
 
-// What kind of money the bot is moving. An unknown broker is never assumed to be real or simulated.
-const BROKER = {
-  paper: {
-    chip: 'Dinero simulado', color: colors.info, tone: 'info', word: 'dinero simulado', capital: 'Capital simulado',
-    title: 'Simulación', banner: 'El bot practica con dinero ficticio. No toca tu cuenta de Binance.',
-  },
-  demo: {
-    chip: 'Cuenta demo', color: colors.info, tone: 'info', word: 'dinero de la cuenta demo', capital: 'Capital de prueba',
-    title: 'Cuenta demo de Binance', banner: 'El bot opera en la cuenta de pruebas de Binance. No es dinero real.',
-  },
-  live: {
-    chip: 'Dinero real', color: colors.danger, tone: 'danger', word: 'dinero real', capital: 'Capital real',
-    title: 'Dinero real', banner: 'El bot opera con dinero de verdad en Binance.',
-  },
-  unknown: {
-    chip: 'Cuenta desconocida', color: colors.textMuted, tone: 'warn', word: 'dinero de un tipo de cuenta desconocido',
-    capital: 'Capital', title: 'Tipo de cuenta desconocido',
-    banner: 'El servidor no dice si el bot usa dinero simulado o real. Trátalo como real hasta confirmarlo.',
-  },
+// Words for the kind of money the bot is moving, by MONEY key. An unknown broker is never assumed to be
+// simulated: it gets no band, a warning, and is treated as real in confirmations.
+const WORDS = {
+  sim: { adj: 'simuladas', results: 'Resultados simulados', word: 'dinero simulado', paren: 'simulado', capital: 'Capital simulado' },
+  demo: { adj: 'de prueba', results: 'Resultados de prueba', word: 'dinero de prueba', paren: 'demo', capital: 'Capital de prueba' },
+  live: { adj: 'reales', results: 'Resultados reales', word: 'dinero real', paren: 'dinero real', capital: 'Capital real' },
+  unknown: { adj: 'del bot', results: 'Resultados del bot', word: 'dinero de un tipo de cuenta desconocido', paren: 'cuenta desconocida', capital: 'Capital' },
 };
+const KNOWN_BROKERS = ['paper', 'demo', 'live'];
 
 const until = (ts) => {
   const s = ts - Date.now() / 1000;
@@ -96,18 +86,48 @@ const Item = ({ title, right, rightColor, lines, children, first }) => (
   </View>
 );
 
-/** "BTC · Compra (long)" — the same first words on every trade in this tab. */
-const tradeTitle = (symbol, side) => `${pairName(symbol)} · ${sideOf(side).noun}`;
+/** "BTC · Short ↓" — the same first words on every trade in this tab. */
+const tradeTitle = (symbol, side) => `${pairName(symbol)} · ${sideOf(side).noun} ${sideOf(side).arrow}`;
 
-const BotScreen = () => {
+/** One open trade: the result is always visible, the rest opens with a tap. */
+const Fold = ({ title, right, rightColor, summary, first, children }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={[styles.item, first && { borderTopWidth: 0, paddingTop: 0, marginTop: 0 }]}>
+      <TouchableOpacity onPress={() => setOpen(!open)} activeOpacity={0.7}>
+        <View style={styles.itemTop}>
+          <Text style={[styles.itemTitleText, { flex: 1 }]}>{title}</Text>
+          {!!right && <Text style={[styles.itemRight, { fontSize: 15 }, rightColor && { color: rightColor }]}>{right}</Text>}
+        </View>
+        {!!summary && <Text style={[type.small, { marginTop: 3 }]}>{summary}</Text>}
+        <Text style={styles.foldToggle}>{open ? 'Ocultar detalle' : 'Ver detalle'}</Text>
+      </TouchableOpacity>
+      {open && children}
+    </View>
+  );
+};
+
+const BotScreen = ({ route }) => {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [pick, setPick] = useState(null); // coin chosen in "Abrir una operación a mano"
+  const [pick, setPick] = useState(null); // coin chosen in "Abrir operación"
+  const [idea, setIdea] = useState(null); // { coin, side } when the reader comes from a coin's analysis
   const [pending, setPending] = useState(null); // { id, label, since } order sent, waiting for the bot
   const [outcome, setOutcome] = useState(null); // { ok, text, detail, label } what the bot answered
   const riskRef = useRef({});
+
+  // "Practicar con el bot" in a coin's analysis sends { symbol, side, ts }: arrive with that coin chosen.
+  const asked = route && route.params;
+  const askedTs = asked && asked.ts;
+  useEffect(() => {
+    if (!asked || !asked.symbol) return;
+    const coin = pairName(String(asked.symbol).toUpperCase());
+    setPick(coin);
+    setIdea({ coin, side: asked.side === 'short' ? 'short' : asked.side === 'long' ? 'long' : null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askedTs, asked && asked.symbol]);
 
   const load = useCallback(async () => {
     try {
@@ -168,7 +188,7 @@ const BotScreen = () => {
       await load();
     } catch (err) {
       Alert.alert('No se pudo enviar', err && err.status === 403
-        ? 'Solo el administrador puede hacer esto.'
+        ? 'Solo el dueño del bot puede hacer esto.'
         : 'No hubo conexión con el servidor. No se ha hecho nada; inténtalo de nuevo.');
     } finally {
       setBusy(false);
@@ -181,11 +201,15 @@ const BotScreen = () => {
       { text: label, style: destructive ? 'destructive' : 'default', onPress: () => run(fn, title) },
     ]);
 
+  const brokerName = report && report.status ? report.status.broker : null;
+  const known = KNOWN_BROKERS.includes(brokerName);
+  const kind = known ? moneyOfBroker(brokerName) : null; // MONEY key, or null when the server does not say
+
   const body = () => {
     if (!report) {
       return error
         ? (error === 'forbidden'
-          ? <Empty title="El servidor aún no deja ver el bot" hint="El servidor tiene una versión anterior, que solo deja entrar al administrador. Se arregla actualizando el servidor; en la app no hay que hacer nada." actionLabel="Reintentar" onAction={load} />
+          ? <Empty title="El servidor aún no deja ver el bot" hint="El servidor tiene una versión anterior. Se arregla actualizando el servidor; en la app no hay que hacer nada." actionLabel="Reintentar" onAction={load} />
           : <Empty title="No se pudo leer el bot" hint="Comprueba tu conexión. Si sigue igual, puede que el servidor esté reiniciándose." actionLabel="Reintentar" onAction={load} />)
         : <Loading label="Leyendo el bot…" />;
     }
@@ -207,7 +231,13 @@ const BotScreen = () => {
     const started = s.mode != null;
     const canControl = report.can_control === true;
     const locked = busy || !!pending;
-    const broker = BROKER[s.broker] || BROKER.unknown;
+    const w = WORDS[kind || 'unknown'];
+    const unit = kind ? MONEY[kind].unit : 'USDT';
+    setReader(canControl, unit); // botText sentences say "tú" to the owner and name the kind of money
+    const amount = (x, d = 2) => `${es(x, d)} ${unit}`;
+    const signed = (x, d = 2) => `${esSigned(x, d)} ${unit}`;
+    const tag = kind ? <MoneyTag kind={kind} /> : null;
+
     const aiMode = ai.mode || 'off';
     const stanceInfo = ai.stance || null;
     const stanceFresh = !!stanceInfo && Date.now() / 1000 - stanceInfo.ts < 26 * 3600;
@@ -222,21 +252,25 @@ const BotScreen = () => {
     const riskUsdt = a.equity != null && risk.risk_per_trade != null ? a.equity * risk.risk_per_trade : null;
     const riskPct = risk.risk_per_trade != null ? es(risk.risk_per_trade * 100, 1) : null;
     const dayUsdt = a.equity != null && a.day_pnl_pct != null ? a.equity - a.equity / (1 + a.day_pnl_pct / 100) : null;
+    const all = perf.all || {};
+    const openPnl = open.reduce((sum, t) => sum + (t.open_pnl || 0), 0);
 
-    const picked = symbols.includes(pick) ? pick : symbols[0];
+    const picked = symbols.find((x) => x === pick || pairName(x) === pick) || symbols[0];
+    const coin = pairName(picked);
     const pickedBusy = open.some((t) => t.symbol === picked);
+    const ideaHere = idea && idea.coin === coin ? idea : null;
+    const ideaMissing = idea && !symbols.some((x) => pairName(x) === idea.coin) ? idea.coin : null;
     const askOpen = (side) => {
       const sd = sideOf(side === 'long' ? 1 : -1);
-      const coin = pairName(picked);
       confirm(
-        `${sd.noun} de ${coin}`,
-        `Vas a ${sd.bet.replace('sube', `${coin} sube`).replace('baja', `${coin} baja`)}. `
-          + `El bot elige la cantidad y pone un cierre automático de pérdidas: si el precio ${sd.against} hasta ahí, la operación se cierra sola`
-          + (riskUsdt != null ? ` y pierdes unos ${usdt(riskUsdt, 0)} (${riskPct} % del capital). ` : '. ')
-          + 'No tiene un precio de ganancia fijo: el bot va moviendo ese cierre a tu favor mientras el precio acompaña. '
-          + `Es ${broker.word}. El bot puede negarse si no cumple sus límites; te lo dirá aquí.`,
+        `${sd.noun} de ${coin} (${w.paren})`,
+        `Gana si ${coin} ${sd.against === 'baja' ? 'sube' : 'baja'}. `
+          + `Si ${sd.against} hasta el cierre automático de pérdidas, se cierra sola`
+          + (riskUsdt != null ? ` y pierdes unos ${amount(riskUsdt, 0)} (${riskPct} % del capital). ` : '. ')
+          + 'El bot puede negarse si no cumple sus límites; te lo dirá aquí.',
         'Abrir',
         () => openBotTrade(picked, side),
+        kind === 'live' || !kind,
       );
     };
 
@@ -250,24 +284,22 @@ const BotScreen = () => {
 
     const silentFor = s.heartbeat_age_s != null ? timeAgo(Date.now() / 1000 - s.heartbeat_age_s).replace('hace ', '') : null;
     const summary = !started
-      ? 'El bot nunca se ha encendido en el servidor. Hasta entonces esta pantalla estará vacía; desde la app no se puede encender.'
+      ? 'El bot nunca se ha encendido en el servidor. Desde la app no se puede encender.'
       : !s.running
-        ? `El bot lleva ${silentFor && silentFor !== 'ahora' ? silentFor : 'un rato'} sin dar señal de vida. No abre ni cierra operaciones. `
-          + (s.broker === 'live' || s.broker === 'demo'
-            ? 'Las órdenes de cierre automático de pérdidas siguen puestas en Binance. '
-            : '')
-          + 'Hay que reiniciarlo en el servidor; desde la app no se puede.'
+        ? `Lleva ${silentFor && silentFor !== 'ahora' ? silentFor : 'un rato'} sin dar señal de vida: no abre ni cierra operaciones. `
+          + (s.broker === 'live' || s.broker === 'demo' ? 'Los cierres automáticos de pérdidas siguen puestos en Binance. ' : '')
+          + 'Hay que reiniciarlo en el servidor.'
         : s.paused
-          ? 'El bot está en pausa: no abre operaciones nuevas. Las que ya están abiertas siguen con su cierre automático de pérdidas.'
+          ? 'No abre operaciones nuevas. Las abiertas siguen con su cierre automático de pérdidas.'
           : s.mode === 'auto'
-            ? `El bot vigila ${coins || 'el mercado'} y abre operaciones por su cuenta cuando se cumplen sus reglas.`
-            : `El bot vigila ${coins || 'el mercado'} y propone operaciones; no abre nada sin que el administrador lo apruebe.`;
+            ? `Vigila ${coins || 'el mercado'} y abre operaciones solo.`
+            : `Vigila ${coins || 'el mercado'} y propone operaciones: no abre nada sin ${canControl ? 'tu aprobación' : 'la aprobación de su dueño'}.`;
 
     const lastEval = evaluations.reduce((m, e) => (e && e.ts > (m ? m.ts : 0) ? e : m), null);
     const emptyOpen = !started ? 'Ninguna. El bot no está encendido.'
       : !s.running ? 'Ninguna. El bot no está funcionando.'
-        : s.paused ? 'Ninguna. El bot está en pausa y no abrirá operaciones hasta que se reanude.'
-          : `Ninguna ahora mismo. El bot revisa ${coins || 'sus monedas'} cada pocas horas y solo abre cuando se cumplen sus reglas; pueden pasar días sin operar.`
+        : s.paused ? 'Ninguna. El bot está en pausa.'
+          : 'Ninguna ahora mismo. El bot solo abre cuando se cumplen sus reglas; pueden pasar días sin operar.'
             + (lastEval ? ` Última revisión: ${timeAgo(lastEval.ts)}${lastEval.sig ? '' : ', sin señal'}.` : '');
 
     const proposalInfo = (pid) => {
@@ -280,10 +312,17 @@ const BotScreen = () => {
     };
 
     const perfRows = [['Desde el inicio', perf.all], ['Últimos 30 días', perf.last_30d], ['Últimos 7 días', perf.last_7d]];
+    const askPause = () => (s.paused
+      ? confirm('Reanudar el bot', `Volverá a abrir operaciones con ${w.word} cuando se cumplan sus reglas.`, 'Reanudar', () => setBotPaused(false), kind === 'live' || !kind)
+      : confirm('Pausar el bot', 'No abrirá operaciones nuevas. Las abiertas no se cierran: siguen con su cierre automático de pérdidas.', 'Pausar', () => setBotPaused(true)));
 
     return (
       <>
-        <Notice tone={broker.tone} title={broker.title}>{broker.banner}</Notice>
+        {!kind && started && (
+          <Notice tone="warn" title="Tipo de dinero desconocido">
+            El servidor no dice si el bot usa dinero simulado o real. Trátalo como real hasta confirmarlo.
+          </Notice>
+        )}
 
         {!!pending && (
           <Notice tone="info" title={`${pending.label}: orden enviada`}>
@@ -303,45 +342,61 @@ const BotScreen = () => {
           </Notice>
         )}
 
+        {/* 1. The answer first: is it running, how much it has, how it is doing — and the pause button. */}
         <Card>
           <View style={styles.stateRow}>
             <Chip label={state.label.toUpperCase()} color={state.color} solid />
-            <Chip label={broker.chip} color={broker.color} style={{ marginLeft: space.sm }} />
+            {canControl && started && (
+              <Button
+                small kind={s.paused ? 'primary' : 'secondary'} label={s.paused ? 'Reanudar' : 'Pausar'}
+                disabled={locked} onPress={askPause}
+              />
+            )}
           </View>
-          <Text style={[type.body, { marginTop: space.md }]}>{summary}</Text>
+          <Text style={[type.bodyDim, { marginTop: space.sm }]}>{summary}</Text>
           {started && !!s.paused && (
-            <View style={{ marginTop: space.sm }}>
+            <View style={{ marginTop: space.xs }}>
               <Explained value={pauseText(s.pause_reason)} />
             </View>
           )}
           {started && (
-            <StatRow style={{ marginTop: space.lg }}>
-              <Stat label={broker.capital} value={es(a.equity, 0)} hint="USDT, con lo abierto" />
-              <Stat
-                label="Hoy"
-                value={dayUsdt != null ? esSigned(dayUsdt, 0) : '-'}
-                color={pnlColor(dayUsdt)}
-                hint={a.day_pnl_pct != null ? `USDT (${esSigned(a.day_pnl_pct, 2)} %)` : 'USDT'}
-              />
-              <Stat
-                label="Bajo su máximo"
-                value={a.drawdown_pct != null ? `${es(a.drawdown_pct, 1)} %` : '-'}
-                color={a.drawdown_pct > 5 ? colors.warn : undefined}
-                hint={risk.max_drawdown_halt != null ? `se pausa al ${es(risk.max_drawdown_halt * 100, 0)} %` : undefined}
-              />
-            </StatRow>
+            <>
+              <StatRow style={{ marginTop: space.lg }}>
+                <Stat label={w.capital} value={es(a.equity, 0)} hint="incluye operaciones abiertas" />
+                <Stat
+                  label="Hoy"
+                  value={dayUsdt != null ? esSigned(dayUsdt, 0) : '-'}
+                  color={pnlColor(dayUsdt)}
+                  hint={a.day_pnl_pct != null ? `${esSigned(a.day_pnl_pct, 2)} %` : undefined}
+                />
+                <Stat
+                  label="Desde el inicio"
+                  value={all.trades ? esSigned(all.pnl, 0) : '-'}
+                  color={all.trades ? pnlColor(all.pnl) : undefined}
+                  hint={all.trades ? `${all.trades} ${all.trades === 1 ? 'cerrada' : 'cerradas'}` : 'sin cerradas'}
+                />
+              </StatRow>
+              <Text style={[type.small, { marginTop: space.md }]}>
+                Cifras en {unit}.
+                {a.drawdown_pct != null
+                  ? ` Caída desde su mejor momento: ${es(a.drawdown_pct, 1)} %`
+                    + (risk.max_drawdown_halt != null ? ` (se pausa solo al ${es(risk.max_drawdown_halt * 100, 0)} %).` : '.')
+                  : ''}
+              </Text>
+            </>
           )}
         </Card>
 
+        {/* 2. What is waiting for an answer. */}
         {proposals.length > 0 && (
           <>
-            <SectionTitle>El bot propone operar: falta respuesta</SectionTitle>
+            <SectionTitle right={tag}>El bot propone operar: falta respuesta</SectionTitle>
             <Card>
               {proposals.map((p, i) => {
                 const sd = sideOf(p.side);
                 const info = proposalInfo(p.id);
                 const out = stopOutcome(p.side, info.qty, p.ref_price, p.sl);
-                const coin = pairName(p.symbol);
+                const pc = pairName(p.symbol);
                 const aiSaid = info.ai ? decisionText({ action: 'PROPOSE', reason: info.ai }, risk) : null;
                 return (
                   <Item
@@ -351,7 +406,7 @@ const BotScreen = () => {
                     lines={[
                       `Precio ahora ≈ ${money(p.ref_price)}.`,
                       `Si ${sd.against} a ${money(p.sl)} se cierra sola${out ? ` y ${out}` : ''}.`,
-                      `Si nadie responde, la propuesta se descarta en ${until(p.expires_at)}.`,
+                      `Si nadie responde, se descarta en ${until(p.expires_at)}.`,
                     ]}
                   >
                     <Explained value={aiSaid} />
@@ -360,15 +415,15 @@ const BotScreen = () => {
                         <View style={styles.buttons}>
                           <Button
                             small label="Aprobar" disabled={locked || !canAct} style={{ flex: 1 }}
-                            onPress={() => confirm(`Aprobar ${sd.noun.toLowerCase()} de ${coin}`,
-                              `Se abrirá una ${sd.noun.toLowerCase()} de ${coin} con ${broker.word}.`
-                                + (out ? ` Si sale mal ${out.replace('perdería', 'pierde')}.` : '')
+                            onPress={() => confirm(`Aprobar ${sd.noun.toLowerCase()} de ${pc} (${w.paren})`,
+                              `Se abrirá un ${sd.noun.toLowerCase()} de ${pc} con ${w.word}.`
+                                + (out ? ` Si sale mal ${out.replace('perdería', 'pierdes')}.` : '')
                                 + ' El bot puede negarse si ya no cumple sus límites.',
                               'Aprobar', () => answerBotProposal(p.id, 'approve'))}
                           />
                           <Button
                             small kind="secondary" label="Rechazar" disabled={locked} style={{ flex: 1 }}
-                            onPress={() => confirm(`Rechazar ${sd.noun.toLowerCase()} de ${coin}`,
+                            onPress={() => confirm(`Rechazar ${sd.noun.toLowerCase()} de ${pc}`,
                               'La propuesta se descarta y no se abre nada.', 'Rechazar',
                               () => answerBotProposal(p.id, 'reject'), true)}
                           />
@@ -376,7 +431,7 @@ const BotScreen = () => {
                         {!canAct && !!whyNot && <Text style={[type.small, { marginTop: space.sm }]}>{whyNot}</Text>}
                       </>
                     ) : (
-                      <Text style={[type.small, { marginTop: space.sm }]}>Solo el administrador puede responder.</Text>
+                      <Text style={[type.small, { marginTop: space.sm }]}>Solo el dueño del bot puede responder.</Text>
                     )}
                   </Item>
                 );
@@ -385,63 +440,166 @@ const BotScreen = () => {
           </>
         )}
 
-        <SectionTitle>Operaciones abiertas del bot</SectionTitle>
+        {/* 3. Open a trade by hand. */}
+        {started && symbols.length > 0 && (
+          <Card title="Abrir operación" right={tag} style={ideaHere || ideaMissing ? styles.fromMarket : null}>
+            {canControl ? (
+              <>
+                {!!ideaHere && (
+                  <Text style={[type.bodyDim, { marginBottom: space.md }]}>
+                    Vienes del análisis de {coin}
+                    {ideaHere.side ? `: la idea era ${ideaHere.side === 'long' ? 'long (apostar a que sube)' : 'short (apostar a que baja)'}.` : '.'}
+                  </Text>
+                )}
+                {!!ideaMissing && (
+                  <Text style={[type.bodyDim, { marginBottom: space.md }]}>
+                    El bot no opera {ideaMissing}. Solo opera {coins}.
+                  </Text>
+                )}
+                <Segment
+                  disabled={locked}
+                  value={picked}
+                  options={symbols.map((x) => ({ key: x, label: pairName(x) }))}
+                  onChange={setPick}
+                />
+                <View style={styles.buttons}>
+                  <Button
+                    label={`Long ↑ ${coin}`} style={{ flex: 1 }}
+                    disabled={locked || !canAct || pickedBusy}
+                    onPress={() => askOpen('long')}
+                  />
+                  <Button
+                    kind="danger" label={`Short ↓ ${coin}`} style={{ flex: 1 }}
+                    disabled={locked || !canAct || pickedBusy}
+                    onPress={() => askOpen('short')}
+                  />
+                </View>
+                <Text style={[type.small, { marginTop: space.sm }]}>
+                  {pickedBusy
+                    ? `Ya hay una operación abierta en ${coin}. Ciérrala antes de abrir otra.`
+                    : whyNot || (riskUsdt != null
+                      ? `Arriesga unos ${amount(riskUsdt, 0)} (${riskPct} % del capital). El bot pone la cantidad y el cierre automático de pérdidas.`
+                      : 'El bot pone la cantidad y el cierre automático de pérdidas.')}
+                </Text>
+                <Help label="¿Qué es long y short?" style={{ marginTop: space.sm }}>
+                  Son apuestas sobre el precio en futuros, no comprar la moneda. Long gana si el precio sube; short gana
+                  si baja. Para abrir un short no hace falta tener la moneda.
+                </Help>
+              </>
+            ) : (
+              <Text style={type.bodyDim}>Solo el dueño del bot puede abrir operaciones. Tú puedes ver todo lo que hace.</Text>
+            )}
+          </Card>
+        )}
+
+        {/* 4. What it holds now. */}
+        <SectionTitle right={tag}>{`Operaciones ${w.adj} abiertas`}</SectionTitle>
         <Card>
           {open.length === 0 ? (
             <Text style={type.bodyDim}>{emptyOpen}</Text>
           ) : (
-            open.map((t, i) => {
-              const sd = sideOf(t.side);
-              const out = stopOutcome(t.side, t.qty, t.entry, t.sl);
-              const coin = pairName(t.symbol);
-              const winning = t.open_pnl != null && t.open_pnl >= 0;
-              const why = whyOpened(t.id);
-              return (
-                <Item
-                  key={t.id}
-                  first={i === 0}
-                  title={`${tradeTitle(t.symbol, t.side)}: ${sd.wins}`}
-                  lines={[
-                    `${sd.bought} a ${money(t.entry)} ${timeAgo(t.entry_ts)}. Precio ahora ${money(t.price)}.`,
-                    `Se cierra sola si ${sd.against} a ${money(t.sl)}${out ? `: ${out}` : ''}.`,
-                    t.tp != null
-                      ? `Se cierra con ganancia si llega a ${money(t.tp)}.`
-                      : 'Sin precio de ganancia fijo: el cierre automático va siguiendo al precio.',
-                  ]}
-                >
-                  <Text style={[styles.result, { color: pnlColor(t.open_pnl) }]}>
-                    {winning ? 'Va ganando' : 'Va perdiendo'} {usdt(Math.abs(t.open_pnl || 0))} (aún sin cerrar)
-                  </Text>
-                  {!!(why && why.text) && (
-                    <View style={{ marginTop: space.xs }}>
-                      <Text style={type.small}>Por qué la abrió:</Text>
-                      <Explained value={why} />
-                    </View>
-                  )}
-                  {canControl && (
-                    <Button
-                      small kind="secondary" label="Cerrar ahora" disabled={locked}
-                      style={{ alignSelf: 'flex-start', marginTop: space.md }}
-                      onPress={() => confirm(`Cerrar ${sd.noun.toLowerCase()} de ${coin}`,
-                        `Se cerrará al precio actual (≈ ${money(t.price)}). Resultado aproximado: ${esSigned(t.open_pnl)} USDT (${broker.word}). `
-                          + 'No se puede deshacer. El bot lo hace en unos 20 segundos.',
-                        'Cerrar', () => closeBotPosition(t.symbol), true)}
-                    />
-                  )}
-                </Item>
-              );
-            })
+            <>
+              {open.length > 1 && (
+                <Text style={[styles.result, { color: pnlColor(openPnl), marginTop: 0, marginBottom: space.md }]}>
+                  Entre todas {openPnl >= 0 ? 'va ganando' : 'va perdiendo'} {amount(Math.abs(openPnl))} (sin cerrar)
+                </Text>
+              )}
+              {open.map((t, i) => {
+                const sd = sideOf(t.side);
+                const out = stopOutcome(t.side, t.qty, t.entry, t.sl);
+                const tc = pairName(t.symbol);
+                const why = whyOpened(t.id);
+                return (
+                  <Fold
+                    key={t.id}
+                    first={i === 0}
+                    title={tradeTitle(t.symbol, t.side)}
+                    right={esSigned(t.open_pnl || 0)}
+                    rightColor={pnlColor(t.open_pnl)}
+                    summary={`Entró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
+                  >
+                    <Text style={[type.small, { marginTop: space.sm }]}>
+                      {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}.
+                    </Text>
+                    <Text style={[type.small, { marginTop: 3 }]}>
+                      {t.open_pnl != null && t.open_pnl >= 0 ? 'Va ganando' : 'Va perdiendo'} {amount(Math.abs(t.open_pnl || 0))}, aún sin cerrar.
+                    </Text>
+                    {!!out && (
+                      <Text style={[type.small, { marginTop: 3 }]}>Si salta el cierre automático en {money(t.sl)}, {out}.</Text>
+                    )}
+                    <Text style={[type.small, { marginTop: 3 }]}>
+                      {t.tp != null
+                        ? `Se cierra con ganancia si llega a ${money(t.tp)}.`
+                        : 'Sin precio de ganancia fijo: el cierre automático va siguiendo al precio.'}
+                    </Text>
+                    {!!(why && why.text) && (
+                      <View style={{ marginTop: space.xs }}>
+                        <Text style={type.small}>Por qué la abrió:</Text>
+                        <Explained value={why} />
+                      </View>
+                    )}
+                    {canControl && (
+                      <Button
+                        small kind="secondary" label="Cerrar ahora" disabled={locked}
+                        style={{ alignSelf: 'flex-start', marginTop: space.md }}
+                        onPress={() => confirm(`Cerrar ${sd.noun.toLowerCase()} de ${tc} (${w.paren})`,
+                          `Se cerrará al precio actual (≈ ${money(t.price)}). Resultado aproximado: ${signed(t.open_pnl)}. `
+                            + 'No se puede deshacer.',
+                          'Cerrar', () => closeBotPosition(t.symbol), true)}
+                      />
+                    )}
+                  </Fold>
+                );
+              })}
+            </>
           )}
         </Card>
 
-        <SectionTitle>Qué opina la IA</SectionTitle>
-        <Card>
+        {/* 5. Everything else, closed until asked for. */}
+        <SectionTitle>Más detalle</SectionTitle>
+
+        <Collapsible
+          title={w.results}
+          right={all.trades ? esSigned(all.pnl, 0) : undefined}
+          rightColor={all.trades ? pnlColor(all.pnl) : undefined}
+          hint={all.trades ? `${all.trades} operaciones cerradas, en ${unit}` : 'Todavía no ha cerrado ninguna operación'}
+        >
+          {perfRows.map(([label, st], i) => {
+            const n = st && st.trades ? st.trades : 0;
+            const wins = n ? Math.round(((st.win_rate_pct || 0) * n) / 100) : 0;
+            return (
+              <Row
+                key={label}
+                first={i === 0}
+                label={label}
+                value={n ? signed(st.pnl) : 'Sin operaciones cerradas'}
+                color={n ? pnlColor(st.pnl) : colors.textMuted}
+                help={n
+                  ? `${n} ${n === 1 ? 'cerrada' : 'cerradas'} · ganó ${wins} y perdió ${n - wins} · media ${esSigned(st.pnl / n)} por operación`
+                  : undefined}
+              />
+            );
+          })}
+          <Text style={[type.small, { marginTop: space.sm }]}>
+            Con {w.word}, ya descontadas las comisiones. Es normal que pierda más veces de las que gana: sus ganancias
+            suelen ser más grandes que sus pérdidas.
+            {report.other_broker_trades > 0
+              ? ` No se cuentan ${report.other_broker_trades} operaciones hechas antes con otro tipo de dinero.`
+              : ''}
+          </Text>
+        </Collapsible>
+
+        <Collapsible
+          title="Qué opina la IA"
+          right={aiMode === 'off' ? 'Apagada' : stanceFresh ? stance.label : undefined}
+          rightColor={aiMode === 'off' ? colors.textMuted : stance.color}
+          hint={aiMode === 'shadow' ? 'Solo opina: no cambia lo que hace el bot' : undefined}
+        >
           {aiMode === 'off' ? (
             <Text style={type.bodyDim}>La IA está apagada. El bot decide solo con sus reglas.</Text>
           ) : stanceFresh ? (
             <>
-              <Chip label={stance.label.toUpperCase()} color={stance.color} solid />
-              <Text style={[type.small, { marginTop: space.sm }]}>{stance.hint}</Text>
+              <Text style={type.small}>{stance.hint}</Text>
               {!!stanceInfo.reason && <Text style={[type.body, { marginTop: space.md }]}>{stanceInfo.reason}</Text>}
               {(stanceInfo.key_facts || []).map((f, i) => (
                 <Text key={i} style={[type.bodyDim, { marginTop: space.xs }]}>• {f}</Text>
@@ -458,143 +616,64 @@ const BotScreen = () => {
               Aún no hay una revisión vigente. La IA revisa el mercado una vez al día y cuando pasa algo importante.
             </Text>
           )}
-        </Card>
+        </Collapsible>
 
-        <SectionTitle>Resultados del bot</SectionTitle>
-        <Card>
-          {perfRows.map(([label, st], i) => {
-            const n = st && st.trades ? st.trades : 0;
-            const wins = n ? Math.round(((st.win_rate_pct || 0) * n) / 100) : 0;
-            return (
-              <Row
-                key={label}
-                first={i === 0}
-                label={label}
-                value={n ? `${esSigned(st.pnl)} USDT` : 'Sin operaciones cerradas'}
-                color={n ? pnlColor(st.pnl) : colors.textMuted}
-                help={n
-                  ? `${n} ${n === 1 ? 'operación cerrada' : 'operaciones cerradas'} · ganó ${wins} y perdió ${n - wins} · media ${esSigned(st.pnl / n)} USDT por operación`
-                  : undefined}
-              />
-            );
-          })}
-          <Text style={[type.small, { marginTop: space.sm }]}>
-            Resultados con {broker.word}, ya descontadas las comisiones. Es normal que pierda más veces de las que
-            gana: sus ganancias suelen ser más grandes que sus pérdidas.
-          </Text>
-        </Card>
-
-        {canControl ? (
-          <>
-            <SectionTitle>Controlar el bot</SectionTitle>
-            <Card>
-              <Text style={type.heading}>Abrir una operación a mano</Text>
-              <Text style={[type.small, { marginTop: 2, marginBottom: space.md }]}>
-                Normalmente el bot abre solo. Aquí puedes pedirle una: eliges la moneda y hacia dónde apuestas, y el
-                bot pone la cantidad y el cierre automático de pérdidas con sus límites de riesgo.
-                {riskUsdt != null ? ` Cada operación arriesga unos ${usdt(riskUsdt, 0)} (${riskPct} % del capital).` : ''}
-              </Text>
-              {symbols.length > 1 && (
-                <View style={{ marginBottom: space.md }}>
-                  <Segment
-                    disabled={locked}
-                    value={picked}
-                    options={symbols.map((x) => ({ key: x, label: pairName(x) }))}
-                    onChange={setPick}
-                  />
-                </View>
-              )}
-              <Button
-                kind="secondary" label="Apostar a que sube (comprar · long)"
-                disabled={locked || !canAct || pickedBusy || !picked}
-                onPress={() => askOpen('long')}
-              />
-              <Button
-                kind="secondary" label="Apostar a que baja (vender · short)" style={{ marginTop: space.sm }}
-                disabled={locked || !canAct || pickedBusy || !picked}
-                onPress={() => askOpen('short')}
-              />
-              <Text style={[type.small, { marginTop: space.sm }]}>
-                {pickedBusy
-                  ? `Ya hay una operación abierta en ${pairName(picked)}. Ciérrala antes de abrir otra.`
-                  : whyNot || 'Vender aquí no es cerrar una compra: es abrir una apuesta a que el precio baja. No hace falta tener la moneda.'}
-              </Text>
-
-              <View style={styles.control}>
-                <Text style={type.heading}>Pausar o reanudar</Text>
-                <Text style={[type.small, { marginTop: 2, marginBottom: space.md }]}>
-                  Pausar no cierra nada: las operaciones abiertas siguen con su cierre automático de pérdidas. Solo deja
-                  de abrir nuevas.
-                </Text>
-                <Button
-                  kind={s.paused ? 'primary' : 'warn'}
-                  label={s.paused ? 'Reanudar el bot' : 'Pausar el bot'}
+        {canControl && (
+          <Collapsible title="Ajustes del bot" hint="Quién decide abrir y cuánto manda la IA">
+            <View style={[styles.control, styles.controlFirst]}>
+              <Text style={type.heading}>Quién decide abrir</Text>
+              <View style={{ marginTop: space.md }}>
+                <Segment
                   disabled={locked || !started}
-                  onPress={() =>
-                    s.paused
-                      ? confirm('Reanudar el bot', `Volverá a abrir operaciones con ${broker.word} cuando se cumplan sus reglas.`, 'Reanudar', () => setBotPaused(false))
-                      : confirm('Pausar el bot', 'No abrirá operaciones nuevas. Las abiertas siguen con su cierre automático de pérdidas.', 'Pausar', () => setBotPaused(true))
+                  value={s.mode}
+                  options={[{ key: 'auto', label: 'El bot decide solo' }, { key: 'manual', label: 'Me pregunta antes' }]}
+                  onChange={(m) =>
+                    m === 'auto'
+                      ? confirm('Dejar que el bot decida solo',
+                          `El bot abrirá operaciones sin preguntar, con ${w.word}.`
+                            + (riskPct ? ` Cada una arriesga como mucho el ${riskPct} % del capital.` : '')
+                            + (proposals.length ? ' Las propuestas pendientes siguen esperando tu respuesta.' : ''),
+                          'Aceptar', () => setBotMode(m), kind === 'live' || !kind)
+                      : run(() => setBotMode(m))
                   }
                 />
               </View>
+              <Text style={[type.small, { marginTop: space.sm }]}>
+                {s.mode === 'manual'
+                  ? 'El bot propone cada operación y espera a que la apruebes aquí. Te llega un aviso.'
+                  : 'El bot abre las operaciones por su cuenta, siempre dentro de sus límites de riesgo.'}
+              </Text>
+            </View>
 
-              <View style={styles.control}>
-                <Text style={type.heading}>Quién decide abrir</Text>
-                <View style={{ marginTop: space.md }}>
-                  <Segment
-                    disabled={locked || !started}
-                    value={s.mode}
-                    options={[{ key: 'auto', label: 'El bot decide solo' }, { key: 'manual', label: 'Me pregunta antes' }]}
-                    onChange={(m) =>
-                      m === 'auto'
-                        ? confirm('Dejar que el bot decida solo',
-                            `A partir de ahora el bot abrirá operaciones sin preguntar, con ${broker.word}.`
-                              + (riskPct ? ` Cada una arriesga como mucho el ${riskPct} % del capital.` : '')
-                              + (proposals.length ? ' Las propuestas pendientes siguen esperando tu respuesta.' : ''),
-                            'Aceptar', () => setBotMode(m), s.broker === 'live')
-                        : run(() => setBotMode(m))
-                    }
-                  />
-                </View>
-                <Text style={[type.small, { marginTop: space.sm }]}>
-                  {s.mode === 'manual'
-                    ? 'El bot propone cada operación y espera a que la apruebes en esta pantalla. Te llega un aviso.'
-                    : 'El bot abre las operaciones por su cuenta, siempre dentro de sus límites de riesgo.'}
-                </Text>
+            <View style={styles.control}>
+              <Text style={type.heading}>Cuánto manda la IA</Text>
+              <View style={{ marginTop: space.md }}>
+                <Segment
+                  disabled={locked}
+                  value={aiMode}
+                  options={AI_MODES}
+                  onChange={(m) =>
+                    m === 'reduce'
+                      ? confirm('Dejar que la IA frene operaciones',
+                          'Podrá reducir o frenar operaciones nuevas. Todavía no ha demostrado que acierte: lo recomendado es dejarla en «Solo opina».',
+                          'Dar autoridad', () => setBotAi(m), true)
+                      : run(() => setBotAi(m))
+                  }
+                />
               </View>
+              <Text style={[type.small, { marginTop: space.sm }]}>{AI_HINT[aiMode]}</Text>
+            </View>
 
-              <View style={styles.control}>
-                <Text style={type.heading}>Cuánto manda la IA</Text>
-                <View style={{ marginTop: space.md }}>
-                  <Segment
-                    disabled={locked}
-                    value={aiMode}
-                    options={AI_MODES}
-                    onChange={(m) =>
-                      m === 'reduce'
-                        ? confirm('Dejar que la IA frene operaciones',
-                            'Podrá reducir o frenar operaciones nuevas. Todavía no ha demostrado que acierte: lo recomendado es dejarla en «Solo opina».',
-                            'Dar autoridad', () => setBotAi(m), true)
-                        : run(() => setBotAi(m))
-                    }
-                  />
-                </View>
-                <Text style={[type.small, { marginTop: space.sm }]}>{AI_HINT[aiMode]}</Text>
-                <Text style={[type.small, { marginTop: space.xs }]}>
-                  Coste real de las consultas a la IA (se paga aunque el bot opere en simulado): {es(ai.cost_usd_30d)} USD
-                  en 30 días.
-                </Text>
-              </View>
-            </Card>
-          </>
-        ) : (
-          <Notice tone="info" title="Solo puedes mirar">
-            Ves todo lo que hace el bot. El administrador es quien lo pausa, abre o cierra operaciones y cambia sus ajustes.
-          </Notice>
+            <Notice tone="warn" title="Esto sí es dinero real" style={{ marginTop: space.lg, marginBottom: 0 }}>
+              {`Las consultas a la IA se pagan de verdad, aunque el bot opere con ${w.word}: ${es(ai.cost_usd_30d)} USD en los últimos 30 días.`}
+            </Notice>
+          </Collapsible>
         )}
 
-        <SectionTitle>Historial</SectionTitle>
-        <Collapsible title="Operaciones cerradas" hint={closed.length ? `Las ${closed.length} más recientes` : 'Todavía ninguna'}>
+        <Collapsible
+          title={`Operaciones ${w.adj} cerradas`}
+          hint={closed.length ? `Las ${closed.length} más recientes, en ${unit}` : 'Todavía ninguna'}
+        >
           {closed.length === 0 ? (
             <Text style={type.bodyDim}>El bot aún no ha cerrado ninguna operación.</Text>
           ) : closed.map((t, i) => (
@@ -602,10 +681,10 @@ const BotScreen = () => {
               key={t.id}
               first={i === 0}
               title={tradeTitle(t.symbol, t.side)}
-              right={`${esSigned(t.pnl)} USDT`}
+              right={esSigned(t.pnl)}
               rightColor={pnlColor(t.pnl)}
               lines={[
-                `${sideOf(t.side).bought} a ${money(t.entry)}, cerró a ${money(t.exit)} · ${timeAgo(t.exit_ts)}.`,
+                `Entró a ${money(t.entry)}, cerró a ${money(t.exit)} · ${timeAgo(t.exit_ts)}.`,
                 `Motivo: ${exitWhy(t.exit_reason, t.pnl)}.`,
               ]}
             />
@@ -680,7 +759,8 @@ const BotScreen = () => {
   return (
     <Screen
       title="Bot"
-      subtitle={!report ? 'Opera solo, con reglas fijas' : report.can_control ? 'Eres administrador' : 'Solo puedes mirar'}
+      subtitle={report ? undefined : 'Opera solo, con reglas fijas'}
+      money={kind || undefined}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
@@ -690,7 +770,9 @@ const BotScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  stateRow: { flexDirection: 'row', alignItems: 'center' },
+  stateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  fromMarket: { borderColor: colors.accent },
+  foldToggle: { color: colors.accent, fontSize: 13, fontWeight: '600', marginTop: space.xs },
   pendingRow: { flexDirection: 'row', alignItems: 'center' },
   dismiss: { alignSelf: 'flex-start', marginTop: space.xs, paddingHorizontal: 0, minHeight: 44 },
   item: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md, marginTop: space.md },
@@ -701,6 +783,7 @@ const styles = StyleSheet.create({
   detail: { color: colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 3 },
   buttons: { flexDirection: 'row', gap: space.md, marginTop: space.md },
   control: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.lg, paddingTop: space.lg },
+  controlFirst: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
 });
 
 export default BotScreen;
