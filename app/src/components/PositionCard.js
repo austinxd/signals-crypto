@@ -251,6 +251,7 @@ const PositionCard = ({ position, totalCount = 1 }) => {
     ? Number(position?.current_take_profit ?? position?.take_profit) : null;
   // What the automatic closes are worth in USDT (negative = a loss)
   const outcomeAt = (level) => (qty && entry && level ? (level - entry) * qty * (isLong ? 1 : -1) : null);
+  const bot = position?.bot || null; // set when the account's trading bot opened and manages this position
   const stopOutcome = outcomeAt(stopLoss);
   const targetOutcome = outcomeAt(takeProfit);
 
@@ -381,6 +382,17 @@ const PositionCard = ({ position, totalCount = 1 }) => {
                     : `Ya está en zona de ganancia: si el precio ${side.against} hasta aquí se cierra sola y aseguras ≈ ${esSigned(stopOutcome)} USDT.`
               }
             />
+          )}
+          {bot != null && stopLoss != null && (
+            <Notice tone="info" title="La maneja el bot: él mueve el stop" style={{ marginTop: space.sm, marginBottom: 0 }}>
+              {bot.secured
+                ? `El stop ya está en tu entrada o mejor: esta operación ya no puede cerrar en pérdida. `
+                : bot.breakeven_at
+                  ? `Ahora el stop está ${bot.stop_moved ? 'movido a tu favor' : 'donde se puso al abrir'}. Pasa a tu precio de entrada (${fmtPrice(entry)}) cuando una vela de 4 h cierre ${isLong ? 'por encima' : 'por debajo'} de ${fmtPrice(bot.breakeven_at)}. `
+                  : ''}
+              Después sigue al precio a distancia{bot.trail_atr ? ` (${bot.trail_atr} veces el movimiento normal de la moneda)` : ''}, se
+              revisa cada 4 horas y solo se mueve a tu favor, nunca en contra. El detalle está en la pestaña Bot.
+            </Notice>
           )}
           {takeProfit != null && (
             <Row

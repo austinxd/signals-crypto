@@ -1000,6 +1000,34 @@ def _bot_managed_symbols(account_id: int) -> set:
         return set()
 
 
+def _bot_open_trades(account_id: int) -> dict:
+    """symbol (BTCUSDT) -> the open trade this account's real trading bot holds on it."""
+    try:
+        from bot import users as bot_users
+        j = bot_users.journal(account_id)
+        return {t["symbol"]: t for t in j.open_trades()} if j else {}
+    except Exception as e:
+        logger.error(f"[POSITIONS] Could not read the bot's trades for account {account_id}: {e}")
+        return {}
+
+
+def _bot_stop_plan(trade: dict) -> dict:
+    """Where the bot's stop stands against the entry, and the closing price that moves it to the entry."""
+    from bot import config as bot_config
+    from bot.strategies import make_strategy
+    cfg = bot_config.load_config()
+    params = make_strategy(cfg.strategy, **cfg.params).p
+    side, entry, sl0, sl = trade["side"], trade["entry"], trade["sl0"], trade["sl"]
+    secured = side * (sl - entry) >= 0
+    r = float(params.get("breakeven_r") or 0)
+    return {
+        "stop_moved": abs(sl - sl0) > 1e-9,
+        "secured": secured,
+        "breakeven_at": None if secured or r <= 0 else entry + side * r * abs(entry - sl0),
+        "trail_atr": params.get("trail_atr"),
+    }
+
+
 def _normalize_symbol(symbol: str) -> str:
     """Normalize CCXT symbol like ETH/USDT:USDT to ETH/USDT."""
     if ":" in symbol:
@@ -2441,6 +2469,7 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
     db = get_db()
     try:
         positions = DBHelper.get_open_positions(db, user.id)
+        bot_trades = _bot_open_trades(user.id)
         result = []
         for p in positions:
             try:
@@ -2493,6 +2522,13 @@ async def get_positions(user: UserAccount = Depends(get_current_user)):
                 "timeframes": timeframes_data,
                 "analysis": analysis,
             })
+            # The bot's own trade: its stop and target live in the bot's journal (and on Binance), not in this table.
+            bt = bot_trades.get(_normalize_symbol(p.symbol).replace("/", ""))
+            if bt:
+                row = result[-1]
+                row["initial_stop_loss"], row["current_stop_loss"] = bt["sl0"], bt["sl"]
+                row["initial_take_profit"] = row["current_take_profit"] = bt.get("tp")
+                row["bot"] = _bot_stop_plan(bt)
         return {
             "positions": result,
             "total": len(result),
