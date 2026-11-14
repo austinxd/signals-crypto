@@ -94,6 +94,7 @@ class Engine:
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
         self._last_equity = 0.0
+        self._late_checked = set()  # symbols already looked at for a missed trend since this start
         self._open_pnl = 0.0  # last known open result of the bot's trades, if a price cannot be read
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
@@ -286,6 +287,7 @@ class Engine:
         for symbol in self.cfg.symbols:
             key = f"last_bar:{symbol}"
             if (self.j.get_state(key) or 0) >= expected:
+                self._late_on_start(symbol)
                 continue
             df = data.recent_klines(symbol, self.tf)
             if len(df) < self.strategy.warmup + 10:
@@ -316,6 +318,25 @@ class Engine:
                 elif sig != 0:
                     age = now - (expected + self.tf_s)
                     self.j.decision(symbol, bar_time, "SKIP", sig, f"stale_signal ({age / 60:.0f} min after bar close)")
+
+    def _late_on_start(self, symbol: str):
+        """Once after starting, for a symbol whose latest bar was already handled: do not wait for the next
+        bar to join a trend that is running."""
+        if symbol in self._late_checked:
+            return
+        self._late_checked.add(symbol)
+        if any(t["symbol"] == symbol for t in self.j.open_trades()):
+            return
+        df = data.recent_klines(symbol, self.tf)
+        if len(df) < self.strategy.warmup + 10:
+            return
+        prepared = self.strategy.prepare(df)
+        late = self._late_signal(symbol, prepared)
+        if late:
+            side, sl, since = late
+            self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
+                                               f"trend signalled on the bar of {since}, which the bot missed")
+            self._signal(symbol, since, side, sl, None, prepared)
 
     def _late_signal(self, symbol: str, prepared):
         """A signal from the last few bars that the bot was not running to take, if that trade would still be
