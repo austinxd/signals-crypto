@@ -85,6 +85,9 @@ const SettingsScreen = ({ onLogout }) => {
 
   const [binanceOk, setBinanceOk] = useState(null); // result of the last check: null = not checked
   const [changingKeys, setChangingKeys] = useState(false);
+  // Over-the-air update check (hooks must stay above the early return below)
+  const [updating, setUpdating] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState('');
 
   const say = (section, ok, text) => setFeedback((f) => ({ ...f, [section]: { ok, text } }));
 
@@ -256,8 +259,6 @@ const SettingsScreen = ({ onLogout }) => {
   const keyHint = String((profile && profile.api_key_hint) || '').replace(/^[.*…\s]+/, '');
   const version = (Constants.expoConfig && Constants.expoConfig.version) || '';
   // Over-the-air updates: say which one is running and let the reader fetch the newest without reopening twice.
-  const [updating, setUpdating] = useState(false);
-  const [updateMsg, setUpdateMsg] = useState('');
   let updateLabel = 'Esta versión no recibe actualizaciones automáticas: instala la última desde TestFlight.';
   try {
     if (Updates.isEnabled) {
