@@ -99,16 +99,16 @@ class PaperBroker:
 class BinanceBroker:
     """Real orders on Binance USDT-M futures through ccxt (one-way position mode only).
 
-    Keys come from BOT_BINANCE_KEY / BOT_BINANCE_SECRET. `demo=True` targets Binance demo trading.
+    Keys are passed in (an app account's own, see users.py) or come from BOT_BINANCE_KEY / BOT_BINANCE_SECRET. `demo=True` targets Binance demo trading.
     NOT YET EXERCISED AGAINST AN ACCOUNT: validate on demo before trusting it with money.
     """
 
-    def __init__(self, cfg: BotConfig, journal: Journal, demo: bool):
+    def __init__(self, cfg: BotConfig, journal: Journal, demo: bool, key: str = None, secret: str = None):
         import ccxt
         self.cfg, self.j, self.name = cfg, journal, "demo" if demo else "live"
-        key, secret = os.getenv("BOT_BINANCE_KEY"), os.getenv("BOT_BINANCE_SECRET")
+        key, secret = key or os.getenv("BOT_BINANCE_KEY"), secret or os.getenv("BOT_BINANCE_SECRET")
         if not key or not secret:
-            raise RuntimeError("Set BOT_BINANCE_KEY and BOT_BINANCE_SECRET to use the demo/live broker")
+            raise RuntimeError("No Binance keys: pass them, or set BOT_BINANCE_KEY and BOT_BINANCE_SECRET")
         if not demo and os.getenv("BOT_ALLOW_LIVE") != "1":
             raise RuntimeError("Live trading is locked. Set BOT_ALLOW_LIVE=1 once demo results are validated")
         self.ex = ccxt.binance({"apiKey": key, "secret": secret, "enableRateLimit": True,

@@ -197,6 +197,9 @@ class UserAccount(Base):
     # Admin flag
     is_admin = Column(Boolean, default=False)
 
+    # The account's own trading bot on its Binance futures (bot/users.py)
+    bot_real_enabled = Column(Boolean, default=False)
+
     # Email verification
     email_verified = Column(Boolean, default=False)
     verification_token = Column(String(64), nullable=True)
@@ -428,6 +431,7 @@ def _run_migrations():
         ("user_accounts", "country", "ALTER TABLE user_accounts ADD COLUMN country VARCHAR(2) NULL"),
         ("user_accounts", "email_verified", "ALTER TABLE user_accounts ADD COLUMN email_verified BOOLEAN DEFAULT FALSE"),
         ("user_accounts", "verification_token", "ALTER TABLE user_accounts ADD COLUMN verification_token VARCHAR(64) NULL"),
+        ("user_accounts", "bot_real_enabled", "ALTER TABLE user_accounts ADD COLUMN bot_real_enabled BOOLEAN DEFAULT FALSE"),
     ]
     with engine.connect() as conn:
         for table, column, sql in migrations:

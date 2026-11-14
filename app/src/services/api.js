@@ -675,6 +675,11 @@ export async function closeBotPosition(symbol, account = 'sim') {
   return apiRequest(`/api/bot/close/${symbol}?${acct(account)}`, { method: 'POST' });
 }
 
+/** Turn the logged-in account's own real bot (on its Binance futures) on or off. */
+export async function setBotReal(enabled) {
+  return apiRequest('/api/bot/real', { method: 'POST', body: JSON.stringify({ enabled }) });
+}
+
 /** Ask the bot to open a trade by hand. side: 'long' | 'short'. The bot sizes it and may refuse it. */
 export async function openBotTrade(symbol, side, account = 'sim') {
   return apiRequest(`/api/bot/open?${acct(account)}`, { method: 'POST', body: JSON.stringify({ symbol, side }) });

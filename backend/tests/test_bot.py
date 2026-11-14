@@ -479,27 +479,104 @@ def test_headline_text_is_sanitised():
     assert "<" not in t and "​" not in t and "‮" not in t and "\n" not in t and len(t) <= 150
 
 
-def test_api_serves_the_simulated_bot_and_the_binance_one_apart(tmp_path, monkeypatch):
+def test_each_account_reads_and_controls_only_its_own_real_bot(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sys
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from bot import api, config, journal
+    from bot import api, config, journal, users
     monkeypatch.setattr(journal, "DATA_DIR", tmp_path / "sim")
     monkeypatch.setattr(config, "REAL_DATA_DIR", tmp_path / "real")
     monkeypatch.setenv("BOT_API_TOKEN", "t")
+    monkeypatch.setitem(sys.modules, "auth", SimpleNamespace(
+        get_current_user=lambda c: SimpleNamespace(id=int(c.credentials), is_admin=False)))
+    enabled = set()
+    monkeypatch.setattr(users, "status", lambda uid: {"enabled": uid in enabled, "has_keys": True})
+    monkeypatch.setattr(users, "set_enabled", lambda uid, on: (enabled.add(uid) if on else enabled.discard(uid)) or {"enabled": on})
     app = FastAPI()
     app.include_router(api.router)
-    client, h = TestClient(app), {"X-Bot-Token": "t"}
+    client = TestClient(app)
+    u7, u8 = {"Authorization": "Bearer 7"}, {"Authorization": "Bearer 8"}
 
-    # never started: the report says so, and orders are refused instead of landing in the simulated journal
-    r = client.get("/api/bot/report?account=real", headers=h).json()
-    assert r == {"account": "real", "configured": False, "can_control": True}
-    assert client.post("/api/bot/pause?account=real", json={}, headers=h).status_code == 409
-    assert not (tmp_path / "real").exists()
+    # never started: the report says so, and orders are refused instead of landing in another journal
+    r = client.get("/api/bot/report?account=real", headers=u7).json()
+    assert r["account"] == "real" and r["configured"] is False and r["real"]["enabled"] is False
+    assert client.post("/api/bot/pause?account=real", json={}, headers=u7).status_code == 409
+    assert client.post("/api/bot/real", json={"enabled": True}, headers=u7).json() == {"enabled": True}
+    assert client.get("/api/bot/report?account=real", headers=u7).json()["real"]["enabled"] is True
 
-    (tmp_path / "real").mkdir()
-    real = journal.Journal(tmp_path / "real" / "bot.db")
-    real.set_state("broker", "live")
-    assert client.post("/api/bot/pause?account=real", json={"reason": "x"}, headers=h).status_code == 200
-    assert client.get("/api/bot/report?account=real", headers=h).json()["status"]["paused"] is True
-    sim = client.get("/api/bot/report", headers=h).json()
-    assert sim["account"] == "sim" and not sim["status"]["paused"]
+    d = tmp_path / "real" / "users" / "7"
+    d.mkdir(parents=True)
+    journal.Journal(d / "bot.db").set_state("broker", "live")
+    assert client.post("/api/bot/pause?account=real", json={"reason": "x"}, headers=u7).status_code == 200
+    mine = client.get("/api/bot/report?account=real", headers=u7).json()
+    assert mine["configured"] and mine["can_control"] and mine["status"]["paused"] is True
+    # another account sees nothing of it and cannot touch it; neither can the server token
+    assert client.get("/api/bot/report?account=real", headers=u8).json()["configured"] is False
+    assert client.post("/api/bot/resume?account=real", headers=u8).status_code == 409
+    assert client.post("/api/bot/resume?account=real", headers={"X-Bot-Token": "t"}).status_code == 403
+    assert client.get("/api/bot/report?account=real&user_id=7", headers={"X-Bot-Token": "t"}).json()["status"]["paused"] is True
+    # and none of this moved the simulated bot, which a plain account still cannot control
+    sim = client.get("/api/bot/report", headers=u7).json()
+    assert sim["account"] == "sim" and not sim["status"]["paused"] and sim["can_control"] is False
+    assert client.post("/api/bot/pause", json={}, headers=u7).status_code == 403
+
+
+def test_runner_starts_only_enabled_accounts_and_only_with_the_live_lock_off(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sys
+    from bot import broker as broker_mod, config, engine as engine_mod, journal, users
+    monkeypatch.setattr(journal, "DATA_DIR", tmp_path / "sim")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "sim")
+    monkeypatch.setattr(config, "REAL_DATA_DIR", tmp_path / "real")
+
+    class Acc(SimpleNamespace):
+        def has_binance_keys(self):
+            return bool(self.binance_api_key)
+
+        def get_binance_keys(self):
+            return "k" + str(self.id), "s" + str(self.id)
+
+    accounts = [Acc(id=7, bot_real_enabled=True, binance_api_key="enc7", binance_api_secret="x"),
+                Acc(id=9, bot_real_enabled=True, binance_api_key="enc9", binance_api_secret="x")]
+
+    class Query:
+        def filter(self, *a):
+            return self
+
+        def all(self):
+            return [a for a in accounts if a.bot_real_enabled]
+
+        def first(self):
+            return accounts[0]
+
+    class Column:
+        def __eq__(self, other):
+            return True
+    db = SimpleNamespace(query=lambda model: Query(), close=lambda: None, commit=lambda: None)
+    monkeypatch.setitem(sys.modules, "database", SimpleNamespace(
+        SessionLocal=lambda: db, UserAccount=SimpleNamespace(bot_real_enabled=Column(), id=Column())))
+
+    made, ticks = [], []
+
+    class FakeBroker:
+        name = "live"
+
+        def __init__(self, cfg, j, demo, key=None, secret=None):
+            if key == "k9":
+                raise RuntimeError("Account is in hedge mode; switch to one-way mode to use the bot")
+            made.append((key, secret, demo))
+    monkeypatch.setattr(broker_mod, "BinanceBroker", FakeBroker)
+    monkeypatch.setattr(engine_mod.Engine, "tick", lambda self: ticks.append(self.broker))
+
+    monkeypatch.delenv("BOT_ALLOW_LIVE", raising=False)
+    users.run(once=True)
+    assert made == [] and ticks == []                      # locked: nobody's keys are even used
+    assert users.status(7)["runner_alive"] and not users.status(7)["live_allowed"]
+
+    monkeypatch.setenv("BOT_ALLOW_LIVE", "1")
+    users.run(once=True)
+    assert made == [("k7", "s7", False)] and len(ticks) == 1
+    j = users.journal(7)
+    assert j.get_state("mode") == "manual" and j.get_state("ai") == "off" and j.get_state("broker") == "live"
+    assert users.journal(9) is not None and users.status(9)["start_error"] == "hedge_mode"

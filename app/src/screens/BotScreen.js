@@ -9,6 +9,7 @@ import {
   answerBotProposal,
   closeBotPosition,
   openBotTrade,
+  setBotReal,
 } from '../services/api';
 import {
   Screen, Card, SectionTitle, Chip, Button, Segment, Stat, StatRow, Row, Notice, Collapsible, Empty, Loading,
@@ -107,7 +108,7 @@ const Fold = ({ title, right, rightColor, summary, first, children }) => {
   );
 };
 
-const BotScreen = ({ route }) => {
+const BotScreen = ({ route, navigation }) => {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -228,36 +229,79 @@ const BotScreen = ({ route }) => {
     </View>
   );
 
-  const body = () => {
-    if (notSetUp) {
-      return (
-        <>
-          <Card title="El bot todavía no opera con dinero real">
-            <Text style={type.bodyDim}>
-              Hay dos bots separados, con las mismas reglas. El de práctica usa dinero simulado y ya está en marcha.
-              El de Binance abre operaciones de futuros de verdad en una cuenta de Binance, y aún no se ha activado.
-            </Text>
-            <Text style={[type.bodyDim, { marginTop: space.sm }]}>
-              Cuando se active, aquí verás su saldo real, sus operaciones y sus resultados, siempre separados de los
-              simulados. Empezará en modo manual: te propondrá cada operación y esperará a que la apruebes.
-            </Text>
+  const isReal = account === 'real';
+  const real = (report && report.real) || {};
+
+  const turnRealOn = () => Alert.alert(
+    'Activar el bot en tu Binance',
+    'El bot abrirá operaciones de futuros con tu dinero real, usando las claves que guardaste en Ajustes. Puedes perder dinero. '
+      + 'Empieza en modo manual: te propone cada operación y no abre nada hasta que la apruebes.',
+    [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Activar', style: 'destructive', onPress: () => run(() => setBotReal(true)) },
+    ],
+  );
+  const turnRealOff = () => Alert.alert(
+    'Apagar el bot real',
+    'Dejará de abrir y de vigilar operaciones. No cierra nada: lo que tengas abierto sigue en Binance con su cierre automático de pérdidas, y pasas a gestionarlo tú.',
+    [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Apagar', style: 'destructive', onPress: () => run(() => setBotReal(false)) },
+    ],
+  );
+
+  /** Why the real bot could not start, in plain words. */
+  const startErrorText = (code) => ({
+    hedge_mode: 'Tu cuenta de futuros está en modo "hedge" (cobertura). Cámbiala a modo "one-way" (unidireccional) en Binance Futuros > Preferencias > Modo de posición.',
+    keys_rejected: 'Binance rechazó tus claves para operar. La clave necesita el permiso "Habilitar Futuros". Crea una nueva con ese permiso (sin retiros) y guárdala en Ajustes.',
+    keys_unreadable: 'No se pudieron leer tus claves guardadas. Vuelve a guardarlas en Ajustes.',
+  }[code] || `No pudo arrancar. Detalle técnico: ${String(code).replace(/^other: /, '')}`);
+
+  /** Shown while the account's real bot has never run: what it is, what is missing, and the switch. */
+  const realIntro = () => {
+    const ready = real.runner_alive && real.live_allowed;
+    return (
+      <>
+        <Card title="Bot en tu Binance (dinero real)">
+          <Text style={type.bodyDim}>
+            Es el mismo bot que el de práctica, con las mismas reglas, pero abre operaciones de futuros de verdad en tu
+            cuenta de Binance, con las claves que guardaste en Ajustes. Sus resultados nunca se mezclan con los simulados.
+          </Text>
+          <Text style={[type.bodyDim, { marginTop: space.sm }]}>
+            Arriesga como máximo un 0,5 % de tu saldo de futuros por operación y empieza en modo manual: te propone cada
+            operación y espera a que la apruebes.
+          </Text>
+        </Card>
+
+        {report.outdated ? (
+          <Notice tone="warn" title="Falta actualizar el servidor">El servidor tiene una versión anterior que no conoce el bot real.</Notice>
+        ) : (
+          <Card title="Qué hace falta">
+            <Row first label="1. Tus claves de Binance" value={real.has_keys ? 'Guardadas' : 'Faltan'} color={real.has_keys ? colors.accent : colors.warn}
+              help={'La clave debe tener el permiso "Habilitar Futuros" (y nunca el de retiros). Una clave solo de lectura sirve para ver tus operaciones, pero no para el bot.'} />
+            <Row label="2. Cuenta en modo one-way" value="Compruébalo"
+              help={'En Binance Futuros > Preferencias > Modo de posición: "unidireccional". Es el modo por defecto.'} />
+            <Row label="3. Servicio de bots reales" value={ready ? 'En marcha' : 'Apagado'} color={ready ? colors.accent : colors.warn}
+              help={ready ? undefined : 'Lo enciende quien administra el servidor (python -m bot real-setup). Mientras esté apagado, nadie opera con dinero real.'} />
+            {real.enabled ? (
+              real.start_error
+                ? <Notice tone="danger" title="Tu bot está activado pero no pudo arrancar" style={{ marginTop: space.md, marginBottom: 0 }}>{startErrorText(real.start_error)}</Notice>
+                : <Notice tone="info" title="Activado" style={{ marginTop: space.md, marginBottom: 0 }}>{ready ? 'Está arrancando. Tarda menos de un minuto: desliza hacia abajo para actualizar.' : 'Arrancará en cuanto el servicio de bots reales esté en marcha.'}</Notice>
+            ) : null}
+            <View style={styles.buttons}>
+              {!real.has_keys && <Button style={{ flex: 1 }} kind="secondary" label="Ir a Ajustes" onPress={() => navigation && navigation.navigate('Settings')} />}
+              {real.enabled
+                ? <Button style={{ flex: 1 }} kind="secondary" label="Apagar" disabled={busy} onPress={turnRealOff} />
+                : <Button style={{ flex: 1 }} kind="danger" label="Activar con dinero real" disabled={busy || !real.has_keys} onPress={turnRealOn} />}
+            </View>
           </Card>
-          {report.can_control ? (
-            <Card title="Cómo activarlo">
-              {report.outdated && <Notice tone="warn" title="Primero actualiza el servidor">El servidor tiene una versión anterior que no conoce el bot real.</Notice>}
-              <Text style={type.bodyDim}>
-                Se activa en el servidor, no desde la app, para que nadie pueda poner dinero real en juego con un toque:
-              </Text>
-              <Text style={[type.bodyDim, { marginTop: space.sm }]}>1. Crea en Binance una clave solo para el bot, con permiso de Futuros y sin permiso de retiro.</Text>
-              <Text style={[type.bodyDim, { marginTop: space.xs }]}>2. En el servidor: python -m bot real-setup, y sigue los tres pasos que imprime.</Text>
-              <Text style={[type.bodyDim, { marginTop: space.xs }]}>3. Vuelve a esta pantalla: aparecerá el bot real, en modo manual.</Text>
-            </Card>
-          ) : (
-            <Notice tone="info">Solo el dueño del bot puede activarlo.</Notice>
-          )}
-        </>
-      );
-    }
+        )}
+      </>
+    );
+  };
+
+  const body = () => {
+    if (notSetUp) return realIntro();
     if (!report) {
       return error
         ? (error === 'forbidden'
@@ -583,7 +627,7 @@ const BotScreen = ({ route }) => {
                     title={tradeTitle(t.symbol, t.side)}
                     right={`${esSigned(t.open_pnl || 0)}${nb.move != null ? ` (${esSigned(nb.move, 2)} %)` : ''}`}
                     rightColor={pnlColor(t.open_pnl)}
-                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · tamaño ${es(nb.size, 0)} ${unit}\n` : ''}Entró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
+                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · ` : ''}abierta ${timeAgo(t.entry_ts)}${nb.lev != null ? ` · tamaño ${es(nb.size, 0)} ${unit}` : ''}\nEntró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
                   >
                     <Text style={[type.small, { marginTop: space.sm }]}>
                       {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}.
@@ -663,6 +707,7 @@ const BotScreen = ({ route }) => {
           </Text>
         </Collapsible>
 
+        {!isReal && (
         <Collapsible
           title="Qué opina la IA"
           right={aiMode === 'off' ? 'Apagada' : stanceFresh ? stance.label : undefined}
@@ -691,9 +736,10 @@ const BotScreen = ({ route }) => {
             </Text>
           )}
         </Collapsible>
+        )}
 
         {canControl && (
-          <Collapsible title="Ajustes del bot" hint="Quién decide abrir y cuánto manda la IA">
+          <Collapsible title="Ajustes del bot" hint={isReal ? 'Quién decide abrir' : 'Quién decide abrir y cuánto manda la IA'}>
             <View style={[styles.control, styles.controlFirst]}>
               <Text style={type.heading}>Quién decide abrir</Text>
               <View style={{ marginTop: space.md }}>
@@ -719,6 +765,7 @@ const BotScreen = ({ route }) => {
               </Text>
             </View>
 
+            {!isReal && (
             <View style={styles.control}>
               <Text style={type.heading}>Cuánto manda la IA</Text>
               <View style={{ marginTop: space.md }}>
@@ -737,10 +784,13 @@ const BotScreen = ({ route }) => {
               </View>
               <Text style={[type.small, { marginTop: space.sm }]}>{AI_HINT[aiMode]}</Text>
             </View>
+            )}
 
+            {!isReal && (
             <Notice tone="warn" title="Esto sí es dinero real" style={{ marginTop: space.lg, marginBottom: 0 }}>
               {`Las consultas a la IA se pagan de verdad, aunque el bot opere con ${w.word}: ${es(ai.cost_usd_30d)} USD en los últimos 30 días.`}
             </Notice>
+            )}
           </Collapsible>
         )}
 
@@ -840,7 +890,20 @@ const BotScreen = ({ route }) => {
       onRefresh={onRefresh}
     >
       {accountPicker}
+      {isReal && !notSetUp && !!report && (
+        real.enabled
+          ? (!real.runner_alive && <Notice tone="warn" title="El servicio de bots reales está parado">Tu bot no está vigilando ahora. Lo que tengas abierto sigue en Binance con su cierre automático de pérdidas.</Notice>)
+          : (
+            <Notice tone="warn" title="Tu bot real está apagado">
+              <Text style={type.bodyDim}>No abre ni vigila operaciones. Abajo ves lo que hizo mientras estuvo encendido.</Text>
+              <Button small kind="secondary" label="Volver a activarlo" disabled={busy} onPress={turnRealOn} style={{ marginTop: space.sm, alignSelf: 'flex-start' }} />
+            </Notice>
+          )
+      )}
       {body()}
+      {isReal && !notSetUp && !!report && real.enabled && (
+        <Button kind="secondary" label="Apagar el bot real" disabled={busy} onPress={turnRealOff} style={{ marginTop: space.md }} />
+      )}
     </Screen>
   );
 };

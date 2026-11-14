@@ -6,15 +6,18 @@ here ever raises. Only the running engine uses it (see __main__.cmd_run); tests 
 import requests
 
 
-def send(title: str, body: str, kind: str = "bot_trade", symbol: str = None, data: dict = None) -> int:
-    """Returns how many accounts were told."""
+def send(title: str, body: str, kind: str = "bot_trade", symbol: str = None, data: dict = None,
+         user_ids: list = None) -> int:
+    """Tells the admins (the simulated bot) or exactly `user_ids` (a real bot tells its owner). Returns how many."""
     told = 0
     try:
         from config import EXPO_PUSH_URL  # backend/config.py
         from database import DBHelper, SessionLocal, UserAccount
         db = SessionLocal()
         try:
-            admins = db.query(UserAccount).filter(UserAccount.is_admin == True).all()  # noqa: E712
+            q = db.query(UserAccount)
+            admins = (q.filter(UserAccount.id.in_(user_ids)) if user_ids is not None
+                      else q.filter(UserAccount.is_admin == True)).all()  # noqa: E712
             messages = []
             for acc in admins:
                 try:

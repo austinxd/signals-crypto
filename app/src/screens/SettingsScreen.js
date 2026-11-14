@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, Alert, Linking } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import {
   registerPushToken,
   sendTestNotification,
@@ -35,7 +36,8 @@ const ALERT_KINDS = [
 
 const BINANCE_STEPS = [
   'En Binance: Perfil > Gestión de API > Crear API.',
-  'Deja marcado solo “Habilitar lectura”. No marques trading ni retiros.',
+  'Para solo ver tus operaciones: deja marcado solo “Habilitar lectura”.',
+  'Si además quieres que el bot opere en tu cuenta: marca también “Habilitar Futuros”. Nunca marques retiros.',
   'Copia la API Key y la Secret Key y pégalas aquí.',
 ];
 
@@ -253,6 +255,39 @@ const SettingsScreen = ({ onLogout }) => {
       : { label: 'Conectado', color: colors.accent };
   const keyHint = String((profile && profile.api_key_hint) || '').replace(/^[.*…\s]+/, '');
   const version = (Constants.expoConfig && Constants.expoConfig.version) || '';
+  // Over-the-air updates: say which one is running and let the reader fetch the newest without reopening twice.
+  const [updating, setUpdating] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState('');
+  let updateLabel = 'Esta versión no recibe actualizaciones automáticas: instala la última desde TestFlight.';
+  try {
+    if (Updates.isEnabled) {
+      const made = Updates.createdAt ? new Date(Updates.createdAt) : null;
+      updateLabel = made && !Updates.isEmbeddedLaunch
+        ? `Actualización del ${made.toLocaleDateString('es-ES')} a las ${made.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+        : 'Sin actualizaciones aplicadas todavía.';
+    }
+  } catch (e) { /* keep the default label */ }
+  const checkUpdate = async () => {
+    setUpdating(true);
+    setUpdateMsg('');
+    try {
+      if (!Updates.isEnabled) {
+        setUpdateMsg('Esta versión no admite actualizaciones automáticas. Instala la última desde TestFlight.');
+        return;
+      }
+      const found = await Updates.checkForUpdateAsync();
+      if (!found.isAvailable) {
+        setUpdateMsg('Ya tienes la última versión.');
+        return;
+      }
+      await Updates.fetchUpdateAsync();
+      await Updates.reloadAsync();
+    } catch (e) {
+      setUpdateMsg('No se pudo buscar la actualización. Comprueba tu conexión e inténtalo de nuevo.');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   return (
     <Screen title="Ajustes">
@@ -315,7 +350,7 @@ const SettingsScreen = ({ onLogout }) => {
       >
         <Text style={type.bodyDim}>
           Para ver y analizar tus operaciones reales en la pestaña Mi Binance. Solo lee tus futuros (USDT-M). No ve
-          tu billetera spot. La app no abre ni cierra operaciones con tus claves.
+          tu billetera spot. Con tus claves solo opera el bot real, y solo si lo activas tú en la pestaña Bot.
         </Text>
         {connected && (
           <>
@@ -397,15 +432,19 @@ const SettingsScreen = ({ onLogout }) => {
           </View>
         ))}
         <Text style={[type.small, { marginTop: space.sm }]}>
-          Con una clave solo de lectura nadie puede operar ni retirar dinero de tu cuenta, tampoco esta app.
+          Con una clave solo de lectura nadie puede operar ni retirar dinero de tu cuenta, tampoco esta app. Con
+          “Habilitar Futuros”, el bot puede abrir y cerrar operaciones de futuros, pero solo si lo activas tú en la
+          pestaña Bot. Sin el permiso de retiros, nadie puede sacar dinero.
         </Text>
       </Collapsible>
 
       <Collapsible title="Acerca de Criterio" hint="Versión y cómo funciona">
-        <Row first label="Versión" value={version || '-'} />
+        <Row first label="Versión" value={version || '-'} help={updateLabel} />
+        <Button small kind="secondary" label="Buscar actualización" loading={updating} onPress={checkUpdate} style={{ marginVertical: space.sm, alignSelf: 'flex-start' }} />
+        {!!updateMsg && <Text style={[type.small, { marginBottom: space.sm }]}>{updateMsg}</Text>}
         <Row label="Mercado" value="Futuros de Binance (USDT-M)" />
         <Info title="Qué mira" text="Solo futuros. No analiza ni lee las monedas que tengas compradas en spot." />
-        <Info title="Qué dinero toca" text="Ninguno. Mercado es análisis, Mi Binance muestra tus operaciones reales sin tocarlas y el bot opera hoy con dinero simulado." />
+        <Info title="Qué dinero toca" text="Ninguno. Mercado es análisis, Mi Binance muestra tus operaciones reales sin tocarlas y el bot de práctica usa dinero simulado. Solo el bot real, si lo activas tú en la pestaña Bot, opera con tu dinero." />
       </Collapsible>
 
       <Button label="Cerrar sesión" kind="secondary" onPress={handleLogout} style={{ marginTop: space.md }} />
