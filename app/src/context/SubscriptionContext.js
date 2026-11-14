@@ -81,10 +81,8 @@ export function SubscriptionProvider({ children }) {
     let removeListener = null;
     try {
       removeListener = addPurchaseListener(async () => {
-        const token = await getJwtToken();
-        if (token) {
-          await syncSubscriptionWithBackend(token);
-        }
+        // refresh() tells the server only when the store says Premium. Reporting "not premium" would take
+        // away a Premium the account has from somewhere else (for example, granted by an admin).
         refresh();
       });
     } catch (err) {

@@ -754,9 +754,9 @@ async def sync_subscription(data: SyncSubscriptionRequest, user: UserAccount = D
                     account.subscription_expires_at = datetime.fromisoformat(data.expires_at.replace("Z", "+00:00"))
                 except ValueError:
                     pass
-        else:
-            account.subscription_status = "free"
-            account.subscription_expires_at = None
+        # "Not premium in the store" never takes Premium away: the account may have it from an admin, and the
+        # phone reports this on every start. A store subscription ends by its expiry date (see is_premium)
+        # or by the store's own webhook.
 
         db.commit()
         logger.info(f"[SUBSCRIPTION] Synced user {user.id}: is_premium={data.is_premium}, store={data.store}")

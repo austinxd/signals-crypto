@@ -222,6 +222,7 @@ function checkPremiumEntitlement(customerInfo) {
 export async function syncSubscriptionWithBackend(token) {
   try {
     const { isPremium, customerInfo } = await checkSubscriptionStatus();
+    if (!isPremium) return true; // nothing to report: the server decides when Premium ends
     const apiUrl = await getApiUrl();
 
     // Send status to backend
