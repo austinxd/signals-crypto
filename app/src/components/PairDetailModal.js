@@ -385,7 +385,9 @@ const PairDetailModal = ({ visible, onClose, pair, data: initialData, onRemove }
               <View style={styles.subBox}>
                 <Text style={[styles.subBoxTitle, { color: rsiStateStyle.color }]}>{rsiStateStyle.label}</Text>
                 <Text style={type.bodyDim}>
-                  Lleva días moviéndose en la misma dirección casi sin descanso: es fácil que frene o retroceda.
+                  {Number(rsiState.value) >= 50
+                    ? 'Lleva días subiendo casi sin pausa: es fácil que frene o retroceda. No es momento de abrir long; si ya tienes uno, acerca tu cierre automático de pérdidas (stop).'
+                    : 'Lleva días cayendo casi sin pausa: es fácil que rebote. No es momento de abrir short; si ya tienes uno, acerca tu cierre automático de pérdidas (stop).'}
                 </Text>
               </View>
             )}

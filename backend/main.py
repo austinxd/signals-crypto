@@ -1572,7 +1572,7 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
         "value": htf_rsi,
         "label": "normal",
         "icon": "🟢",
-        "description": "Momentum dentro de rango normal"
+        "description": "El precio se mueve a un ritmo normal, sin excesos."
     }
 
     if htf_rsi is not None:
@@ -1581,28 +1581,28 @@ def _compute_unified_pair_analysis(pair: str, htf_indicators: dict, ltf_indicato
                 "value": htf_rsi,
                 "label": "agotamiento_potencial",
                 "icon": "🔴",
-                "description": f"RSI 4H en {htf_rsi:.0f} - Zona de agotamiento potencial alcista"
+                "description": "Lleva días subiendo casi sin pausa: es fácil que frene o retroceda. No abras long ahora; si ya tienes uno, acerca tu cierre automático de pérdidas (stop)."
             }
         elif htf_rsi <= 25:
             rsi_state = {
                 "value": htf_rsi,
                 "label": "agotamiento_potencial",
                 "icon": "🔴",
-                "description": f"RSI 4H en {htf_rsi:.0f} - Zona de agotamiento potencial bajista"
+                "description": "Lleva días cayendo casi sin pausa: es fácil que rebote. No abras short ahora; si ya tienes uno, acerca tu cierre automático de pérdidas (stop)."
             }
         elif htf_rsi >= 65:
             rsi_state = {
                 "value": htf_rsi,
                 "label": "momentum_extendido",
                 "icon": "🟡",
-                "description": f"RSI 4H en {htf_rsi:.0f} - Momentum alcista extendido"
+                "description": "Ha subido bastante seguido. Todavía puede seguir, pero abrir long ahora es llegar tarde: mejor esperar a que retroceda un poco."
             }
         elif htf_rsi <= 35:
             rsi_state = {
                 "value": htf_rsi,
                 "label": "momentum_extendido",
                 "icon": "🟡",
-                "description": f"RSI 4H en {htf_rsi:.0f} - Momentum bajista extendido"
+                "description": "Ha caído bastante seguido. Todavía puede seguir, pero abrir short ahora es llegar tarde: mejor esperar a que rebote un poco."
             }
         else:
             rsi_state = {

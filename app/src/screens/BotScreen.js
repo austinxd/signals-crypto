@@ -117,6 +117,15 @@ const BotScreen = ({ route }) => {
   const [pending, setPending] = useState(null); // { id, label, since } order sent, waiting for the bot
   const [outcome, setOutcome] = useState(null); // { ok, text, detail, label } what the bot answered
   const riskRef = useRef({});
+  // Two bots can run on the server: 'sim' practises with simulated money, 'real' trades a Binance account.
+  const [account, setAccount] = useState('sim');
+  const switchAccount = (a) => {
+    setAccount(a);
+    setReport(null);
+    setError(null);
+    setPending(null);
+    setOutcome(null);
+  };
 
   // "Practicar con el bot" in a coin's analysis sends { symbol, side, ts }: arrive with that coin chosen.
   const asked = route && route.params;
@@ -131,7 +140,9 @@ const BotScreen = ({ route }) => {
 
   const load = useCallback(async () => {
     try {
-      const r = await getBotReport();
+      let r = await getBotReport(account);
+      // A server from before the two-bot version ignores the account and answers with the simulated bot.
+      if (account === 'real' && r && r.account !== 'real') r = { account: 'real', configured: false, outdated: true, can_control: r.can_control };
       setReport(r);
       setError(null);
       return r;
@@ -139,7 +150,7 @@ const BotScreen = ({ route }) => {
       setError(err && err.status === 403 ? 'forbidden' : 'offline');
       return null;
     }
-  }, []);
+  }, [account]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -205,7 +216,48 @@ const BotScreen = ({ route }) => {
   const known = KNOWN_BROKERS.includes(brokerName);
   const kind = known ? moneyOfBroker(brokerName) : null; // MONEY key, or null when the server does not say
 
+  const notSetUp = !!report && report.configured === false;
+
+  const accountPicker = (
+    <View style={{ marginBottom: space.md }}>
+      <Segment
+        options={[{ key: 'sim', label: 'Práctica (simulado)' }, { key: 'real', label: 'Binance (real)' }]}
+        value={account}
+        onChange={switchAccount}
+      />
+    </View>
+  );
+
   const body = () => {
+    if (notSetUp) {
+      return (
+        <>
+          <Card title="El bot todavía no opera con dinero real">
+            <Text style={type.bodyDim}>
+              Hay dos bots separados, con las mismas reglas. El de práctica usa dinero simulado y ya está en marcha.
+              El de Binance abre operaciones de futuros de verdad en una cuenta de Binance, y aún no se ha activado.
+            </Text>
+            <Text style={[type.bodyDim, { marginTop: space.sm }]}>
+              Cuando se active, aquí verás su saldo real, sus operaciones y sus resultados, siempre separados de los
+              simulados. Empezará en modo manual: te propondrá cada operación y esperará a que la apruebes.
+            </Text>
+          </Card>
+          {report.can_control ? (
+            <Card title="Cómo activarlo">
+              {report.outdated && <Notice tone="warn" title="Primero actualiza el servidor">El servidor tiene una versión anterior que no conoce el bot real.</Notice>}
+              <Text style={type.bodyDim}>
+                Se activa en el servidor, no desde la app, para que nadie pueda poner dinero real en juego con un toque:
+              </Text>
+              <Text style={[type.bodyDim, { marginTop: space.sm }]}>1. Crea en Binance una clave solo para el bot, con permiso de Futuros y sin permiso de retiro.</Text>
+              <Text style={[type.bodyDim, { marginTop: space.xs }]}>2. En el servidor: python -m bot real-setup, y sigue los tres pasos que imprime.</Text>
+              <Text style={[type.bodyDim, { marginTop: space.xs }]}>3. Vuelve a esta pantalla: aparecerá el bot real, en modo manual.</Text>
+            </Card>
+          ) : (
+            <Notice tone="info">Solo el dueño del bot puede activarlo.</Notice>
+          )}
+        </>
+      );
+    }
     if (!report) {
       return error
         ? (error === 'forbidden'
@@ -269,7 +321,7 @@ const BotScreen = ({ route }) => {
           + (riskUsdt != null ? ` y pierdes unos ${amount(riskUsdt, 0)} (${riskPct} % del capital). ` : '. ')
           + 'El bot puede negarse si no cumple sus límites; te lo dirá aquí.',
         'Abrir',
-        () => openBotTrade(picked, side),
+        () => openBotTrade(picked, side, account),
         kind === 'live' || !kind,
       );
     };
@@ -313,8 +365,8 @@ const BotScreen = ({ route }) => {
 
     const perfRows = [['Desde el inicio', perf.all], ['Últimos 30 días', perf.last_30d], ['Últimos 7 días', perf.last_7d]];
     const askPause = () => (s.paused
-      ? confirm('Reanudar el bot', `Volverá a abrir operaciones con ${w.word} cuando se cumplan sus reglas.`, 'Reanudar', () => setBotPaused(false), kind === 'live' || !kind)
-      : confirm('Pausar el bot', 'No abrirá operaciones nuevas. Las abiertas no se cierran: siguen con su cierre automático de pérdidas.', 'Pausar', () => setBotPaused(true)));
+      ? confirm('Reanudar el bot', `Volverá a abrir operaciones con ${w.word} cuando se cumplan sus reglas.`, 'Reanudar', () => setBotPaused(false, account), kind === 'live' || !kind)
+      : confirm('Pausar el bot', 'No abrirá operaciones nuevas. Las abiertas no se cierran: siguen con su cierre automático de pérdidas.', 'Pausar', () => setBotPaused(true, account)));
 
     return (
       <>
@@ -419,13 +471,13 @@ const BotScreen = ({ route }) => {
                               `Se abrirá un ${sd.noun.toLowerCase()} de ${pc} con ${w.word}.`
                                 + (out ? ` Si sale mal ${out.replace('perdería', 'pierdes')}.` : '')
                                 + ' El bot puede negarse si ya no cumple sus límites.',
-                              'Aprobar', () => answerBotProposal(p.id, 'approve'))}
+                              'Aprobar', () => answerBotProposal(p.id, 'approve', account))}
                           />
                           <Button
                             small kind="secondary" label="Rechazar" disabled={locked} style={{ flex: 1 }}
                             onPress={() => confirm(`Rechazar ${sd.noun.toLowerCase()} de ${pc}`,
                               'La propuesta se descarta y no se abre nada.', 'Rechazar',
-                              () => answerBotProposal(p.id, 'reject'), true)}
+                              () => answerBotProposal(p.id, 'reject', account), true)}
                           />
                         </View>
                         {!canAct && !!whyNot && <Text style={[type.small, { marginTop: space.sm }]}>{whyNot}</Text>}
@@ -545,7 +597,7 @@ const BotScreen = ({ route }) => {
                         onPress={() => confirm(`Cerrar ${sd.noun.toLowerCase()} de ${tc} (${w.paren})`,
                           `Se cerrará al precio actual (≈ ${money(t.price)}). Resultado aproximado: ${signed(t.open_pnl)}. `
                             + 'No se puede deshacer.',
-                          'Cerrar', () => closeBotPosition(t.symbol), true)}
+                          'Cerrar', () => closeBotPosition(t.symbol, account), true)}
                       />
                     )}
                   </Fold>
@@ -633,8 +685,8 @@ const BotScreen = ({ route }) => {
                           `El bot abrirá operaciones sin preguntar, con ${w.word}.`
                             + (riskPct ? ` Cada una arriesga como mucho el ${riskPct} % del capital.` : '')
                             + (proposals.length ? ' Las propuestas pendientes siguen esperando tu respuesta.' : ''),
-                          'Aceptar', () => setBotMode(m), kind === 'live' || !kind)
-                      : run(() => setBotMode(m))
+                          'Aceptar', () => setBotMode(m, account), kind === 'live' || !kind)
+                      : run(() => setBotMode(m, account))
                   }
                 />
               </View>
@@ -656,8 +708,8 @@ const BotScreen = ({ route }) => {
                     m === 'reduce'
                       ? confirm('Dejar que la IA frene operaciones',
                           'Podrá reducir o frenar operaciones nuevas. Todavía no ha demostrado que acierte: lo recomendado es dejarla en «Solo opina».',
-                          'Dar autoridad', () => setBotAi(m), true)
-                      : run(() => setBotAi(m))
+                          'Dar autoridad', () => setBotAi(m, account), true)
+                      : run(() => setBotAi(m, account))
                   }
                 />
               </View>
@@ -760,10 +812,11 @@ const BotScreen = ({ route }) => {
     <Screen
       title="Bot"
       subtitle={report ? undefined : 'Opera solo, con reglas fijas'}
-      money={kind || undefined}
+      money={notSetUp ? undefined : kind || undefined}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >
+      {accountPicker}
       {body()}
     </Screen>
   );

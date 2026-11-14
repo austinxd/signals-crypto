@@ -6,6 +6,7 @@ __pycache__/
 .Python
 venv/
 bot_data/
+bot_data_real/
 .pytest_cache/
 ENV/
 .env

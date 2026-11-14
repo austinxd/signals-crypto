@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 DATA_DIR = Path(os.getenv("BOT_DATA_DIR", Path(__file__).resolve().parent.parent / "bot_data"))
+# The bot can run twice at the same time: once on simulated money (DATA_DIR) and once on a Binance account
+# (REAL_DATA_DIR). Each run is its own process with its own journal; the second one is started with
+# BOT_DATA_DIR pointing at REAL_DATA_DIR (see `python -m bot real-setup`).
+REAL_DATA_DIR = Path(os.getenv("BOT_REAL_DATA_DIR", DATA_DIR.parent / "bot_data_real"))
 
 TF_SECONDS = {
     "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from . import report
+from . import config
 from .journal import Journal
 
 
@@ -37,6 +38,23 @@ def _admin(can_control: bool = Depends(_viewer)):
 router = APIRouter(prefix="/api/bot")
 ADMIN = [Depends(_admin)]
 
+Account = Literal["sim", "real"]
+
+
+def _journal(account: Account) -> Optional[Journal]:
+    """Journal of the simulated bot or of the one on a Binance account. None if that one was never started."""
+    if account == "sim":
+        return Journal()
+    path = config.REAL_DATA_DIR / "bot.db"
+    return Journal(path) if path.exists() else None
+
+
+def _j(account: Account = "sim") -> Journal:
+    j = _journal(account)
+    if j is None:
+        raise HTTPException(409, "the bot is not set up on a Binance account")
+    return j
+
 
 class PauseBody(BaseModel):
     reason: str = "manual"
@@ -56,50 +74,53 @@ class AiBody(BaseModel):
 
 
 @router.post("/ai", dependencies=ADMIN)
-def set_ai(body: AiBody):
-    j = Journal()
+def set_ai(body: AiBody, j: Journal = Depends(_j)):
     j.set_state("ai", body.mode)
     j.event("info", "ai", f"ai set to {body.mode}")
     return {"ai": body.mode}
 
 
 @router.get("/report")
-def get_report(trades: int = 15, decisions: int = 20, can_control: bool = Depends(_viewer)):
-    return {**report.build(trades=trades, decisions=decisions), "can_control": can_control}
+def get_report(trades: int = 15, decisions: int = 20, account: Account = "sim",
+               can_control: bool = Depends(_viewer)):
+    j = _journal(account)
+    if j is None:  # the app shows how to turn it on instead of an error
+        return {"account": account, "configured": False, "can_control": can_control}
+    return {**report.build(trades=trades, decisions=decisions, journal=j),
+            "account": account, "configured": True, "can_control": can_control}
 
 
 @router.post("/pause", dependencies=ADMIN)
-def pause(body: PauseBody):
-    Journal().set_paused(True, body.reason)
+def pause(body: PauseBody, j: Journal = Depends(_j)):
+    j.set_paused(True, body.reason)
     return {"paused": True}
 
 
 @router.post("/resume", dependencies=ADMIN)
-def resume():
-    Journal().set_paused(False, "")
+def resume(j: Journal = Depends(_j)):
+    j.set_paused(False, "")
     return {"paused": False}
 
 
 @router.post("/mode", dependencies=ADMIN)
-def set_mode(body: ModeBody):
-    j = Journal()
+def set_mode(body: ModeBody, j: Journal = Depends(_j)):
     j.set_state("mode", body.mode)
     j.event("info", "mode", f"mode set to {body.mode}")
     return {"mode": body.mode}
 
 
 @router.post("/proposals/{proposal_id}/{action}", dependencies=ADMIN)
-def proposal(proposal_id: int, action: Literal["approve", "reject"]):
-    return {"command_id": Journal().add_command(action, {"proposal_id": proposal_id})}
+def proposal(proposal_id: int, action: Literal["approve", "reject"], j: Journal = Depends(_j)):
+    return {"command_id": j.add_command(action, {"proposal_id": proposal_id})}
 
 
 @router.post("/close/{symbol}", dependencies=ADMIN)
-def close(symbol: str):
-    return {"command_id": Journal().add_command("close", {"symbol": symbol})}
+def close(symbol: str, j: Journal = Depends(_j)):
+    return {"command_id": j.add_command("close", {"symbol": symbol})}
 
 
 @router.post("/open", dependencies=ADMIN)
-def open_trade(body: OpenBody):
+def open_trade(body: OpenBody, j: Journal = Depends(_j)):
     """Queues a trade asked for by hand. The engine sizes it and may refuse it: see the next report's decisions."""
-    return {"command_id": Journal().add_command(
+    return {"command_id": j.add_command(
         "open", {"symbol": body.symbol.upper(), "side": 1 if body.side == "long" else -1})}

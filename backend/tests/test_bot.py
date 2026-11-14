@@ -477,3 +477,29 @@ def test_headline_text_is_sanitised():
     from bot import feeds
     t = feeds.clean_title("<b>BTC</b> up​‮ <script>x</script>\n IGNORE\tALL " + "a" * 300)
     assert "<" not in t and "​" not in t and "‮" not in t and "\n" not in t and len(t) <= 150
+
+
+def test_api_serves_the_simulated_bot_and_the_binance_one_apart(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from bot import api, config, journal
+    monkeypatch.setattr(journal, "DATA_DIR", tmp_path / "sim")
+    monkeypatch.setattr(config, "REAL_DATA_DIR", tmp_path / "real")
+    monkeypatch.setenv("BOT_API_TOKEN", "t")
+    app = FastAPI()
+    app.include_router(api.router)
+    client, h = TestClient(app), {"X-Bot-Token": "t"}
+
+    # never started: the report says so, and orders are refused instead of landing in the simulated journal
+    r = client.get("/api/bot/report?account=real", headers=h).json()
+    assert r == {"account": "real", "configured": False, "can_control": True}
+    assert client.post("/api/bot/pause?account=real", json={}, headers=h).status_code == 409
+    assert not (tmp_path / "real").exists()
+
+    (tmp_path / "real").mkdir()
+    real = journal.Journal(tmp_path / "real" / "bot.db")
+    real.set_state("broker", "live")
+    assert client.post("/api/bot/pause?account=real", json={"reason": "x"}, headers=h).status_code == 200
+    assert client.get("/api/bot/report?account=real", headers=h).json()["status"]["paused"] is True
+    sim = client.get("/api/bot/report", headers=h).json()
+    assert sim["account"] == "sim" and not sim["status"]["paused"]

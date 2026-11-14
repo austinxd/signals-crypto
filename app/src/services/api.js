@@ -645,34 +645,37 @@ export async function getSubscriptionStatus() {
 // Trading bot (admin accounts only)
 // ============================================================
 
-export async function getBotReport() {
-  return apiRequest('/api/bot/report?trades=10&decisions=12');
+// The server can run two bots: 'sim' (simulated money) and 'real' (a Binance account). Every call names one.
+const acct = (account) => `account=${account === 'real' ? 'real' : 'sim'}`;
+
+export async function getBotReport(account = 'sim') {
+  return apiRequest(`/api/bot/report?trades=10&decisions=12&${acct(account)}`);
 }
 
-export async function setBotPaused(paused, reason = 'desde la app') {
-  return apiRequest(paused ? '/api/bot/pause' : '/api/bot/resume', {
+export async function setBotPaused(paused, account = 'sim', reason = 'desde la app') {
+  return apiRequest(`${paused ? '/api/bot/pause' : '/api/bot/resume'}?${acct(account)}`, {
     method: 'POST',
     body: JSON.stringify(paused ? { reason } : {}),
   });
 }
 
-export async function setBotMode(mode) {
-  return apiRequest('/api/bot/mode', { method: 'POST', body: JSON.stringify({ mode }) });
+export async function setBotMode(mode, account = 'sim') {
+  return apiRequest(`/api/bot/mode?${acct(account)}`, { method: 'POST', body: JSON.stringify({ mode }) });
 }
 
-export async function setBotAi(mode) {
-  return apiRequest('/api/bot/ai', { method: 'POST', body: JSON.stringify({ mode }) });
+export async function setBotAi(mode, account = 'sim') {
+  return apiRequest(`/api/bot/ai?${acct(account)}`, { method: 'POST', body: JSON.stringify({ mode }) });
 }
 
-export async function answerBotProposal(id, action) {
-  return apiRequest(`/api/bot/proposals/${id}/${action}`, { method: 'POST' });
+export async function answerBotProposal(id, action, account = 'sim') {
+  return apiRequest(`/api/bot/proposals/${id}/${action}?${acct(account)}`, { method: 'POST' });
 }
 
-export async function closeBotPosition(symbol) {
-  return apiRequest(`/api/bot/close/${symbol}`, { method: 'POST' });
+export async function closeBotPosition(symbol, account = 'sim') {
+  return apiRequest(`/api/bot/close/${symbol}?${acct(account)}`, { method: 'POST' });
 }
 
 /** Ask the bot to open a trade by hand. side: 'long' | 'short'. The bot sizes it and may refuse it. */
-export async function openBotTrade(symbol, side) {
-  return apiRequest('/api/bot/open', { method: 'POST', body: JSON.stringify({ symbol, side }) });
+export async function openBotTrade(symbol, side, account = 'sim') {
+  return apiRequest(`/api/bot/open?${acct(account)}`, { method: 'POST', body: JSON.stringify({ symbol, side }) });
 }

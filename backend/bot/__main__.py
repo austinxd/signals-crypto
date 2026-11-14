@@ -160,6 +160,56 @@ def cmd_run(args):
     Engine(notifier=notify.send).run(once=args.once)
 
 
+REAL_UNIT = """[Unit]
+Description=Signals bot on a Binance account ({broker})
+After=network-online.target
+
+[Service]
+User={user}
+WorkingDirectory={backend}
+Environment=BOT_DATA_DIR={data}
+EnvironmentFile={data}/bot.env
+ExecStart={python} -m bot run
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def cmd_real_setup(args):
+    """Prepares the second bot, the one that trades a Binance account. It starts nothing and sends no order."""
+    import getpass
+    from dataclasses import asdict
+    from pathlib import Path
+    from .config import REAL_DATA_DIR, load_config
+    broker = "demo" if args.demo else "live"
+    REAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = load_config()  # same strategy and risk rules as the simulated bot
+    cfg.broker = broker
+    (REAL_DATA_DIR / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
+    env = REAL_DATA_DIR / "bot.env"
+    if not env.exists():
+        env.write_text("BOT_BINANCE_KEY=\nBOT_BINANCE_SECRET=\n" + ("" if args.demo else "BOT_ALLOW_LIVE=0\n"))
+        env.chmod(0o600)
+    unit = REAL_DATA_DIR / "signals-bot-real.service"
+    backend = Path(__file__).resolve().parent.parent
+    unit.write_text(REAL_UNIT.format(broker=broker, user=getpass.getuser(), backend=backend,
+                                     data=REAL_DATA_DIR, python=sys.executable))
+    what = "la cuenta DEMO de Binance (dinero de prueba)" if args.demo else "tu cuenta REAL de Binance"
+    print(f"Preparado el segundo bot para {what}. Todavía no hay nada en marcha.\n")
+    print(f"1. Escribe las claves de Binance del bot en {env}")
+    print("   (clave con permiso de Futuros y SIN permiso de retiro; la cuenta en modo de posición 'one-way').")
+    if not args.demo:
+        print("   Cambia BOT_ALLOW_LIVE=0 por BOT_ALLOW_LIVE=1: es el seguro que permite órdenes con dinero real.")
+    print(f"2. sudo cp {unit} /etc/systemd/system/ && sudo systemctl daemon-reload")
+    print("3. sudo systemctl enable --now signals-bot-real")
+    print("\nArranca en modo manual: propone cada operación y espera a que la apruebes en la app.")
+    print(f"Riesgo por operación: {cfg.risk.risk_per_trade:.2%} del saldo; se pausa solo si cae "
+          f"{cfg.risk.max_drawdown_halt:.0%} desde su máximo. Se cambia en {REAL_DATA_DIR / 'config.json'}.")
+
+
 def cmd_report(args):
     from . import report
     rep = report.build(trades=args.trades, decisions=args.decisions)
@@ -230,6 +280,10 @@ def main(argv=None):
     sp = sub.add_parser("run", help="run the trading engine")
     sp.add_argument("--once", action="store_true", help="run a single tick and exit")
     sp.set_defaults(func=cmd_run)
+
+    sp = sub.add_parser("real-setup", help="prepare a second bot that trades a Binance account (starts nothing)")
+    sp.add_argument("--demo", action="store_true", help="Binance demo trading instead of real money")
+    sp.set_defaults(func=cmd_real_setup)
 
     sp = sub.add_parser("report", help="what the bot is doing and how it is performing")
     sp.add_argument("--json", action="store_true")
