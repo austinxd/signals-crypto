@@ -333,6 +333,8 @@ def monitor_positions():
                         if (pos.symbol, pos.side) not in binance_symbols:
                             DBHelper.close_position(db, pos.id)
 
+                    bot_symbols = _bot_managed_symbols(account_id)
+
                     # Upsert positions from Binance
                     for bp in binance_positions:
                         pos = DBHelper.upsert_position(
@@ -341,6 +343,11 @@ def monitor_positions():
                             bp["unrealized_pnl"], bp["current_price"],
                             bp.get("liquidation_price"),
                         )
+
+                        # A position the account's own trading bot opened is the bot's to manage: no advice
+                        # about it, and above all nobody else moving its stop.
+                        if _normalize_symbol(bp["symbol"]).replace("/", "") in bot_symbols:
+                            continue
 
                         # Calculate indicators for this symbol (15m)
                         global_client = get_binance_client()
@@ -981,6 +988,17 @@ def _get_subscribed_tokens_with_db(pair: str, timeframe: str = None):
 # ============================================================
 # Position Endpoints (JWT protected)
 # ============================================================
+
+def _bot_managed_symbols(account_id: int) -> set:
+    """Symbols (BTCUSDT) on which this account's real trading bot has a trade open right now."""
+    try:
+        from bot import users as bot_users
+        j = bot_users.journal(account_id)
+        return {t["symbol"] for t in j.open_trades()} if j else set()
+    except Exception as e:
+        logger.error(f"[POSITIONS] Could not read the bot's trades for account {account_id}: {e}")
+        return set()
+
 
 def _normalize_symbol(symbol: str) -> str:
     """Normalize CCXT symbol like ETH/USDT:USDT to ETH/USDT."""
