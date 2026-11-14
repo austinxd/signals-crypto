@@ -161,6 +161,9 @@ class FakeBroker:
     def funding(self, trade):
         return 0.0
 
+    def set_target(self, trade, tp):
+        return {**(trade.get("orders") or {}), "tp": "t1"}
+
     def move_stop(self, trade, new_sl):
         return {}
 
@@ -620,11 +623,11 @@ def test_late_entry_joins_a_missed_trend_only_while_that_trade_would_still_be_op
     idx = pd.date_range("2026-01-01", periods=8, freq="4h", tz="UTC")
 
     def frame(highs):
-        return pd.DataFrame({"close": 100.0, "high": highs, "low": 95.0, "atr": 2.0, "sl": 105.0,
+        return pd.DataFrame({"close": 100.0, "high": highs, "low": 97.0, "atr": 2.0, "sl": 105.0,
                              "sig": [0, 0, 0, -1, 0, 0, 0, 0]}, index=idx)
     monkeypatch.setattr(data, "last_price", lambda s: 97.0)
     quiet = frame([101.0] * 8)
-    side, sl, since = eng._late_signal("BTCUSDT", quiet)       # short signalled 4 bars ago, stop never touched
+    side, sl, since, tp = eng._late_signal("BTCUSDT", quiet)       # short signalled 4 bars ago, stop never touched
     assert side == -1 and sl <= 105.0 and since == str(idx[3])
     assert eng._late_signal("BTCUSDT", frame([101, 101, 101, 101, 101, 106, 101, 101])) is None  # it was stopped out
     eng.cfg.late_entry_bars = 2
@@ -632,3 +635,23 @@ def test_late_entry_joins_a_missed_trend_only_while_that_trade_would_still_be_op
     eng.cfg.late_entry_bars = 12
     eng.j.decision("BTCUSDT", str(idx[3]), "REJECT", -1, "daily_loss_limit")
     assert eng._late_signal("BTCUSDT", quiet) is None            # the bot saw that signal and said no: no retry
+
+
+def test_shorts_get_a_take_profit_and_open_ones_are_given_theirs(engine, monkeypatch):
+    from bot import data
+    from bot.strategies import make_strategy
+    df = random_walk(700, freq="4h")
+    out = make_strategy("donchian").prepare(df)
+    shorts, longs = out[out["sig"] < 0], out[out["sig"] > 0]
+    assert len(shorts) and len(longs) and longs["tp"].isna().all()
+    assert ((shorts["close"] - shorts["tp"]) / (shorts["sl"] - shorts["close"])).round(6).eq(3.0).all()
+
+    eng, _ = engine
+    monkeypatch.setattr(data, "last_price", lambda s: 99.0)
+    tid = eng.j.open_trade(symbol="BTCUSDT", side=-1, qty=1.0, entry=100.0, sl0=104.0, sl=104.0, broker="paper",
+                           entry_ts=1.0, high_water=100.0, low_water=100.0)
+    eng._backfill_targets()
+    assert eng.j.open_trades()[0]["tp"] == 88.0          # 3 x the 4.0 it risks, below the entry
+    eng.j.update_trade(tid, tp=None)
+    eng._backfill_targets()                              # only once per start
+    assert eng.j.open_trades()[0]["tp"] is None

@@ -68,8 +68,8 @@ class DonchianTrend(Strategy):
     name = "donchian"
     timeframe = "4h"
     warmup = 250
-    defaults = {"n": 20, "ema": 200, "sl_atr": 2.5, "trail_atr": 4.0, "breakeven_r": 0.0, "max_bars": 0,
-                "allow_short": True}
+    defaults = {"n": 20, "ema": 200, "sl_atr": 2.5, "trail_atr": 4.0, "breakeven_r": 1.0, "max_bars": 0,
+                "allow_short": True, "short_tp_r": 3.0}
     grid = {"n": [20, 55], "sl_atr": [2.0, 3.0], "trail_atr": [3.0, 5.0]}
     features = ["close", "ema", "chan_high", "chan_low", "atr"]
 
@@ -85,7 +85,10 @@ class DonchianTrend(Strategy):
         out["sig"] = np.where(long_, 1, np.where(short_, -1, 0))
         out["sl"] = np.where(out["sig"] >= 0, out["close"] - p["sl_atr"] * out["atr"],
                              out["close"] + p["sl_atr"] * out["atr"])
-        out["tp"] = np.nan
+        # Falls in crypto are fast and snap back, so the trailing stop hands most of a short's gain back:
+        # shorts take profit at a multiple of the risk. Longs keep running on the trailing stop alone.
+        r = float(p.get("short_tp_r") or 0)
+        out["tp"] = np.where((out["sig"] < 0) & (r > 0), out["close"] - r * (out["sl"] - out["close"]), np.nan)
         return self._finish(out)
 
 

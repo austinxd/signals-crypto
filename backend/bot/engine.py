@@ -94,6 +94,7 @@ class Engine:
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
         self._last_equity = 0.0
+        self._targets_done = False
         self._late_checked = set()  # symbols already looked at for a missed trend since this start
         self._open_pnl = 0.0  # last known open result of the bot's trades, if a price cannot be read
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
@@ -137,6 +138,7 @@ class Engine:
         self._commands()
         self._funding()
         self._sync_trades()
+        self._backfill_targets()
         self._account_checks()
         self._bars()
         self._expire_proposals()
@@ -256,6 +258,26 @@ class Engine:
             if paid:
                 self.j.update_trade(trade["id"], funding=(trade["funding"] or 0) + paid)
 
+    def _backfill_targets(self):
+        """Once per start: a short opened before shorts had a take profit gets one, from its own entry and
+        first stop, so every open trade follows the same exit rules."""
+        if self._targets_done:
+            return
+        self._targets_done = True
+        r = float(self.strategy.p.get("short_tp_r") or 0)
+        for t in self.j.open_trades():
+            if r <= 0 or t["side"] >= 0 or t["tp"] is not None or not t["sl0"]:
+                continue
+            tp = t["entry"] - r * (t["sl0"] - t["entry"])
+            try:
+                if tp <= 0 or data.last_price(t["symbol"]) <= tp:
+                    continue  # already beyond it: leave the trade to its stop
+                orders = self.broker.set_target(t, tp)
+                self.j.update_trade(t["id"], tp=tp, orders=orders)
+                self.j.event("info", "target", f"{t['symbol']}: take profit set at {tp:.6g} ({r:g}R) on the open short")
+            except Exception as e:
+                self.j.event("error", "tp_failed", f"{t['symbol']}: target not placed ({e!r}); stop is active"[:300])
+
     def _manage(self, trade: dict, row, bar_time: str):
         """Trailing / breakeven / time stop, evaluated on the bar that just closed."""
         p = self.strategy.p
@@ -311,10 +333,10 @@ class Engine:
             else:
                 late = self._late_signal(symbol, prepared)
                 if late:
-                    side, sl, since = late
+                    side, sl, since, tp = late
                     self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
                                                        f"trend signalled on the bar of {since}, which the bot missed")
-                    self._signal(symbol, since, side, sl, None, prepared)
+                    self._signal(symbol, since, side, sl, tp, prepared)
                 elif sig != 0:
                     age = now - (expected + self.tf_s)
                     self.j.decision(symbol, bar_time, "SKIP", sig, f"stale_signal ({age / 60:.0f} min after bar close)")
@@ -333,14 +355,14 @@ class Engine:
         prepared = self.strategy.prepare(df)
         late = self._late_signal(symbol, prepared)
         if late:
-            side, sl, since = late
+            side, sl, since, tp = late
             self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
                                                f"trend signalled on the bar of {since}, which the bot missed")
-            self._signal(symbol, since, side, sl, None, prepared)
+            self._signal(symbol, since, side, sl, tp, prepared)
 
     def _late_signal(self, symbol: str, prepared):
         """A signal from the last few bars that the bot was not running to take, if that trade would still be
-        open today. Returns (side, where its stop would be by now, bar of the signal), or None.
+        open today. Returns (side, where its stop would be by now, bar of the signal, its target or None), or None.
 
         Only for signals the bot never acted on: one it rejected, proposed, vetoed or traded is not retried."""
         k = int(self.cfg.late_entry_bars or 0)
@@ -369,9 +391,13 @@ class Engine:
             hw, lw = max(hw, bar["high"]), min(lw, bar["low"])
             sl = risk_mod.managed_stop(side, entry, sl0, sl, hw, lw, _num(bar["atr"]) or float("nan"),
                                        float(p.get("trail_atr") or 0), float(p.get("breakeven_r") or 0))
-        if side * (data.last_price(symbol) - sl) <= 0:
+        price = data.last_price(symbol)
+        if side * (price - sl) <= 0:
             return None  # price is already through the stop
-        return side, float(sl), since
+        tp = _num(tail["tp"].iloc[i]) if "tp" in tail else None
+        if tp is not None and (side * (tp - price) <= 0 or (side < 0 and min(lw, price) <= tp) or (side > 0 and max(hw, price) >= tp)):
+            return None  # that trade already reached its target
+        return side, float(sl), since, tp
 
     def _signal(self, symbol: str, bar_time: str, side: int, sl: float, tp: Optional[float], prepared=None):
         if self.j.get_state("paused"):

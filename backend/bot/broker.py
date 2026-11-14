@@ -3,6 +3,7 @@
     account()                      -> {"equity", "balance", "open_pnl"}
     open(symbol, side, qty, sl, tp)-> {"entry", "qty", "fee", "orders"}   (stop is live before returning)
     move_stop(trade, new_sl)       -> orders dict
+    set_target(trade, tp)          -> orders dict (take profit added to an open position)
     close(trade)                   -> {"exit", "fee"}
     sync(trade)                    -> None while open, or {"exit", "fee", "reason"} once stopped/target hit
     funding(trade)                 -> funding paid(-)/received(+) since the last call
@@ -53,6 +54,9 @@ class PaperBroker:
 
     def move_stop(self, trade: dict, new_sl: float) -> dict:
         return trade.get("orders") or {}
+
+    def set_target(self, trade: dict, tp: float) -> dict:
+        return trade.get("orders") or {}  # the journal's tp is what sync() checks
 
     def _exit(self, trade: dict, price: float) -> Dict[str, float]:
         price = price * (1 - self.cfg.costs.slippage * trade["side"])
@@ -168,6 +172,15 @@ class BinanceBroker:
         orders = dict(trade.get("orders") or {})
         old = orders.get("sl")
         orders["sl"] = self._conditional(m, "STOP_MARKET", trade["side"], new_sl)
+        self._cancel(m, old)
+        return orders
+
+    def set_target(self, trade: dict, tp: float) -> dict:
+        """Add (or replace) the take-profit order of a position that is already open."""
+        m = self._m(trade["symbol"])
+        orders = dict(trade.get("orders") or {})
+        old = orders.get("tp")
+        orders["tp"] = self._conditional(m, "TAKE_PROFIT_MARKET", trade["side"], tp)
         self._cancel(m, old)
         return orders
 
