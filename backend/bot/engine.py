@@ -304,12 +304,53 @@ class Engine:
             trade = next((t for t in self.j.open_trades() if t["symbol"] == symbol), None)
             if trade:
                 self._manage(trade, row, bar_time)
-            elif sig != 0:
-                age = now - (expected + self.tf_s)
-                if age > max(300, self.tf_s * 0.1):
+            elif sig != 0 and now - (expected + self.tf_s) <= max(300, self.tf_s * 0.1):
+                self._signal(symbol, bar_time, sig, float(row["sl"]), _num(row["tp"]), prepared)
+            else:
+                late = self._late_signal(symbol, prepared)
+                if late:
+                    side, sl, since = late
+                    self.j.event("info", "late_entry", f"{symbol}: joining the {'long' if side > 0 else 'short'} "
+                                                       f"trend signalled on the bar of {since}, which the bot missed")
+                    self._signal(symbol, since, side, sl, None, prepared)
+                elif sig != 0:
+                    age = now - (expected + self.tf_s)
                     self.j.decision(symbol, bar_time, "SKIP", sig, f"stale_signal ({age / 60:.0f} min after bar close)")
-                else:
-                    self._signal(symbol, bar_time, sig, float(row["sl"]), _num(row["tp"]), prepared)
+
+    def _late_signal(self, symbol: str, prepared):
+        """A signal from the last few bars that the bot was not running to take, if that trade would still be
+        open today. Returns (side, where its stop would be by now, bar of the signal), or None.
+
+        Only for signals the bot never acted on: one it rejected, proposed, vetoed or traded is not retried."""
+        k = int(self.cfg.late_entry_bars or 0)
+        if k <= 0:
+            return None
+        tail = prepared.iloc[-(k + 1):]
+        hits = [i for i in range(len(tail)) if int(tail["sig"].iloc[i]) != 0]
+        if not hits:
+            return None
+        i = hits[-1]
+        side, since = int(tail["sig"].iloc[i]), str(tail.index[i])
+        closed_at = tail.index[i].timestamp() + self.tf_s
+        if self.j.rows("SELECT 1 FROM decisions WHERE symbol=? AND bar_time=? AND reason NOT LIKE 'stale_signal%' "
+                       "LIMIT 1", (symbol, since)):
+            return None
+        if self.j.rows("SELECT 1 FROM trades WHERE symbol=? AND (entry_ts>=? OR exit_ts>=?) LIMIT 1",
+                       (symbol, closed_at, closed_at)):
+            return None
+        p = self.strategy.p
+        entry = float(tail["close"].iloc[i])
+        sl0 = sl = float(tail["sl"].iloc[i])
+        hw = lw = entry
+        for _, bar in tail.iloc[i + 1:].iterrows():  # follow that trade bar by bar, as the bot would have
+            if (side > 0 and bar["low"] <= sl) or (side < 0 and bar["high"] >= sl) or int(bar["sig"]) == -side:
+                return None
+            hw, lw = max(hw, bar["high"]), min(lw, bar["low"])
+            sl = risk_mod.managed_stop(side, entry, sl0, sl, hw, lw, _num(bar["atr"]) or float("nan"),
+                                       float(p.get("trail_atr") or 0), float(p.get("breakeven_r") or 0))
+        if side * (data.last_price(symbol) - sl) <= 0:
+            return None  # price is already through the stop
+        return side, float(sl), since
 
     def _signal(self, symbol: str, bar_time: str, side: int, sl: float, tp: Optional[float], prepared=None):
         if self.j.get_state("paused"):

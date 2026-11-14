@@ -611,3 +611,24 @@ def test_limits_measure_the_bots_trades_not_the_account_value(tmp_path):
     b.equity = 730.0                                    # 17 % lost by trading: kill switch
     eng._account_checks()
     assert j.get_state("paused")
+
+
+def test_late_entry_joins_a_missed_trend_only_while_that_trade_would_still_be_open(engine, monkeypatch):
+    import pandas as pd
+    from bot import data
+    eng, _ = engine
+    idx = pd.date_range("2026-01-01", periods=8, freq="4h", tz="UTC")
+
+    def frame(highs):
+        return pd.DataFrame({"close": 100.0, "high": highs, "low": 95.0, "atr": 2.0, "sl": 105.0,
+                             "sig": [0, 0, 0, -1, 0, 0, 0, 0]}, index=idx)
+    monkeypatch.setattr(data, "last_price", lambda s: 97.0)
+    quiet = frame([101.0] * 8)
+    side, sl, since = eng._late_signal("BTCUSDT", quiet)       # short signalled 4 bars ago, stop never touched
+    assert side == -1 and sl <= 105.0 and since == str(idx[3])
+    assert eng._late_signal("BTCUSDT", frame([101, 101, 101, 101, 101, 106, 101, 101])) is None  # it was stopped out
+    eng.cfg.late_entry_bars = 2
+    assert eng._late_signal("BTCUSDT", quiet) is None            # too long ago
+    eng.cfg.late_entry_bars = 12
+    eng.j.decision("BTCUSDT", str(idx[3]), "REJECT", -1, "daily_loss_limit")
+    assert eng._late_signal("BTCUSDT", quiet) is None            # the bot saw that signal and said no: no retry

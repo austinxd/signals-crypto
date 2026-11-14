@@ -68,7 +68,7 @@ class DonchianTrend(Strategy):
     name = "donchian"
     timeframe = "4h"
     warmup = 250
-    defaults = {"n": 55, "ema": 200, "sl_atr": 2.5, "trail_atr": 4.0, "breakeven_r": 0.0, "max_bars": 0,
+    defaults = {"n": 20, "ema": 200, "sl_atr": 2.5, "trail_atr": 4.0, "breakeven_r": 0.0, "max_bars": 0,
                 "allow_short": True}
     grid = {"n": [20, 55], "sl_atr": [2.0, 3.0], "trail_atr": [3.0, 5.0]}
     features = ["close", "ema", "chan_high", "chan_low", "atr"]

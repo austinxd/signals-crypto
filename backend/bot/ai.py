@@ -29,7 +29,7 @@ PRICES = {
 SIZE = {"full": 1.0, "half": 0.5, "skip": 0.0}
 
 SYSTEM = """You are the portfolio manager of a systematic crypto futures desk. A rule-based trend-following \
-strategy (break of the 55-bar high/low on 4h candles, in the direction of the 200-bar EMA, exit by a 4-ATR \
+strategy (break of the 20-bar high/low on 4h candles, in the direction of the 200-bar EMA, exit by a 4-ATR \
 trailing stop) has just produced a signal, and you decide how much of it to take.
 
 What you need to know about the strategy: it wins roughly 36% of the time and averages about +0.2R per trade \
@@ -108,7 +108,7 @@ def build_context(df: pd.DataFrame, i: int, side: int, sl: float, leader: Option
         lines = [
             f"SIGNAL: {'LONG' if side > 0 else 'SHORT'} {label} (4h bar just closed)",
             f"stop distance: {abs(close - sl) / close * 100:.2f}% | ATR(14): {atr / close * 100:.2f}% of price",
-            f"close beyond the 55-bar channel by {abs(close - chan) / atr:.2f} ATR | breakout bar volume = "
+            f"close beyond the 20-bar channel by {abs(close - chan) / atr:.2f} ATR | breakout bar volume = "
             f"{vol_ratio:.2f}x its 20-bar average",
             f"bars since the previous signal in this direction: {bars_since if bars_since is not None else 'none in history'}",
         ]

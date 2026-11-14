@@ -60,6 +60,7 @@ class BotConfig:
     broker: str = "paper"                # paper | demo | live
     paper_balance: float = 10_000.0
     tick_seconds: int = 20
+    late_entry_bars: int = 12            # join a trend whose signal the bot missed (it was off) up to this many bars ago; 0 = never
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
     ai: AIConfig = field(default_factory=AIConfig)
