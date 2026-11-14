@@ -93,6 +93,7 @@ class Engine:
             self.j.set_state("ai", "off")
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
+        self._last_equity = 0.0
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
 
@@ -159,9 +160,12 @@ class Engine:
             self._tell("se pausó solo por seguridad", f"El capital bajó un {1 - equity / peak:.1%} desde su punto más "
                        f"alto (el límite es {limit:.0%}). No abrirá operaciones nuevas hasta que lo reanudes en la "
                        f"pestaña Bot. Las abiertas siguen con su cierre automático de pérdidas.", "bot_alert")
-        if time.time() - self._last_snapshot >= 300:
+        # Every 5 minutes, and at once when the money changes visibly (a deposit, a withdrawal, a fill):
+        # the report shows the last snapshot, and nobody should wait minutes to see a transfer arrive.
+        jumped = abs(equity - self._last_equity) > 0.005 * max(abs(self._last_equity), 1.0)
+        if jumped or time.time() - self._last_snapshot >= 300:
             self.j.equity_point(equity, acct["balance"], acct["open_pnl"])
-            self._last_snapshot = time.time()
+            self._last_snapshot, self._last_equity = time.time(), equity
         return acct
 
     def _risk(self, side: int, price: float, sl: float) -> risk_mod.Verdict:
