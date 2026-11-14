@@ -485,6 +485,27 @@ const BotScreen = ({ route, navigation }) => {
                   hint={all.trades ? `${pctOfStart(all.pnl) || ''} · ${all.trades} ${all.trades === 1 ? 'cerrada' : 'cerradas'}` : 'sin cerradas'}
                 />
               </StatRow>
+              <Text style={[type.label, { marginTop: space.lg }]}>Ganado o perdido por el bot</Text>
+              <StatRow style={{ marginTop: space.sm }}>
+                <Stat
+                  label="En abiertas"
+                  value={open.length ? esSigned(openPnl, 2) : '-'}
+                  color={open.length ? pnlColor(openPnl) : undefined}
+                  hint={open.length ? `${pctOfStart(openPnl) || ''} · aún sin cerrar` : 'sin abiertas'}
+                />
+                <Stat
+                  label="Ya cerrado"
+                  value={all.trades ? esSigned(all.pnl, 2) : '-'}
+                  color={all.trades ? pnlColor(all.pnl) : undefined}
+                  hint={all.trades ? `${pctOfStart(all.pnl) || ''} · con comisiones` : 'sin cerradas'}
+                />
+                <Stat
+                  label="Total"
+                  value={open.length || all.trades ? esSigned(openPnl + (all.pnl || 0), 2) : '-'}
+                  color={open.length || all.trades ? pnlColor(openPnl + (all.pnl || 0)) : undefined}
+                  hint={pctOfStart(openPnl + (all.pnl || 0)) || undefined}
+                />
+              </StatRow>
               <Text style={[type.small, { marginTop: space.md }]}>
                 Cifras en {unit}.
                 {a.drawdown_pct != null
