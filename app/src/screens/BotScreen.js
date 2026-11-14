@@ -215,7 +215,7 @@ const TradeDetail = ({ t, unit, equity, atr, params, maxLev, lev, size, move }) 
           <Text style={styles.factValue}>{es(size, 0)}</Text>
         </View>
         <View style={styles.fact}>
-          <Text style={styles.factLabel}>APALANCAMIENTO</Text>
+          <Text style={styles.factLabel}>APALANCAMIENTO REAL</Text>
           <Text style={styles.factValue}>{lev != null ? `${es(lev, 1)}x` : '-'}{maxLev != null ? <Text style={styles.factDim}> de {es(maxLev, 0)}x</Text> : null}</Text>
         </View>
         <View style={styles.fact}>
@@ -225,6 +225,7 @@ const TradeDetail = ({ t, unit, equity, atr, params, maxLev, lev, size, move }) 
       </View>
       <Text style={[type.small, { marginTop: space.sm }]}>
         {sd.noun}: {sd.wins}.
+        {lev != null ? ` El tamaño es ${es(lev, 1)} veces el capital del bot; ese es el apalancamiento real.${maxLev != null ? ` Binance muestra ${es(maxLev, 0)}x porque ese es el ajuste de margen de la moneda, no lo que se está usando.` : ''}` : ''}
         {equity > 0 ? ` El resultado de ahora es ${esSigned((100 * pnl) / equity, 2)} % del capital, sin descontar comisiones.` : ''}
         {atr != null && t.price ? ` Una vela de 4 h suele mover el precio ${es((100 * atr) / t.price, 1)} % (ATR ${money(atr)}).` : ''}
       </Text>
