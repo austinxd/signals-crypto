@@ -301,9 +301,10 @@ class Engine:
         orders = self.broker.move_stop(trade, new_sl)
         self.j.update_trade(trade["id"], sl=new_sl, orders=orders, last_check_ms=_next_minute_ms())
         if side * (trade["sl"] - trade["entry"]) < 0 <= side * (new_sl - trade["entry"]):
-            self._tell(f"aseguró {_coin(trade['symbol'])}: ya no puede cerrar en pérdida",
-                       f"El cierre automático (stop) pasó a {_px(new_sl)}, el precio de entrada o mejor. Si el precio "
-                       f"se da la vuelta, cierra sin perder (salvo comisiones).", "bot_trade", trade["symbol"])
+            self._tell(f"{_coin(trade['symbol'])} sigue abierta y ya no puede perder",
+                       f"No se cerró nada. El bot solo movió el cierre automático (stop) a {_px(new_sl)}, el precio de "
+                       f"entrada o mejor: si el precio se da la vuelta, sale sin perder (salvo comisiones).",
+                       "bot_trade", trade["symbol"])
         self.j.decision(trade["symbol"], bar_time, "MOVE_SL", side, "trailing",
                         {"trade_id": trade["id"], "from": trade["sl"], "to": new_sl})
 

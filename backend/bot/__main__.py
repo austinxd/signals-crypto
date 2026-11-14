@@ -157,7 +157,10 @@ def _ago(ts):
 def cmd_run(args):
     from .engine import Engine
     from . import notify
-    Engine(notifier=notify.send).run(once=args.once)
+    eng = Engine()
+    if eng.broker.name != "paper":  # the simulated bot stays silent: its trades are only read in the app
+        eng._notifier = notify.send
+    eng.run(once=args.once)
 
 
 REAL_UNIT = """[Unit]
