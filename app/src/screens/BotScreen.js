@@ -143,7 +143,7 @@ const BotScreen = ({ route, navigation }) => {
     try {
       let r = await getBotReport(account);
       // A server from before the two-bot version ignores the account and answers with the simulated bot.
-      if (account === 'real' && r && r.account !== 'real') r = { account: 'real', configured: false, outdated: true, can_control: r.can_control };
+      if (account === 'real' && r && r.bot !== 'real' && r.account !== 'real') r = { bot: 'real', configured: false, outdated: true, can_control: r.can_control };
       setReport(r);
       setError(null);
       return r;
@@ -311,7 +311,7 @@ const BotScreen = ({ route, navigation }) => {
     }
 
     const s = report.status || {};
-    const a = report.account || {};
+    const a = report.account && typeof report.account === 'object' ? report.account : {};
     const ai = report.ai || {};
     const risk = s.risk || {};
     riskRef.current = risk;

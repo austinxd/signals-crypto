@@ -90,11 +90,12 @@ class EnableBody(BaseModel):
 def get_report(trades: int = 15, decisions: int = 20, account: Account = "sim", user_id: Optional[int] = None,
                who: Caller = Depends(_caller)):
     if account == "sim":
-        return {**report.build(trades=trades, decisions=decisions), "account": "sim", "configured": True,
+        return {**report.build(trades=trades, decisions=decisions), "bot": "sim", "configured": True,
                 "can_control": who.admin}
     uid = _owner_id(who, user_id)
     real, j = users.status(uid), users.journal(uid)
-    out = {"account": "real", "configured": j is not None, "can_control": who.user is not None, "real": real}
+    # "bot", not "account": the report already has an "account" entry (equity, drawdown...) that must survive
+    out = {"bot": "real", "configured": j is not None, "can_control": who.user is not None, "real": real}
     return {**report.build(trades=trades, decisions=decisions, journal=j), **out} if j else out
 
 

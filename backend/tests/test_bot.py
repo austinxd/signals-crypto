@@ -500,7 +500,7 @@ def test_each_account_reads_and_controls_only_its_own_real_bot(tmp_path, monkeyp
 
     # never started: the report says so, and orders are refused instead of landing in another journal
     r = client.get("/api/bot/report?account=real", headers=u7).json()
-    assert r["account"] == "real" and r["configured"] is False and r["real"]["enabled"] is False
+    assert r["bot"] == "real" and r["configured"] is False and r["real"]["enabled"] is False
     assert client.post("/api/bot/pause?account=real", json={}, headers=u7).status_code == 409
     assert client.post("/api/bot/real", json={"enabled": True}, headers=u7).json() == {"enabled": True}
     assert client.get("/api/bot/report?account=real", headers=u7).json()["real"]["enabled"] is True
@@ -518,7 +518,8 @@ def test_each_account_reads_and_controls_only_its_own_real_bot(tmp_path, monkeyp
     assert client.get("/api/bot/report?account=real&user_id=7", headers={"X-Bot-Token": "t"}).json()["status"]["paused"] is True
     # and none of this moved the simulated bot, which a plain account still cannot control
     sim = client.get("/api/bot/report", headers=u7).json()
-    assert sim["account"] == "sim" and not sim["status"]["paused"] and sim["can_control"] is False
+    assert sim["bot"] == "sim" and not sim["status"]["paused"] and sim["can_control"] is False
+    assert isinstance(sim["account"], dict) and isinstance(mine["account"], dict)  # equity etc. must not be overwritten
     assert client.post("/api/bot/pause", json={}, headers=u7).status_code == 403
 
 
