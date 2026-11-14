@@ -94,7 +94,7 @@ class Engine:
         self.desk = Desk(self.cfg, self.j, self.strategy)
         self._last_snapshot = 0.0
         self._last_equity = 0.0
-        self._seen_equity = None  # equity at the previous round, to tell transfers from results
+        self._open_pnl = 0.0  # last known open result of the bot's trades, if a price cannot be read
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
         self._last_funding = 0.0
 
@@ -149,34 +149,28 @@ class Engine:
         acct = self.broker.account()
         equity = acct["equity"]
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if self.j.get_state("day") != today:
+        # The loss limits measure what the bot's own trades made or lost, not the account's value: a deposit,
+        # a withdrawal, or collateral held in BTC changing price are not results, and must neither block
+        # entries (daily limit) nor pause the bot (kill switch).
+        result = self._trading_result(acct)
+        if self.j.get_state("day") != today or self.j.get_state("day_start_result") is None:
             self.j.set_state("day", today)
-            self.j.set_state("day_start_equity", equity)
-        # Money moved in or out of the account is not a result. A jump this big between two rounds (or since
-        # the last snapshot, if the bot was off) cannot come from trading at this leverage: shift the day's
-        # starting point and the peak by the same amount, so "today" and the drawdown only measure the bot.
-        if self._seen_equity is None:
-            last = self.j.rows("SELECT equity FROM equity ORDER BY ts DESC LIMIT 1")
-            self._seen_equity = last[0]["equity"] if last else equity
-        moved = equity - self._seen_equity
-        if abs(moved) > 0.03 * max(self._seen_equity, 1.0):
-            self.j.set_state("day_start_equity", max(0.0, self.j.get_state("day_start_equity", equity) + moved))
-            self.j.set_state("peak_equity", max(0.0, self.j.get_state("peak_equity", equity) + moved))
-            self.j.event("info", "transfer", f"balance {'grew' if moved > 0 else 'fell'} by {abs(moved):.2f} "
-                                             f"outside trading (deposit or withdrawal); results not affected")
-        self._seen_equity = equity
-        # A day that more than doubled is a deposit that was counted as a gain before this rule existed.
-        if equity > 2 * (self.j.get_state("day_start_equity", equity) or equity):
-            self.j.set_state("day_start_equity", equity)
-        peak = max(self.j.get_state("peak_equity", equity), equity)
+            self.j.set_state("day_start_result", result)
+        peak_result = max(self.j.get_state("peak_result", result), result)
+        self.j.set_state("peak_result", peak_result)
+        # The same two marks in account terms, which is what the risk rules and the report read.
+        peak = equity + (peak_result - result)
+        self.j.set_state("day_start_equity", equity - (result - self.j.get_state("day_start_result")))
         self.j.set_state("peak_equity", peak)
         limit = self.cfg.risk.max_drawdown_halt
         if peak > 0 and equity <= peak * (1 - limit) and not self.j.get_state("paused"):
             self.j.set_paused(True, f"kill_switch: drawdown {1 - equity / peak:.1%} from peak (limit {limit:.0%})")
-            self.j.set_state("peak_equity", equity)  # re-arm from here once the user resumes
-            self._tell("se pausó solo por seguridad", f"El capital bajó un {1 - equity / peak:.1%} desde su punto más "
-                       f"alto (el límite es {limit:.0%}). No abrirá operaciones nuevas hasta que lo reanudes en la "
-                       f"pestaña Bot. Las abiertas siguen con su cierre automático de pérdidas.", "bot_alert")
+            self.j.set_state("peak_result", result)  # re-arm from here once the user resumes
+            self.j.set_state("peak_equity", equity)
+            self._tell("se pausó solo por seguridad", f"Las operaciones del bot perdieron un {1 - equity / peak:.1%} "
+                       f"del capital desde su mejor momento (el límite es {limit:.0%}). No abrirá operaciones nuevas "
+                       f"hasta que lo reanudes en la pestaña Bot. Las abiertas siguen con su cierre automático de "
+                       f"pérdidas.", "bot_alert")
         # Every 5 minutes, and at once when the money changes visibly (a deposit, a withdrawal, a fill):
         # the report shows the last snapshot, and nobody should wait minutes to see a transfer arrive.
         jumped = abs(equity - self._last_equity) > 0.005 * max(abs(self._last_equity), 1.0)
@@ -184,6 +178,20 @@ class Engine:
             self.j.equity_point(equity, acct["balance"], acct["open_pnl"])
             self._last_snapshot, self._last_equity = time.time(), equity
         return acct
+
+    def _trading_result(self, acct) -> float:
+        """Everything this bot's trades made or lost so far with this kind of money: closed plus open."""
+        closed = self.j.rows("SELECT COALESCE(SUM(pnl), 0) AS p FROM trades WHERE status='closed' "
+                             "AND (broker=? OR broker IS NULL)", (self.broker.name,))[0]["p"]
+        if self.broker.name == "paper":
+            self._open_pnl = acct["open_pnl"]
+        else:  # the exchange's own figure would include positions the bot did not open
+            try:
+                self._open_pnl = sum(t["side"] * t["qty"] * (data.last_price(t["symbol"]) - t["entry"])
+                                     for t in self.j.open_trades())
+            except Exception:
+                pass  # keep the last known value for this round
+        return closed + self._open_pnl
 
     def _risk(self, side: int, price: float, sl: float) -> risk_mod.Verdict:
         acct = self.broker.account()

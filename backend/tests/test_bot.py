@@ -583,7 +583,7 @@ def test_runner_starts_only_enabled_accounts_and_only_with_the_live_lock_off(tmp
     assert users.journal(9) is not None and users.status(9)["start_error"] == "hedge_mode"
 
 
-def test_a_deposit_or_withdrawal_is_not_counted_as_result(tmp_path):
+def test_limits_measure_the_bots_trades_not_the_account_value(tmp_path):
     from bot.config import BotConfig
     from bot.engine import Engine
     from bot.journal import Journal
@@ -596,12 +596,18 @@ def test_a_deposit_or_withdrawal_is_not_counted_as_result(tmp_path):
     j, b = Journal(tmp_path / "bot.db"), Broker()
     eng = Engine(BotConfig(), j, b)
     eng._account_checks()
-    b.equity = 1100.0                                   # deposit
+    b.equity = 1100.0                                   # deposit: not a gain
     eng._account_checks()
     assert j.get_state("day_start_equity") == 1100.0 and j.get_state("peak_equity") == 1100.0
-    b.equity = 1089.0                                   # a 1 % loss from trading stays a loss
+    b.equity = 880.0                                    # BTC collateral lost 20 % of its value: not a loss
     eng._account_checks()
-    assert j.get_state("day_start_equity") == 1100.0 and not j.get_state("paused")
-    b.equity = 589.0                                    # withdrawal: must not look like a crash and pause the bot
+    assert not j.get_state("paused") and j.get_state("day_start_equity") == 880.0 and j.get_state("peak_equity") == 880.0
+    tid = j.open_trade(symbol="BTCUSDT", side=-1, qty=0.01, entry=100.0, sl=110.0, broker="live", entry_ts=1.0)
+    j.update_trade(tid, status="closed", pnl=-20.0, exit_ts=2.0)
+    b.equity = 860.0                                    # the bot's own trade lost 20: that is a loss
     eng._account_checks()
-    assert not j.get_state("paused") and j.get_state("day_start_equity") == 600.0 and j.get_state("peak_equity") == 600.0
+    assert j.get_state("day_start_equity") == 880.0 and j.get_state("peak_equity") == 880.0 and not j.get_state("paused")
+    j.update_trade(tid, pnl=-150.0)
+    b.equity = 730.0                                    # 17 % lost by trading: kill switch
+    eng._account_checks()
+    assert j.get_state("paused")
