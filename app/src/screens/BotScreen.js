@@ -306,6 +306,19 @@ const BotScreen = ({ route }) => {
     const dayUsdt = a.equity != null && a.day_pnl_pct != null ? a.equity - a.equity / (1 + a.day_pnl_pct / 100) : null;
     const all = perf.all || {};
     const openPnl = open.reduce((sum, t) => sum + (t.open_pnl || 0), 0);
+    // What the bot started with, to turn amounts into percentages of its capital.
+    const startCap = a.equity != null ? a.equity - (all.pnl || 0) - openPnl : null;
+    const pctOfStart = (x) => (startCap > 0 && x != null ? `${esSigned((100 * x) / startCap, 2)} %` : null);
+    // Per trade: how far the price moved in its favour, how big it is, and how many times the capital that is.
+    const numbers = (t, last) => {
+      const size = t.qty * t.entry;
+      return {
+        move: last != null && t.entry ? (100 * t.side * (last - t.entry)) / t.entry : null,
+        size,
+        lev: a.equity > 0 ? size / a.equity : null,
+      };
+    };
+    const totalLev = a.equity > 0 ? open.reduce((sum, t) => sum + t.qty * t.entry, 0) / a.equity : null;
 
     const picked = symbols.find((x) => x === pick || pairName(x) === pick) || symbols[0];
     const coin = pairName(picked);
@@ -425,7 +438,7 @@ const BotScreen = ({ route }) => {
                   label="Desde el inicio"
                   value={all.trades ? esSigned(all.pnl, 0) : '-'}
                   color={all.trades ? pnlColor(all.pnl) : undefined}
-                  hint={all.trades ? `${all.trades} ${all.trades === 1 ? 'cerrada' : 'cerradas'}` : 'sin cerradas'}
+                  hint={all.trades ? `${pctOfStart(all.pnl) || ''} · ${all.trades} ${all.trades === 1 ? 'cerrada' : 'cerradas'}` : 'sin cerradas'}
                 />
               </StatRow>
               <Text style={[type.small, { marginTop: space.md }]}>
@@ -554,6 +567,7 @@ const BotScreen = ({ route }) => {
               {open.length > 1 && (
                 <Text style={[styles.result, { color: pnlColor(openPnl), marginTop: 0, marginBottom: space.md }]}>
                   Entre todas {openPnl >= 0 ? 'va ganando' : 'va perdiendo'} {amount(Math.abs(openPnl))} (sin cerrar)
+                  {totalLev != null ? ` · apalancamiento total ${es(totalLev, 1)}x${risk.max_total_leverage != null ? ` de ${es(risk.max_total_leverage, 0)}x máximo` : ''}` : ''}
                 </Text>
               )}
               {open.map((t, i) => {
@@ -561,18 +575,26 @@ const BotScreen = ({ route }) => {
                 const out = stopOutcome(t.side, t.qty, t.entry, t.sl);
                 const tc = pairName(t.symbol);
                 const why = whyOpened(t.id);
+                const nb = numbers(t, t.price);
                 return (
                   <Fold
                     key={t.id}
                     first={i === 0}
                     title={tradeTitle(t.symbol, t.side)}
-                    right={esSigned(t.open_pnl || 0)}
+                    right={`${esSigned(t.open_pnl || 0)}${nb.move != null ? ` (${esSigned(nb.move, 2)} %)` : ''}`}
                     rightColor={pnlColor(t.open_pnl)}
-                    summary={`Entró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
+                    summary={`${nb.lev != null ? `Apalancamiento ${es(nb.lev, 1)}x · tamaño ${es(nb.size, 0)} ${unit}\n` : ''}Entró a ${money(t.entry)} · ahora ${money(t.price)} · se cierra sola si ${sd.against} a ${money(t.sl)}`}
                   >
                     <Text style={[type.small, { marginTop: space.sm }]}>
                       {sd.noun}: {sd.wins}. Abierta {timeAgo(t.entry_ts)}.
                     </Text>
+                    {nb.lev != null && (
+                      <Text style={[type.small, { marginTop: 3 }]}>
+                        Tamaño: {es(nb.size, 0)} {unit}, que es {es(nb.lev, 1)} veces el capital del bot (apalancamiento {es(nb.lev, 1)}x
+                        {risk.max_position_leverage != null ? `; máximo ${es(risk.max_position_leverage, 0)}x por operación` : ''}).
+                        {nb.move != null ? ` El precio se ha movido ${esSigned(nb.move, 2)} % a su favor, que es ${esSigned((100 * (t.open_pnl || 0)) / a.equity, 2)} % del capital.` : ''}
+                      </Text>
+                    )}
                     <Text style={[type.small, { marginTop: 3 }]}>
                       {t.open_pnl != null && t.open_pnl >= 0 ? 'Va ganando' : 'Va perdiendo'} {amount(Math.abs(t.open_pnl || 0))}, aún sin cerrar.
                     </Text>
@@ -624,7 +646,7 @@ const BotScreen = ({ route }) => {
                 key={label}
                 first={i === 0}
                 label={label}
-                value={n ? signed(st.pnl) : 'Sin operaciones cerradas'}
+                value={n ? `${signed(st.pnl)}${pctOfStart(st.pnl) ? ` (${pctOfStart(st.pnl)})` : ''}` : 'Sin operaciones cerradas'}
                 color={n ? pnlColor(st.pnl) : colors.textMuted}
                 help={n
                   ? `${n} ${n === 1 ? 'cerrada' : 'cerradas'} · ganó ${wins} y perdió ${n - wins} · media ${esSigned(st.pnl / n)} por operación`
@@ -733,9 +755,10 @@ const BotScreen = ({ route }) => {
               key={t.id}
               first={i === 0}
               title={tradeTitle(t.symbol, t.side)}
-              right={esSigned(t.pnl)}
+              right={`${esSigned(t.pnl)}${t.exit && t.entry ? ` (${esSigned((100 * t.side * (t.exit - t.entry)) / t.entry, 2)} %)` : ''}`}
               rightColor={pnlColor(t.pnl)}
               lines={[
+                `Tamaño ${es(t.qty * t.entry, 0)} ${unit}${a.equity > 0 ? ` · apalancamiento ≈ ${es((t.qty * t.entry) / a.equity, 1)}x` : ''}${pctOfStart(t.pnl) ? ` · ${pctOfStart(t.pnl)} del capital` : ''}.`,
                 `Entró a ${money(t.entry)}, cerró a ${money(t.exit)} · ${timeAgo(t.exit_ts)}.`,
                 `Motivo: ${exitWhy(t.exit_reason, t.pnl)}.`,
               ]}
