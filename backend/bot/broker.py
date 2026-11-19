@@ -167,23 +167,31 @@ class BinanceBroker:
                 self.j.event("error", "tp_failed", f"{symbol}: target not placed ({e}); stop is active")
         return {"entry": entry, "qty": filled, "fee": filled * entry * self.cfg.costs.taker_fee, "orders": orders}
 
-    def move_stop(self, trade: dict, new_sl: float) -> dict:
-        """Place the new stop first and only then cancel the old one."""
+    def _replace(self, trade: dict, which: str, kind: str, price: float, old_price: Optional[float]) -> dict:
+        """Binance keeps a single close-position order of each kind per side and refuses a second one (-4130),
+        so the old order has to go before the new one is placed. If the new one is refused, the old level is put
+        back and the journal told its id, so the position is never left without that order."""
         m = self._m(trade["symbol"])
         orders = dict(trade.get("orders") or {})
-        old = orders.get("sl")
-        orders["sl"] = self._conditional(m, "STOP_MARKET", trade["side"], new_sl)
-        self._cancel(m, old)
+        self._cancel(m, orders.pop(which, None))
+        try:
+            orders[which] = self._conditional(m, kind, trade["side"], price)
+        except Exception:
+            if old_price:
+                try:
+                    orders[which] = self._conditional(m, kind, trade["side"], old_price)
+                except Exception as e:
+                    self.j.event("error", "order_lost", f"{trade['symbol']}: no {which} order on the exchange: {e!r}"[:300])
+            self.j.update_trade(trade["id"], orders=orders)
+            raise
         return orders
+
+    def move_stop(self, trade: dict, new_sl: float) -> dict:
+        return self._replace(trade, "sl", "STOP_MARKET", new_sl, trade.get("sl"))
 
     def set_target(self, trade: dict, tp: float) -> dict:
         """Add (or replace) the take-profit order of a position that is already open."""
-        m = self._m(trade["symbol"])
-        orders = dict(trade.get("orders") or {})
-        old = orders.get("tp")
-        orders["tp"] = self._conditional(m, "TAKE_PROFIT_MARKET", trade["side"], tp)
-        self._cancel(m, old)
-        return orders
+        return self._replace(trade, "tp", "TAKE_PROFIT_MARKET", tp, trade.get("tp"))
 
     def _position_qty(self, symbol: str) -> float:
         for p in self.ex.fetch_positions([self._m(symbol)]):

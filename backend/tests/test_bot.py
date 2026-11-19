@@ -655,3 +655,46 @@ def test_shorts_get_a_take_profit_and_open_ones_are_given_theirs(engine, monkeyp
     eng.j.update_trade(tid, tp=None)
     eng._backfill_targets()                              # only once per start
     assert eng.j.open_trades()[0]["tp"] is None
+
+
+def test_live_stop_is_replaced_the_way_binance_allows_and_never_lost():
+    """Binance refuses a second close-position stop on the same side, so the old one is cancelled first; if the
+    new one is refused the old level goes back on the exchange."""
+    from types import SimpleNamespace
+    from bot.broker import BinanceBroker
+
+    class Ex:
+        def __init__(self):
+            self.live, self.n, self.refuse = {}, 0, None
+
+        def price_to_precision(self, m, price):
+            return price
+
+        def create_order(self, m, kind, side, qty, price, params):
+            if kind in self.live.values():
+                raise RuntimeError("-4130 an open stop or take profit order with closePosition is existing")
+            if params["stopPrice"] == self.refuse:
+                raise RuntimeError("-2021 order would immediately trigger")
+            self.n += 1
+            self.live[str(self.n)] = kind
+            self.prices = {**getattr(self, "prices", {}), str(self.n): params["stopPrice"]}
+            return {"id": str(self.n)}
+
+        def cancel_order(self, oid, m, params):
+            del self.live[oid]
+
+    saved = {}
+    b = object.__new__(BinanceBroker)
+    b.ex = Ex()
+    b.j = SimpleNamespace(event=lambda *a: None, update_trade=lambda tid, **cols: saved.update(cols))
+    trade = {"id": 1, "symbol": "BTCUSDT", "side": -1, "sl": 110.0, "tp": 70.0,
+             "orders": {"sl": b._conditional("BTC/USDT:USDT", "STOP_MARKET", -1, 110.0),
+                        "tp": b._conditional("BTC/USDT:USDT", "TAKE_PROFIT_MARKET", -1, 70.0)}}
+    orders = b.move_stop(trade, 100.0)
+    assert orders["tp"] == trade["orders"]["tp"] and b.ex.prices[orders["sl"]] == 100.0
+    assert sorted(b.ex.live.values()) == ["STOP_MARKET", "TAKE_PROFIT_MARKET"]
+    trade = {**trade, "sl": 100.0, "orders": orders}
+    b.ex.refuse = 95.0
+    with pytest.raises(RuntimeError):
+        b.move_stop(trade, 95.0)
+    assert b.ex.prices[saved["orders"]["sl"]] == 100.0 and "STOP_MARKET" in b.ex.live.values()

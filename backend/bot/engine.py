@@ -352,6 +352,10 @@ class Engine:
                     self.j.event("warn", "bar_retry", f"{symbol} {bar_time}: {e!r}; trying again"[:300])
                     continue
                 self.j.event("error", "bar", f"{symbol} {bar_time}: gave up after {fails} tries: {e!r}"[:300])
+                if any(t["symbol"] == symbol for t in self.j.open_trades()):
+                    self._tell(f"no pudo actualizar el stop de {_coin(symbol)}",
+                               "El cierre automático sigue donde estaba, no se ha movido. La posición sigue abierta "
+                               "y protegida por el stop anterior. Revisa la pestaña Bot.", "bot_alert", symbol)
             self._bar_fails.pop(symbol, None)
             self.j.evaluation(symbol, bar_time, sig, {f: _num(row.get(f)) for f in self.strategy.features})
             self.j.set_state(key, expected)
@@ -362,12 +366,19 @@ class Engine:
         if symbol in self._late_checked:
             return
         self._late_checked.add(symbol)
-        if any(t["symbol"] == symbol for t in self.j.open_trades()):
-            return
         df = data.recent_klines(symbol, self.tf)
         if len(df) < self.strategy.warmup + 10:
             return
         prepared = self.strategy.prepare(df)
+        trade = next((t for t in self.j.open_trades() if t["symbol"] == symbol), None)
+        if trade:
+            # A stop move that failed on the last bar (exchange refused it, bot was down) is not left for the
+            # next bar: the open trade is brought up to date now.
+            try:
+                self._manage(trade, prepared.iloc[-1], str(df.index[-1]))
+            except Exception as e:
+                self.j.event("error", "catch_up", f"{symbol}: stop not brought up to date: {e!r}"[:300])
+            return
         late = self._late_signal(symbol, prepared)
         if late:
             side, sl, since, tp = late
