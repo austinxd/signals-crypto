@@ -150,10 +150,19 @@ class BinanceBroker:
         m = self._m(symbol)
         self.ex.set_leverage(max(1, math.ceil(self.cfg.risk.max_position_leverage)), m)
         qty = float(self.ex.amount_to_precision(m, qty))
-        order = self.ex.create_order(m, "market", "buy" if side > 0 else "sell", qty)
-        if not order.get("average"):
-            order = self.ex.fetch_order(order["id"], m)
-        entry, filled = float(order["average"]), float(order["filled"])
+        try:
+            order = self.ex.create_order(m, "market", "buy" if side > 0 else "sell", qty)
+            if not order.get("average"):
+                order = self.ex.fetch_order(order["id"], m)
+            entry, filled = float(order["average"]), float(order["filled"])
+        except Exception:
+            # The answer was lost, not necessarily the order: a position nobody recorded would have no stop.
+            left = self._position_qty(symbol)
+            if left:
+                self.ex.create_order(m, "market", "sell" if side > 0 else "buy", left, None, {"reduceOnly": True})
+                self.j.event("error", "entry_unwound", f"{symbol}: the entry answered with an error but had filled "
+                                                       f"{left:g}; closed it at once")
+            raise
         try:
             orders = {"sl": self._conditional(m, "STOP_MARKET", side, sl)}
         except Exception:
@@ -175,7 +184,15 @@ class BinanceBroker:
         orders = dict(trade.get("orders") or {})
         self._cancel(m, orders.pop(which, None))
         try:
-            orders[which] = self._conditional(m, kind, trade["side"], price)
+            try:
+                orders[which] = self._conditional(m, kind, trade["side"], price)
+            except Exception as e:
+                if "-4130" not in repr(e):
+                    raise
+                # An order of this kind is still on the exchange (a cancel that never arrived, or one the journal
+                # lost track of): find it there, remove it, and place the new one.
+                self._clear(m, kind)
+                orders[which] = self._conditional(m, kind, trade["side"], price)
         except Exception:
             if old_price:
                 try:
@@ -184,6 +201,27 @@ class BinanceBroker:
                     self.j.event("error", "order_lost", f"{trade['symbol']}: no {which} order on the exchange: {e!r}"[:300])
             self.j.update_trade(trade["id"], orders=orders)
             raise
+        return orders
+
+    def _clear(self, m: str, kind: str):
+        """Cancel every open conditional order of this kind on the symbol, whatever the journal remembers."""
+        for o in self.ex.fetch_open_orders(m, params={"trigger": True}):
+            if str(o.get("type") or "").replace("_", "").lower() == kind.replace("_", "").lower():
+                self.ex.cancel_order(o["id"], m, {"trigger": True})
+
+    def ensure_stop(self, trade: dict) -> Optional[dict]:
+        """A trade whose stop order was lost gets it back at the level the journal holds. None = nothing to do."""
+        orders = dict(trade.get("orders") or {})
+        if orders.get("sl"):
+            return None
+        m = self._m(trade["symbol"])
+        try:
+            orders["sl"] = self._conditional(m, "STOP_MARKET", trade["side"], trade["sl"])
+        except Exception as e:
+            if "-4130" not in repr(e):
+                raise
+            self._clear(m, "STOP_MARKET")
+            orders["sl"] = self._conditional(m, "STOP_MARKET", trade["side"], trade["sl"])
         return orders
 
     def move_stop(self, trade: dict, new_sl: float) -> dict:
@@ -198,10 +236,21 @@ class BinanceBroker:
             return abs(float(p.get("contracts") or 0))
         return 0.0
 
-    def _last_exit(self, trade: dict) -> Dict[str, float]:
+    def _closing_fills(self, trade: dict) -> list:
+        """The fills that reduced this trade's position. Binance answers at most 7 days per request and, given
+        only a start, returns the 7 days after it: a trade older than a week has to be read window by window."""
         m = self._m(trade["symbol"])
         closing = "sell" if trade["side"] > 0 else "buy"
-        fills = [f for f in self.ex.fetch_my_trades(m, since=int(trade["entry_ts"] * 1000)) if f["side"] == closing]
+        week, now, start, fills = 7 * 86_400_000 - 1, int(time.time() * 1000), int(trade["entry_ts"] * 1000), []
+        while start <= now:
+            fills += [f for f in self.ex.fetch_my_trades(m, since=start, limit=1000,
+                                                         params={"until": min(start + week, now)})
+                      if f["side"] == closing]
+            start += week + 1
+        return fills
+
+    def _last_exit(self, trade: dict) -> Dict[str, float]:
+        fills = self._closing_fills(trade)
         qty = sum(float(f["amount"]) for f in fills)
         if not qty:
             price = data.last_price(trade["symbol"])
@@ -215,15 +264,15 @@ class BinanceBroker:
         qty = self._position_qty(trade["symbol"])
         if qty:
             self.ex.create_order(m, "market", "sell" if trade["side"] > 0 else "buy", qty, None, {"reduceOnly": True})
+        elif self._closed_qty(trade) < 0.5 * trade["qty"]:
+            # same doubt as in sync(): no position and no closing fills is an answer not to act on
+            raise RuntimeError(f"{trade['symbol']}: the exchange shows no position and no closing fills; not closing")
         for oid in (trade.get("orders") or {}).values():
             self._cancel(m, oid)
         return self._last_exit(trade)
 
     def _closed_qty(self, trade: dict) -> float:
-        m = self._m(trade["symbol"])
-        closing = "sell" if trade["side"] > 0 else "buy"
-        return sum(float(f["amount"]) for f in self.ex.fetch_my_trades(m, since=int(trade["entry_ts"] * 1000))
-                   if f["side"] == closing)
+        return sum(float(f["amount"]) for f in self._closing_fills(trade))
 
     def sync(self, trade: dict) -> Optional[Dict[str, Any]]:
         if self._position_qty(trade["symbol"]) > 0:

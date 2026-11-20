@@ -698,3 +698,48 @@ def test_live_stop_is_replaced_the_way_binance_allows_and_never_lost():
     with pytest.raises(RuntimeError):
         b.move_stop(trade, 95.0)
     assert b.ex.prices[saved["orders"]["sl"]] == 100.0 and "STOP_MARKET" in b.ex.live.values()
+
+
+def test_live_close_is_found_after_a_week_and_a_lost_stop_is_put_back(monkeypatch):
+    """Binance answers fills 7 days at a time, so an old trade is read window by window; an order the journal
+    lost track of is found on the exchange; and a trade without a stop order gets one again."""
+    import time as _time
+    from types import SimpleNamespace
+    from bot.broker import BinanceBroker
+    now = _time.time()
+    entry_ts = now - 16 * 86400
+    exit_ms = int((now - 86400) * 1000)
+    asked = []
+
+    class Ex:
+        def __init__(self):
+            self.live = {"9": "stop_market"}
+
+        def price_to_precision(self, m, price):
+            return price
+
+        def fetch_my_trades(self, m, since=None, limit=None, params=None):
+            asked.append((since, params["until"]))
+            assert params["until"] - since < 7 * 86_400_000
+            return [{"side": "buy", "amount": 2.0, "price": 90.0, "fee": {"cost": 0.1}}] if since <= exit_ms <= params["until"] else []
+
+        def fetch_open_orders(self, m, params=None):
+            return [{"id": k, "type": v} for k, v in self.live.items()]
+
+        def cancel_order(self, oid, m, params):
+            del self.live[oid]
+
+        def create_order(self, m, kind, side, qty, price, params):
+            if kind.lower() in self.live.values():
+                raise RuntimeError('binance {"code":-4130,"msg":"An open stop ... is existing."}')
+            self.live["10"] = kind.lower()
+            return {"id": "10"}
+
+    b = object.__new__(BinanceBroker)
+    b.ex, b.j = Ex(), SimpleNamespace(event=lambda *a: None, update_trade=lambda *a, **k: None)
+    trade = {"id": 1, "symbol": "XUSDT", "side": -1, "qty": 2.0, "entry_ts": entry_ts, "sl": 110.0, "orders": {}}
+    assert b._closed_qty(trade) == 2.0 and len(asked) == 3 and b._last_exit(trade)["exit"] == 90.0
+    # the journal holds no stop id, yet one is on the exchange: it is replaced, not left to block the new one
+    assert b.ensure_stop(trade) == {"sl": "10"} and b.ex.live == {"10": "stop_market"}
+    assert b.ensure_stop({**trade, "orders": {"sl": "10"}}) is None
+    assert b.move_stop({**trade, "orders": {}}, 105.0) == {"sl": "10"}

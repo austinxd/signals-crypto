@@ -12,7 +12,7 @@ AI desk (journal state `ai`: off | shadow | reduce, see desk.py): woken by signa
 after the risk engine and can only shrink or skip an entry; if it fails, the rules signal is taken as is.
 """
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import data, risk as risk_mod
@@ -96,6 +96,7 @@ class Engine:
         self._last_equity = 0.0
         self._targets_done = False
         self._bar_fails = {}  # symbol -> failed tries at handling its latest bar
+        self._stop_tries = {}  # trade id -> last failed try at putting back a lost stop
         self._late_checked = set()  # symbols already looked at for a missed trend since this start
         self._open_pnl = 0.0  # last known open result of the bot's trades, if a price cannot be read
         self._notifier = notifier  # callable(title, body, kind, symbol); None = stay silent (tests, backtests)
@@ -152,7 +153,7 @@ class Engine:
     def _account_checks(self):
         acct = self.broker.account()
         equity = acct["equity"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = (datetime.now(timezone.utc) + timedelta(hours=self.cfg.day_utc_offset)).strftime("%Y-%m-%d")
         # The loss limits measure what the bot's own trades made or lost, not the account's value: a deposit,
         # a withdrawal, or collateral held in BTC changing price are not results, and must neither block
         # entries (daily limit) nor pause the bot (kill switch).
@@ -249,6 +250,19 @@ class Engine:
             out = self.broker.sync(trade)
             if out:
                 self._record_close(trade, out, out["reason"])
+                continue
+            # A live position must always have its stop on the exchange: one that was lost is put back here.
+            restore = getattr(self.broker, "ensure_stop", None)
+            if restore and time.time() - self._stop_tries.get(trade["id"], 0) > 60:
+                try:
+                    orders = restore(trade)
+                    if orders:
+                        self.j.update_trade(trade["id"], orders=orders)
+                        self.j.event("warn", "stop_restored", f"{trade['symbol']}: stop order was missing; placed "
+                                                              f"again at {trade['sl']:.6g}")
+                except Exception as e:
+                    self._stop_tries[trade["id"]] = time.time()
+                    self.j.event("error", "stop_missing", f"{trade['symbol']}: no stop on the exchange: {e!r}"[:300])
 
     def _funding(self):
         if time.time() - self._last_funding < 300:
@@ -354,8 +368,8 @@ class Engine:
                 self.j.event("error", "bar", f"{symbol} {bar_time}: gave up after {fails} tries: {e!r}"[:300])
                 if any(t["symbol"] == symbol for t in self.j.open_trades()):
                     self._tell(f"no pudo actualizar el stop de {_coin(symbol)}",
-                               "El cierre automático sigue donde estaba, no se ha movido. La posición sigue abierta "
-                               "y protegida por el stop anterior. Revisa la pestaña Bot.", "bot_alert", symbol)
+                               "El cierre automático no se pudo mover. La posición sigue abierta; el bot lo vuelve a "
+                               "intentar. Revisa en Binance que tenga su orden Stop Market.", "bot_alert", symbol)
             self._bar_fails.pop(symbol, None)
             self.j.evaluation(symbol, bar_time, sig, {f: _num(row.get(f)) for f in self.strategy.features})
             self.j.set_state(key, expected)

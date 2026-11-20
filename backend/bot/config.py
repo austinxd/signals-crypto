@@ -61,6 +61,7 @@ class BotConfig:
     paper_balance: float = 10_000.0
     tick_seconds: int = 20
     late_entry_bars: int = 12            # join a trend whose signal the bot missed (it was off) up to this many bars ago; 0 = never
+    day_utc_offset: float = -5.0         # the bot's "day" (daily loss limit, "Hoy" in the app) starts at midnight here: Lima
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
     ai: AIConfig = field(default_factory=AIConfig)
